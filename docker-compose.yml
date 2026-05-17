@@ -30,8 +30,8 @@ services:
 
   fastapi-service:
     build:
-      context: .
-      dockerfile: fastapi-service/Dockerfile
+      context: ./fastapi-service
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -51,8 +51,8 @@ services:
 
   adk-agent-service:
     build:
-      context: .
-      dockerfile: adk-agent-service/Dockerfile
+      context: ./adk-agent-service
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     environment:
