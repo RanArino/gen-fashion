@@ -63,5 +63,6 @@ services:
       - fastapi-service
     volumes:
       - ./adk-agent-service:/app
+    command: sh -c "npm run build && npm start"
 
 volumes: {}
