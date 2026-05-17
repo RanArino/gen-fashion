@@ -1,0 +1,951 @@
+# Phase 1 MVP Requirements — gen-fashion
+
+> **Last updated:** 2026-05-10
+> **Status:** Active — Hackathon MVP target
+> **Architecture:** Hexagonal Architecture + DDD (see SKILL.md in `.claude/skills/hexagonal-ddd-coach/`)
+> **Implementation tracker:** [feature-matrix-phase01.md](feature-matrix-phase01.md) — milestone-based status of every requirement below. Keep both files in sync when requirements change.
+
+> **実装優先方針:** Web GUI エージェントオーケストレーション（Accordion UI）を Phase 1a として先行実装する。LINE 統合は Phase 1b として後続実装とする。
+> **設計原則:** 最低限の認証・エラー処理のみ実装しシンプルに保つ。不明なプロセスを追加しない。処理のボトルネックが常に特定可能な構成を維持する。
+
+---
+
+## 1. Core Value Proposition
+
+ユーザーがアップロードした服の画像をベースとして、複数の AI エージェントが協調しコーディネートを提案する体験を提供する。
+
+**Phase 1a — Web GUI（先行実装）:**
+
+1. ユーザーが Web GUI にログインし、服の画像をアップロードする。
+2. 複数エージェントが議論・推論する様子を **Accordion UI でリアルタイム表示**する（Codex / Claude Code の段階的思考 UI と同等の体験）。
+3. エージェントが画像を分析し、コーディネート候補を提示する。
+4. ユーザーが選択後、最終コーディネート画像を生成・表示する。
+5. クローゼット管理（画像アップロード、上限: `MAX_CLOSET_IMAGES_PER_USER` = 20）。
+
+**Phase 1b — LINE チャネル（後続実装）:**
+
+1. ユーザーが LINE でアップロードした服の画像をエージェントが受信する。
+2. エージェントが画像を分析し、服のメタデータを構造化出力として生成する。
+3. エージェントが選択肢を提示する：
+   - 「自分の持っている服からコーディネートする（クローゼットデータがある場合のみ）」
+   - 「楽天で検索した服からコーディネートする」
+4. ユーザーが選択後、エージェントがコーディネート候補を提示し、ユーザーが選択する。
+5. 最終的にコーディネート画像を生成し、LINE のトーク画面に返信する。
+
+---
+
+## 2. Technology Stack
+
+| レイヤー | 技術 | 備考 |
+|---|---|---|
+| Frontend | Flutter | Firebase Auth 統合済み |
+| Messaging UI | LINE Messaging API | Webhook 受信 + Reply API |
+| Backend API | Python / FastAPI | REST API + 画像前処理 |
+| AI Agent | Google ADK (Agent Development Kit) | LLM 推論・ツールコール専用コンテナ |
+| Auth | Firebase Authentication | Flutter と自然に統合 |
+| Primary DB | Firestore | ADK との自然な統合 |
+| Vector DB | Elasticsearch (Self-hosted on Compute Engine, Basic license) | ハイブリッド検索（キーワード + ベクトル）。e2-medium VM に単一ノード構成で運用 |
+| Object Storage | Cloudflare R2 | 画像などの大容量ファイル |
+| Infrastructure | Google Cloud Run | パブリック公開、コンテナ 2 種 |
+| Async Queue | Cloud Tasks | LINE の 5 秒タイムアウト対応 + 楽天 API レート制限遵守 |
+| Logging | Cloud Logging | ADK の Event Stream を出力 |
+| Image Gen | Nano Banana 2 / Imagen 4 (PoC 要) | コーディネート画像生成 |
+| Image Analysis | Gemini 2.0 Flash | 服画像の構造化出力、低コスト 
+
+---
+
+## 3. Architecture Classification (Hexagonal DDD SKILL.md § 1)
+
+**Classification: Large**
+
+理由:
+- LINE・Web という複数の入力チャネルが存在し、ライフサイクルが異なる。
+- 楽天検索とクローゼット検索という 2 種類の Output Port が存在し、スイッチ可能である必要がある。
+- コーディネート生成（画像生成）は副作用が大きく、独立した Use Case として分離が必要。
+
+---
+
+## 4. Domain Model (DDD)
+
+### 4.1 Bounded Contexts
+
+```
+┌─────────────────────────────┐   ┌──────────────────────────────────┐
+│   Closet Context            │   │   Styling Context                │
+│                             │   │                                  │
+│  ClothingItem (Aggregate)   │   │  StyleSession (Aggregate)        │
+│  ClosetRepository (Port)    │   │  CoordinateProposal (Entity)     │
+│  ImageEmbedding (VO)        │   │  UserPreference (VO)             │
+│  ClothingTag (VO)           │   │  StyleResult (VO)                │
+└─────────────────────────────┘   └──────────────────────────────────┘
+          ↑                                    ↑
+          │  (Anti-Corruption Layer)           │  (Anti-Corruption Layer)
+┌─────────────────────────────┐   ┌──────────────────────────────────┐
+│  Rakuten Context (External) │   │  LINE Context (External)         │
+│  RakutenItemPort (Port)     │   │  LineWebhookAdapter              │
+│  RakutenItemAdapter (Impl)  │   │  LineReplyAdapter                │
+└─────────────────────────────┘   └──────────────────────────────────┘
+```
+
+### 4.2 Aggregates & Value Objects
+
+#### Closet Context
+
+| 要素 | 種別 | 責務 |
+|---|---|---|
+| `ClothingItem` | Aggregate Root | 1 着の服。色・カテゴリ・タグ・画像 URL・embedding vector を保持 |
+| `ClothingItemId` | Value Object | UUID |
+| `ClothingTag` | Value Object | タグ文字列の集合（カテゴリ・色・シーズンなど） |
+| `ImageEmbedding` | Value Object | float[]。Elasticsearch に格納するベクトル |
+| `ClosetRepository` | Output Port | CRUD + ハイブリッド検索（Firestore + Elasticsearch） |
+
+#### Styling Context
+
+| 要素 | 種別 | 責務 |
+|---|---|---|
+| `StyleSession` | Aggregate Root | LINE セッションを表現。ステートマシン（画像受信→分析→選択→提案→生成→完了） |
+| `StyleSessionId` | Value Object | UUID |
+| `CoordinateProposal` | Entity | 提案されたコーディネートアイテムのリスト |
+| `UserPreference` | Value Object | ユーザーの好み情報（テキスト入力から収集） |
+| `StyleResult` | Value Object | 生成されたコーディネート画像の URL + 構成アイテムのリスト |
+| `ClothingSource` | Value Object (Enum) | `CLOSET` / `SHARED_CLOSET` / `RAKUTEN` |
+
+### 4.3 Domain Invariants
+
+- `StyleSession` は画像なしに分析フェーズに進めない。
+- `ClothingSource.CLOSET` を選択した場合、ユーザーのクローゼットにデータが存在しなければ提示できない。
+- `ClothingSource.SHARED_CLOSET` は常に選択可能（共有データが存在することを前提とする）。
+- コーディネート生成は必ずユーザーが服を選択してから実行する（同意なき自動生成禁止）。
+- **セッションの完了:** 1セッションにつき最終的に生成・提示できるコーディネート画像は1つまでとする。画像が生成・送信された時点でセッションは `COMPLETED` 状態となる。
+- **セッションの再開と新規開始:** `COMPLETED` 状態、または一定時間（例: 3時間）経過してタイムアウトしたセッションの後に新しい画像がアップロードされた場合は、既存セッションを引き継がず、新規セッションを作成する。
+- ユーザー 1 名あたりの `ClothingItem` 上限は `MAX_CLOSET_IMAGES_PER_USER`（デフォルト: 20）。
+
+---
+
+## 5. Ports & Adapters (Hexagonal Implementation Template § 3)
+
+### 5.1 Input Ports
+
+| Port | 実装 Adapter | 呼び出しタイミング |
+|---|---|---|
+| `LineWebhookInputPort` | `LineWebhookAdapter` (FastAPI) | LINE Webhook 受信時 |
+| `WebUploadInputPort` | `WebUploadAdapter` (FastAPI) | Flutter Web からのアップロード |
+| `StyleCommandPort` | `StyleSessionApplicationService` | Agent からの Use Case 呼び出し |
+| `ClosetManagementInputPort` | `ClosetManagementAdapter` (FastAPI) | 署名付き URL 発行（`GET /closet/upload-url`）・アップロード完了受付（`POST /closet/items/{item_id}/complete`）・アイテム削除（`DELETE /closet/items/{item_id}`） |
+| `CloudTasksWorkerInputPort` | `CloudTasksWorkerAdapter` (adk-agent-service) | Cloud Tasks からの非同期ジョブ受信（`POST /internal/tasks/process-upload`） |
+| `SessionInputPort` | `SessionAdapter` (FastAPI) | セッション開始（`POST /sessions`） |
+
+### 5.2 Output Ports
+
+| Port | Adapter 実装 | 備考 |
+|---|---|---|
+| `ClosetRepositoryPort` | `FirestoreClosetRepository` | メタデータ CRUD |
+| `EmbeddingSearchPort` | `ElasticsearchEmbeddingRepository` | ベクトル + キーワードハイブリッド検索 |
+| `ClothingSearchPort` | `RakutenItemAdapter` / `ClosetSearchAdapter` / `SharedClosetSearchAdapter` | 差し替え可能（`ClothingSource` で切り替え） |
+| `ImageStoragePort` | `R2ImageStorageAdapter` | Cloudflare R2 への画像保存・取得 |
+| `LineReplyPort` | `LineReplyAdapter` | LINE Reply API |
+| `StyleSessionRepositoryPort` | `FirestoreStyleSessionRepository` | セッション状態の永続化 |
+| `TaskQueuePort` | `CloudTasksAdapter` | 非同期ジョブ投入 |
+| `ImageGenerationPort` | `GeminiImageGenerationAdapter` | コーディネート画像生成（PoC 要） |
+
+> **Clean Architecture 原則:** `ClothingSearchPort` を抽象 Port として定義することで、楽天・クローゼット・将来の他サービス（ZOZOTOWN 等）に容易にスイッチ可能とする。
+
+---
+
+## 6. Use Cases
+
+### 6.1 AnalyzeClothingImageUseCase
+
+- **Input:** `userId`, `imageBytes`, `sessionId`
+- **Output:** `ClothingAnalysisResult { category, colors, tags, season, style }`（Structured Output）
+- **Success:** Firestore に分析結果を保存し、`StyleSession` を「分析完了」状態に遷移
+- **Failure:** 画像フォーマット不正、Gemini API エラー
+- **Agent Tool:** `analyze_clothing_image` (Gemini 2.0 Flash, Structured Output)
+
+### 6.2 SelectClothingSourceUseCase
+
+- **Input:** `sessionId`, `userId`, `source: ClothingSource`
+- **Output:** `void`（`StyleSession` の `source` フィールドを更新）
+- **Validation:** `CLOSET` 選択時はユーザーのクローゼットにデータが存在することを確認。`SHARED_CLOSET` は常に選択可能
+
+### 6.3 SearchCandidateItemsUseCase
+
+- **Input:** `sessionId`, `analysisResult`, `userPreference`
+- **Output:** `List<CandidateItem>` （共通スキーマ、`ClothingSource` に関わらず同一構造）
+- **Routing:** `CLOSET` → `ClosetSearchAdapter`（ユーザー個人クローゼット）、`SHARED_CLOSET` → `SharedClosetSearchAdapter`（共有デモクローゼット）、`RAKUTEN` → `RakutenItemAdapter`
+- **Agent Tool:** `search_rakuten`（楽天用）、`search_closet`（クローゼット・共有クローゼット共通）
+
+```python
+# 共通スキーマ (CandidateItem)
+class CandidateItem(BaseModel):
+    item_id: str
+    source: ClothingSource  # CLOSET | SHARED_CLOSET | RAKUTEN
+    name: str
+    image_url: str
+    price: Optional[int]     # None if CLOSET / SHARED_CLOSET
+    category: str
+    tags: list[str]
+    external_url: Optional[str]  # 楽天商品ページ URL など
+    attribution: Optional[str]   # SHARED_CLOSET の場合のみ: "Clothing Dataset (CC BY-SA 4.0)"
+```
+
+### 6.4 AskUserPreferenceUseCase
+
+- **Input:** `sessionId`, `analysisResult`
+- **Output:** `UserPreference { style, colors, occasion, budget }`
+- **Agent Tool:** `ask_preference`（LINE インタラクティブメッセージで選択肢を提示）
+
+### 6.5 GenerateCoordinateUseCase
+
+- **Input:** `sessionId`, `selectedItems: List<CandidateItem>`
+- **Output:** `StyleResult { coordinateImageUrl, items }`
+- **Agent Tool:** `style_synthesizer`
+- **モデル制約:** コーディネート画像生成（複数服画像をインプットとした合成・仮想着用）は **Imagen 4** または **Nano Banana 2** でのみ実現可能。Gemini 2.0 Flash は画像分析専用とし、画像生成には使用しない。
+
+#### PoC テストスクリプト要件
+
+コーディネート画像生成の実現可否を検証するため、以下の仕様で独立したテストスクリプトを作成・保持する。
+
+| 項目 | 仕様 |
+|---|---|
+| **配置場所** | `gen-fashion/poc/image_generation/` |
+| **スクリプト** | `run_poc.py`（単一ファイル、`python run_poc.py` で即起動） |
+| **テスト画像** | 同ディレクトリ `gen-fashion/poc/image_generation/samples/` に保管 |
+| **テスト対象** | Imagen 4 と Nano Banana 2 の両モデルを同一入力で実行し結果を並列保存 |
+| **出力** | `gen-fashion/poc/image_generation/results/` に `imagen4_result.jpg` / `nanobanana2_result.jpg` を出力 |
+| **依存関係** | コンテナ不要。`pip install -r requirements.txt` のみで動作（requirements.txt を同ディレクトリに配置） |
+| **API 認証** | `GOOGLE_CLOUD_PROJECT` 環境変数のみで動作（`.env` ファイルサポートを含む） |
+
+**目的:** PoC ファイルを保持することで誰でも同条件で再現・比較でき、Imagen 4 と Nano Banana 2 のどちらが品質・コスト・速度で優れるかを客観的に判断できる状態を維持する。PoC が失敗した場合のフォールバックはコラージュ画像（服画像を並べたもの）とする。
+
+### 6.7 GetUploadUrlUseCase
+
+- **Endpoint:** `GET /closet/upload-url?item_id={item_id}`
+- **Input:** `userId`（Firebase ID Token から取得）、`item_id`（UUID、Flutter 側で生成）
+- **Output:** `{ upload_url: str, item_id: str }` — R2 署名付き PUT URL（有効期限: 15 分）
+- **Validation:** `users/{userId}/closet` のドキュメント数が `MAX_CLOSET_IMAGES_PER_USER` 未満であることを確認。超過時は `429 Too Many Requests`
+- **Side Effect:** なし（URL 発行のみ。Firestore への書き込みは `RegisterClothingItemUseCase` で行う）
+- **R2 パス:** `/{userId}/closet/{item_id}.jpg`
+
+### 6.8 RegisterClothingItemUseCase
+
+- **Endpoint:** `POST /closet/items/{item_id}/complete`
+- **Input:** `userId`（Firebase ID Token から取得）、`item_id`（パスパラメーター）
+- **Output:** `{ item_id: str, status: "PROCESSING" }`
+- **Steps:**
+  1. Firestore `users/{userId}/closet/{item_id}` にプレースホルダー文書を作成: `{ status: "PROCESSING", imageUrl: "/{userId}/closet/{item_id}.jpg", createdAt }`
+  2. `CLOUD_TASKS_QUEUE_EMBED` キューに `ProcessUploadedClothingItemJob { userId, item_id }` を投入
+- **Failure:** R2 にファイルが存在しない場合（Flutter の PUT 失敗を検知できない点は許容）、Cloud Tasks ジョブが失敗し `status: "ERROR"` に更新される
+
+### 6.9 ProcessUploadedClothingItemUseCase
+
+- **Endpoint:** `POST /internal/tasks/process-upload`（Cloud Tasks からのみ呼び出し）
+- **Input:** Cloud Tasks ジョブペイロード `{ userId: str, item_id: str }`
+- **実行コンテナ:** `adk-agent-service`（ADK 不使用。Gemini API・Elasticsearch・Firestore を直接呼び出す）
+- **Steps:**
+  1. R2 から `/{userId}/closet/{item_id}.jpg` の画像 bytes を取得
+  2. Gemini 2.0 Flash で画像を Structured Output 分析 → `ClothingAnalysisResult { category, colors, tags, season, style }`
+  3. `gemini-embedding-2`（`output_dimensionality=768`）で画像 bytes を Embedding → `ImageEmbedding` vector（dims=768）
+  4. Firestore `users/{userId}/closet/{item_id}` を更新: `{ status: "READY", category, colors, tags, season, embeddingId: item_id }`
+  5. Elasticsearch `clothing_items` インデックスに upsert: `{ item_id, user_id: userId, is_shared: false, tags, category, colors, season, embedding }`
+- **Failure handling:** 例外発生時は Firestore の `status` を `"ERROR"` に更新。Cloud Tasks の自動リトライ（最大3回）に委ねる。3回失敗後は Cloud Tasks の Dead Letter Queue に転送
+
+### 6.10 DeleteClosetItemUseCase
+
+- **Endpoint:** `DELETE /closet/items/{item_id}`
+- **Input:** `userId`（Firebase ID Token から取得）、`item_id`（パスパラメーター）
+- **Output:** `204 No Content`
+- **Steps:**
+  1. Firestore `users/{userId}/closet/{item_id}` が存在することを確認（存在しない場合は `404 Not Found`）
+  2. Elasticsearch `clothing_items` インデックスから `item_id` の doc を削除
+  3. R2 から `/{userId}/closet/{item_id}.jpg` を削除
+  4. Firestore `users/{userId}/closet/{item_id}` を削除
+- **Failure handling:** ステップ 2-3 の失敗はエラーログに記録するが、ステップ 4（Firestore 削除）は続行する。R2・ES の孤立データは MVP では許容する
+- **Note:** `status: "PROCESSING"` 中のアイテムも削除可能とする。その後 Cloud Tasks ジョブが実行された場合、削除済み Firestore doc への更新は失敗するが、エラーは無視してよい
+
+### 6.11 CreateSessionUseCase
+
+- **Endpoint:** `POST /sessions`
+- **Input:** `userId`（Firebase ID Token から取得）
+- **Output:** `{ session_id: str, status: "SOURCE_SELECTING" }`
+- **Steps:**
+  1. UUIDv4 で `sessionId` を生成
+  2. Firestore `sessions/{sessionId}` を作成: `{ userId, status: "SOURCE_SELECTING", source: "UNSET", createdAt, updatedAt }`
+- **Precondition:** なし。アクティブなセッションが存在する場合に再度呼び出すか否かの制御は Flutter 側の責務とする
+- **Phase:** Web GUI Phase 1a のコーディネートフロー開始エントリポイント。LINE フロー（Phase 1b）では LINE Webhook 受信時に FastAPI が内部的に本 Use Case を呼び出す
+- **初期 status が `SOURCE_SELECTING` の理由:** Web GUI では服画像はクローゼットに登録済み（Use Cases 6.7-6.9 で処理完了）のため、新規画像アップロードなしにソース選択フェーズから開始する
+
+### 6.6 ReplyCoordinateToLineUseCase
+
+- **Input:** `sessionId`, `styleResult`
+- **Output:** `void`
+- **Side Effect:** LINE Reply API でコーディネート画像 + テキストを送信
+
+---
+
+## 7. Agent Design (ADK)
+
+### 7.1 Agent 構成
+
+```
+StylingOrchestratorAgent
+├── ClosetAgent         # クローゼット検索・管理
+└── StylingAgent        # コーディネート生成・提案
+```
+
+**Phase 1 では ClosetAgent + StylingAgent の 2 体から開始する。**
+
+`StylingOrchestratorAgent` が入力を判断し、適切なサブエージェントに委譲する。ADK のネイティブ設計思想（Sub-agent delegation）に準拠。
+
+**デフォルトモデル:** 全 Agent の LLM は `gemini-2.0-flash` を使用する。環境変数 `AGENT_MODEL` で上書き可能とし、デモ中のモデル切り替えに対応する。
+
+### 7.2 Agent Tools
+
+| Tool | モデル | 入力 | 出力 | 備考 |
+|---|---|---|---|---|
+| `analyze_clothing_image` | Gemini 2.0 Flash | 画像 bytes | `ClothingAnalysisResult` (Structured Output) | 低コスト、高速 |
+| `search_rakuten` | — (API 呼び出し) | 検索パラメーター (Structured) | `List<CandidateItem>` | Cloud Tasks 経由でレート制限遵守 |
+| `search_closet` | — (DB 呼び出し) | `ClothingTag`, `ImageEmbedding` | `List<CandidateItem>` | ハイブリッド検索 (ES + Firestore)。Agent が分析結果をもとに「合う服の特徴」を自然言語で表現し、その説明テキストを `gemini-embedding-2` で Embedding してクエリベクトルとする |
+| `ask_preference` | — | `ClothingAnalysisResult` | `UserPreference` | LINE インタラクティブメッセージ |
+| `style_synthesizer` | Imagen 4 / Gemini 2.0 Flash (PoC) | `List<CandidateItem>` + 画像 | `StyleResult` | 最終コーディネート画像生成 |
+
+> 将来の拡張性のため、Tool はすべて独立したモジュールとして定義し、Tool Registry パターンで管理すること。
+
+### 7.3 Rakuten API レート制限対応
+
+- エージェントが `search_rakuten` Tool を呼び出した際、直接 API を叩かず **Cloud Tasks にジョブを投入する**。
+- Cloud Tasks のキュー設定: `maxConcurrentDispatches: 1`（物理的に 1 秒 1 リクエストを保証）。
+
+### 7.4 LINE の 5 秒タイムアウト対応
+
+- LINE Webhook を受信した FastAPI エンドポイントは即座に `200 OK` を返す。
+- 処理本体（ADK Agent 実行）は Cloud Tasks 経由で非同期実行する。
+- 結果は LINE Reply API（`replyToken`）または Push API で後から送信する。
+
+---
+
+## 8. Data Architecture
+
+### 8.1 Firestore コレクション設計
+
+```
+users/{userId}                        # Firebase UID をドキュメント ID とする
+  - displayName: string
+  - lineUserId: string                # LINE ユーザー ID（紐付け後に書き込み）
+  - createdAt: timestamp
+
+lineUsers/{lineUserId}                # lineUserId → Firebase UID の逆引きマッピング
+  - userId: string                    # Firebase UID（users コレクションへの参照）
+  - createdAt: timestamp
+
+users/{userId}/closet/{itemId}        # ユーザー個人クローゼット
+  - status: enum ("PROCESSING" | "READY" | "ERROR")  # ProcessUploadedClothingItemUseCase の処理状態
+  - imageUrl: string (R2 URL)
+  - category: string        # status="READY" 以降のみ有効
+  - tags: string[]          # status="READY" 以降のみ有効
+  - season: string          # status="READY" 以降のみ有効
+  - colors: string[]        # status="READY" 以降のみ有効
+  - embeddingId: string     # Elasticsearch document ID。status="READY" 以降のみ有効
+  - createdAt: timestamp
+
+shared_closet/{itemId}                # 全ユーザー共通デモクローゼット（読み取り専用）
+  - imageUrl: string (R2 URL)
+  - category: string
+  - tags: string[]
+  - season: string
+  - colors: string[]
+  - embeddingId: string  # Elasticsearch document ID（clothing_items インデックス、user_id: "__shared__"）
+  - datasetSource: string  # "kaggle:agrigorev/clothing-dataset-full"
+  - originalLabel: string  # データセット元のラベル（例: "T-Shirt"）
+  - createdAt: timestamp   # シーディング日時
+
+sessions/{sessionId}
+  - userId: string
+  - lineReplyToken: string
+  - status: enum (IMAGE_RECEIVED | ANALYZING | SOURCE_SELECTING | SEARCHING | PROPOSING | GENERATING | COMPLETED | ERROR)
+  - source: enum (CLOSET | SHARED_CLOSET | RAKUTEN | UNSET)
+  - analysisResult: map
+  - userPreference: map
+  - selectedItems: array
+  - styleResult: map
+  - createdAt: timestamp
+  - updatedAt: timestamp
+```
+
+### 8.2 Elasticsearch インデックス設計
+
+```json
+// index: clothing_items
+{
+  "mappings": {
+    "properties": {
+      "item_id": { "type": "keyword" },
+      "user_id": { "type": "keyword" },  // ユーザー個人: Firebase UID / 共有: "__shared__"
+      "is_shared": { "type": "boolean" },
+      "tags": { "type": "keyword" },
+      "category": { "type": "keyword" },
+      "colors": { "type": "keyword" },
+      "season": { "type": "keyword" },
+      "embedding": {
+        "type": "dense_vector",
+        "dims": 768,
+        "index": true,
+        "similarity": "cosine"
+      }
+    }
+  }
+}
+```
+
+ハイブリッド検索: テキストクエリ（キーワード）と Embedding Vector を組み合わせた `knn` + `query` の Hybrid Query。`SHARED_CLOSET` 検索時は `user_id: "__shared__"` でフィルタリング。
+
+### 8.3 Embedding パイプライン
+
+#### インデックス側（服画像の格納）
+
+| 場面 | 入力 | タイミング | 実行箇所 |
+|---|---|---|---|
+| ユーザーのクローゼット | 服の画像 bytes | アップロード毎・非同期 | `RegisterClothingItemUseCase` が Cloud Tasks 投入 → `ProcessUploadedClothingItemUseCase` が実行 |
+| 共有クローゼット | 服の画像 bytes | 初回シーディング時のみ | `run_seed.py` バッチ |
+
+- **モデル:** `gemini-embedding-2`
+- **output_dimensionality:** `768`（公式 Recommended）
+- 生成した vector を `clothing_items` インデックスの `embedding` フィールドに格納する
+
+#### クエリ側（検索時）
+
+`SearchCandidateItemsUseCase` 内の `search_closet` ツール実行時に以下のステップで処理する：
+
+1. `AnalyzeClothingImageUseCase` が生成した `ClothingAnalysisResult`（category / colors / style / tags）を入力とする
+2. `ClosetAgent` の LLM が `ClothingAnalysisResult` と `UserPreference` をもとに、**コーディネートに合う服の特徴を自然言語テキストで生成する**（Structured Output。例：`{ "description": "ネイビーまたはブラックのスリムパンツ、カジュアル寄り" }`）
+3. その説明テキストを `gemini-embedding-2`（`output_dimensionality=768`）で Embedding し、クエリベクトルとする
+4. ES に対して画像ベクトル（インデックス）× テキストベクトル（クエリ）の **cross-modal knn 検索** + キーワード検索（tags / category）の Hybrid Query を実行する
+
+> `gemini-embedding-2` は画像・テキストを同一ベクトル空間にマッピングするため、cross-modal 検索が成立する。
+
+### 8.4 Cloudflare R2
+
+#### アップロード仕様
+
+- **バケット名:** `gen-fashion-images`
+- **ディレクトリ構成:** `/{userId}/closet/{itemId}.jpg`
+- **署名付き URL:** FastAPI の `GetUploadUrlUseCase` で R2 SDK 経由で 15 分 TTL の PUT URL を発行。Flutter Web が直接 R2 に PUT
+
+#### CORS 設定
+
+Flutter Web からのブラウザベース PUT リクエストに対応するため、R2 バケットに以下の CORS ルールを設定：
+
+```json
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": ["https://localhost:8080", "https://your-flutter-web-domain.vercel.app"],
+      "AllowedMethods": ["GET", "PUT", "POST", "OPTIONS"],
+      "AllowedHeaders": ["*"],
+      "ExposeHeaders": ["ETag"],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+}
+```
+
+**フロー:**
+1. Flutter が `OPTIONS` （preflight） → R2 が CORS ヘッダ返却 (`Access-Control-Allow-Origin` など)
+2. Flutter が `PUT {signed_url}` でバイナリアップロード → R2 が署名検証 + CORS チェック → 200 OK
+
+署名付き URL は PUT 権限を内包するため、CORS チェック後は R2 が PUT を受け入れる。
+
+---
+
+## 9. Infrastructure & Deployment
+
+### 9.1 コンテナ構成（Cloud Run 上の 2 コンテナ）
+
+| コンテナ | 役割 |
+|---|---|
+| `fastapi-service` | REST API（LINE Webhook 受信、画像前処理、Cloud Tasks 投入）。Gemini API 依存を持たない |
+| `adk-agent-service` | AI 処理専用（ADK Agent 実行 + 直接 Gemini 呼び出しを含む）。Cloud Tasks からの `POST /internal/tasks/process-upload` も受信する |
+
+両コンテナとも **Google Cloud Run** にデプロイし、パブリックに公開する。
+
+#### デプロイ設定
+
+| 項目 | `fastapi-service` | `adk-agent-service` | 理由 |
+|---|---|---|---|
+| **Min Instances** | 0 | 1 | ADK の LLM 推論コールドスタートは 10-30 秒。ユーザーの待ち時間を削減するため常時起動。FastAPI は軽量で冷えても 1 秒程度なため min: 0 で初期コスト削減 |
+| **Max Instances** | 10 | 5 | FastAPI は軽量で高スループット。ADK は メモリ・CPU 集約的なため低めに制御 |
+| **Memory** | 1GB | 2GB | |
+| **CPU** | 1 | 1 | |
+| **Timeout** | 60s | 600s（10 分） | FastAPI は即座に 200 返却（LINE 5 秒タイムアウト対応済み）。ADK Agent は推論に時間がかかるため大きめに設定 |
+| **Service Account** | GCP デフォルト（or 専用 SA） | GCP デフォルト（or 専用 SA） | `roles/aiplatform.user`（Vertex AI/Gemini）、`roles/datastore.user`（Firestore）、`roles/logging.logWriter`（Cloud Logging） を付与 |
+
+### 9.2 Elasticsearch インスタンス（Compute Engine）
+
+- **マシンタイプ:** `e2-medium`（2 vCPU, 4GB RAM）
+- **リージョン:** `asia-northeast1` （日本、GCP デフォルト）
+- **ストレージ:** 30GB 永続ディスク（SSD 推奨）
+- **ネットワーク:** VPC Peering または Cloud NAT を通じて Cloud Run からアクセス可能とする
+- **インストール:** `sudo apt-get install elasticsearch` で Elasticsearch をインストール、systemd で自動起動
+- **運用:** 脆弱性パッチ・メジャーバージョン更新は手動（ハッカソン MVP 規模では許容）。ハッカソン終了後に VM 削除して廃止
+- **PoC 検証項目:** Compute Engine 上でのインストール・起動確認、Cloud Run プライベート接続検証、日本語分析器の要否確認（MVP では不要の見込み）
+
+### 9.3 Logging
+
+- ADK の Event Stream は **Cloud Logging** に出力する。
+- ローカル開発時は **ADK Web UI** を使用する。
+- 本番環境は Cloud Logging でクエリ可能な状態を維持する。
+
+### 9.4 ローカル開発環境セットアップ
+
+#### 概要
+
+チーム開発での環境再現性を担保するため、以下の構成を採用：
+
+- **Docker Compose:** Elasticsearch + Firestore Emulator をコンテナで隔離
+- **ローカル Python 環境:** FastAPI・ADK を `python -m uvicorn` で起動（Hot Reload 対応）
+- **Makefile:** 開発コマンド統一（`make dev`, `make test` 等）
+
+#### ファイル構成
+
+| ファイル | 概要 |
+|---|---|
+| `docker-compose.yml` | Elasticsearch（`localhost:9200`）+ Firestore Emulator（`localhost:8080`）。`make dev` で自動起動 |
+| `Makefile` | `make dev`（全サービス起動）、`make test`（テスト実行）、`make clean`（後始末） |
+| `.env.example` | ローカル開発用の環境変数テンプレート（Git 管理）。`.env` にコピーして利用 |
+| `README_LOCAL_DEV.md` | セットアップ手順の詳細ドキュメント |
+
+#### 起動手順（簡略版）
+
+```bash
+# 1. 環境変数テンプレートをコピー
+cp .env.example .env
+
+# 2. 全サービス起動（docker-compose + FastAPI + ADK）
+make dev
+
+# 3. ブラウザで確認
+# - FastAPI: http://localhost:8000/docs
+# - ADK Web UI: http://localhost:8080  (ADK が起動した場合)
+# - Firestore Emulator: http://localhost:4000
+```
+
+#### 環境変数（ローカル開発時）
+
+`.env.example` に以下をテンプレートとして記載：
+
+```env
+# GCP
+GOOGLE_CLOUD_PROJECT=your-gcp-project
+GOOGLE_GENAI_USE_VERTEXAI=false  # ローカルでは Gemini API キー認証を使用
+
+# 開発用 API キー（ローカルテスト用ダミー値も可）
+GEMINI_API_KEY=your-test-key
+RAKUTEN_APP_ID=your-test-key
+R2_ACCESS_KEY_ID=your-test-key
+R2_SECRET_ACCESS_KEY=your-test-key
+LINE_CHANNEL_SECRET=your-test-key
+LINE_CHANNEL_ACCESS_TOKEN=your-test-key
+
+# ローカルサービス URL
+ELASTICSEARCH_URL=http://localhost:9200
+FIRESTORE_DATABASE_ID=(default)
+```
+
+#### テスト実行
+
+```bash
+# 単体テスト + 統合テスト（Firestore Emulator + Elasticsearch 接続）
+make test
+```
+
+---
+
+## 10. Authentication
+
+- **Firebase Authentication** を使用する（Flutter と自然に統合）。
+- Phase 1 では `user_id` によるフィルタリングのみ実装する（Row Level Security は不要）。
+- 管理者ダッシュボードは Phase 2 とする。
+
+### 10.1 Web GUI ログイン（通常フロー）
+
+Flutter Web で **Google Sign-In** を使用。Firebase Auth が UID を発行し、初回ログイン時に `users/{uid}` ドキュメントを作成する。
+
+### 10.2 LINE → GUI 紐付けフロー（LIFF 経由）
+
+LINE Webhook で `lineUserId` を受信した際に `lineUsers/{lineUserId}` が存在しない場合、以下のフローで GUI へ誘導してアカウント紐付けを行う。
+
+```
+[ユーザー] LINE Bot にメッセージ送信
+     ↓
+[FastAPI] lineUsers/{lineUserId} を Firestore で検索
+     ↓ 未登録
+[LINE Bot] 「アカウント登録が必要です」+ LIFF URL をリプライ
+     ↓
+[ユーザー] LIFF URL をタップ → LINE アプリ内ブラウザで Flutter Web (LIFF) が開く
+     ↓
+[LIFF] liff.init() → LINE Login 自動実行 → LINE Access Token 取得
+     ↓
+[LIFF → FastAPI] POST /auth/line-link  { lineAccessToken }
+     ↓
+[FastAPI]
+  1. LINE API で lineAccessToken を検証 → lineUserId / displayName を取得
+  2. Firebase Admin SDK で Custom Token を生成（uid = 新規 UUID）
+  3. Firestore に書き込み:
+       users/{uid}          { lineUserId, displayName, createdAt }
+       lineUsers/{lineUserId} { userId: uid, createdAt }
+  4. Custom Token をレスポンスで返却
+     ↓
+[LIFF] Firebase Auth で signInWithCustomToken(customToken) → 認証完了
+     ↓
+[LIFF] 登録完了画面を表示し、LINE を閉じるよう案内
+     ↓
+[ユーザー] LINE Bot に再度メッセージ → 通常フローで処理
+```
+
+**実装ポイント:**
+
+| 項目 | 仕様 |
+|---|---|
+| LIFF URL | `https://liff.line.me/{LIFF_ID}` — Flutter Web の `/line-signup` ルートにマッピング |
+| Custom Token の UID | 新規 UUID を発行（LINE UID を Firebase UID として使わない） |
+| 既存 Google Sign-In ユーザーとの統合 | Phase 1 では対象外。同一人物でも別アカウントとして扱う（Phase 2 で統合） |
+| LIFF のサイズ | `full`（フルスクリーン）を使用し、登録完了後は `liff.closeWindow()` で閉じる |
+
+### 10.3 FastAPI 認証ミドルウェア
+
+#### Flutter → FastAPI（Firebase ID Token 検証）
+
+**責務:** すべての認証が必要なエンドポイント（`/closet/...`, `/sessions/...`）で Firebase ID Token を検証し、`user_id` を抽出する。
+
+**実装パターン:**
+
+```python
+from firebase_admin import auth as firebase_auth
+from fastapi import HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthCredentials
+
+security = HTTPBearer()
+
+async def verify_firebase_token(credentials: HTTPAuthCredentials = Depends(security)) -> str:
+    """Firebase ID Token を検証し、user_id を返す"""
+    token = credentials.credentials
+    try:
+        decoded = firebase_auth.verify_id_token(token)
+        return decoded['uid']
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+@app.get("/closet/upload-url")
+async def get_upload_url(item_id: str, user_id: str = Depends(verify_firebase_token)):
+    # user_id は Firebase UID として使用可能
+    ...
+```
+
+**トークン検証の詳細:**
+- Flutter は Google Sign-In または LINE Login で Firebase ID Token を取得し、`Authorization: Bearer {token}` で送付
+- FastAPI は `firebase_admin.auth.verify_id_token()` で署名・有効期限・発行者を検証
+- トークン失効時は 401 Unauthorized を返す。Flutter は再ログインフローを実行
+
+#### LINE Webhook での認証済みユーザー識別
+
+```python
+# FastAPI での lineUserId → userId 解決パターン
+async def resolve_user(line_user_id: str) -> str | None:
+    doc = await firestore.collection("lineUsers").document(line_user_id).get()
+    if not doc.exists:
+        return None  # 未登録 → LIFF 誘導
+    return doc.get("userId")
+```
+
+#### 内部エンドポイント（Cloud Tasks → adk-agent-service）
+
+**現設計では不要:** Cloud Tasks は GCP 内部のジョブキューサービスで、Cloud Run の VPC 内で実行。ADK Agent への内部呼び出しは private network に限定される。
+
+**将来的な ADK ↔ FastAPI 通信が必要になった場合:** Cloud Run OIDC トークンを使用。ADK（Cloud Run サービス）が自動取得した OIDC トークンを HTTP `Authorization: Bearer {oidc_token}` で送付し、FastAPI は `google-auth` ライブラリで検証。詳細は ADL-011 の "ケース B-3" を参照。
+
+---
+
+## 11. Web GUI (Flutter)
+
+- Firebase Auth によるログイン。
+- クローゼット管理画面（画像アップロード、上限: `MAX_CLOSET_IMAGES_PER_USER` = 20）。
+- **エージェント思考の可視化:** 複数エージェントが議論・推論する様子を Accordion UI でリアルタイム表示する（ADK Event Stream を WebSocket or SSE で Flutter に配信）。
+
+---
+
+## 12. Environment Variables & Secret Management
+
+### 12.1 シークレット管理ポリシー
+
+- **シークレット（機密情報）は Google Cloud Secret Manager で管理する。** Cloud Run のデプロイ時に `--set-secrets` でシークレットを環境変数としてマウントする。
+- **非機密の設定値は Cloud Run の環境変数（`--set-env-vars`）に直接設定する。**
+- アプリケーションコードは両者を区別せず、すべて環境変数として読み取る（差異はデプロイ設定にのみ存在する）。
+- シークレットを `.env` ファイルや Git リポジトリにコミットしない。ローカル開発時のみ `.env`（`.gitignore` 済み）を使用する。
+- **Gemini / Vertex AI 認証:** API キーは使用しない。`GOOGLE_GENAI_USE_VERTEXAI=true` を設定し、Cloud Run のサービスアカウントに `roles/aiplatform.user` を付与して Application Default Credentials（ADC）経由で認証する。これによりシークレット管理対象から Gemini 認証情報を除外できる。
+- **Firestore 認証:** 同じく Cloud Run のサービスアカウント（ADC）経由。シークレット不要。
+- **ADK → FastAPI コールバック URL（`FASTAPI_INTERNAL_URL`）は不要。** ADL-011 の選択肢 A（Firestore 中継）を採用したため、ADK から FastAPI への直接 HTTP コールバックは発生しない。
+
+### 12.2 環境変数一覧
+
+| 変数名 | デフォルト | 管理方法 | 説明 |
+|---|---|---|---|
+| `MAX_CLOSET_IMAGES_PER_USER` | `20` | env var | ユーザーあたりのクローゼット画像上限 |
+| `LINE_CHANNEL_SECRET` | — | **Secret Manager** | LINE Webhook 署名検証 |
+| `LINE_CHANNEL_ACCESS_TOKEN` | — | **Secret Manager** | LINE Reply/Push API |
+| `RAKUTEN_APP_ID` | — | **Secret Manager** | 楽天 Ichiba Item Search API（API 呼び出しの認証クレデンシャル） |
+| `R2_ACCESS_KEY_ID` | — | **Secret Manager** | Cloudflare R2 アクセスキー ID（署名付き URL 発行・画像取得） |
+| `R2_SECRET_ACCESS_KEY` | — | **Secret Manager** | Cloudflare R2 シークレットアクセスキー |
+| `ELASTICSEARCH_API_KEY` | — | **Secret Manager** | Elasticsearch 認証 API キー（Self-hosted Basic で認証を有効化する場合） |
+| `GOOGLE_CLOUD_PROJECT` | — | env var | GCP プロジェクト ID |
+| `GOOGLE_GENAI_USE_VERTEXAI` | `true` | env var | `google.genai` クライアントを Vertex AI モードで動作させる（ADC 認証） |
+| `FIRESTORE_DATABASE_ID` | `(default)` | env var | Firestore データベース ID |
+| `ELASTICSEARCH_URL` | — | env var | Elasticsearch エンドポイント |
+| `R2_BUCKET_NAME` | `gen-fashion-images` | env var | Cloudflare R2 バケット名 |
+| `R2_ACCOUNT_ID` | — | env var | Cloudflare アカウント ID |
+| `CLOUD_TASKS_QUEUE_RAKUTEN` | — | env var | 楽天 API 用 Cloud Tasks キュー名 |
+| `CLOUD_TASKS_QUEUE_AGENT` | — | env var | ADK Agent 非同期実行キュー名 |
+| `CLOUD_TASKS_QUEUE_EMBED` | — | env var | 画像 Embedding 処理（`ProcessUploadedClothingItemUseCase`）用 Cloud Tasks キュー名 |
+| `ADK_SERVICE_URL` | — | env var | `adk-agent-service` の内部 URL。`fastapi-service` が Cloud Tasks ジョブのターゲット URL を構築する際に使用 |
+| `LIFF_ID` | — | env var | LINE LIFF アプリ ID（LINE Developers Console で発行） |
+| `LINE_LOGIN_CHANNEL_ID` | — | env var | LINE Login チャネル ID（LIFF 用、Messaging API チャネルとは別） |
+| `AGENT_MODEL` | `gemini-2.0-flash` | env var | 全 Agent の LLM モデル ID。デモ中のモデル切り替えに使用 |
+
+---
+
+## 13. Architecture Decision Log (ADL)
+
+### ADL-001: Firestore を Session DB として採用
+
+- **Decision:** Firestore
+- **Alternatives:** Supabase（PostgreSQL）
+- **Rationale:** ADK との自然な統合、Supabase 使用禁止ルール。Firestore はリアルタイム更新が容易で Flutter との統合もスムーズ。
+- **Trade-off:** SQL ライクなクエリが不可。複雑な JOIN が必要な場合は Elasticsearch で補完。
+
+### ADL-002: 非同期処理に Cloud Tasks を採用
+
+- **Decision:** Cloud Tasks + Queue 制御
+- **Alternatives:** Pub/Sub、インプロセス非同期
+- **Rationale:** LINE の 5 秒タイムアウト対応が必須。楽天 API の「1 秒 1 リクエスト」制限をインフラ側で物理的に制御するため `maxConcurrentDispatches: 1` で設定。
+- **Trade-off:** Cloud Tasks のコスト（低い）と運用複雑性のトレードオフ。
+
+### ADL-003: ClothingSearchPort を抽象化して差し替え可能とする
+
+- **Decision:** Hexagonal の Output Port として `ClothingSearchPort` を定義
+- **Rationale:** 楽天・クローゼット・将来の他サービス（ZOZOTOWN 等）を同一 Port で抽象化。DDD の Anti-Corruption Layer によって外部サービスの変更が Domain に影響しない。
+- **Trade-off:** 初期実装コストが増えるが、将来の拡張性を担保。
+
+### ADL-004: 画像ベクトル化は Elasticsearch で管理
+
+- **Decision:** Elasticsearch (Self-hosted Basic)
+- **Alternatives:** Firestore Vector Search、pgvector（Supabase は使用禁止）
+- **Rationale:** ハイブリッド検索（キーワード + ベクトル）が 1 クエリで実現可能。Self-hosted Basic は無料。
+- **Trade-off:** 運用・インフラ管理が必要。ハッカソンでは検証が必要。
+
+### ADL-005: コーディネート画像生成は PoC が必要
+
+- **Decision:** Gemini 2.0 Flash / Imagen 4 でPoC を実施してから確定
+- **Rationale:** 服の画像をインプットとして、人間がその服を着ているかのような画像生成が可能かを検証する必要がある。
+- **Rollback:** PoC が失敗した場合、コラージュ画像（服の画像を並べたもの）にフォールバックする。
+
+### ADL-006: LINE の 5 秒タイムアウト対応
+
+- **Decision:** FastAPI が即座に 200 を返し、Agent 実行は Cloud Tasks 経由で非同期処理
+- **Rationale:** ADK の LLM 推論は数秒〜十数秒かかる。LINE はリトライが発生するため同期処理は不可。
+- **Implementation:** LINE Reply API の `replyToken` は 1 分有効。それを超える場合は Push API に切り替える。
+
+### ADL-007: 2 コンテナ分離（FastAPI + ADK Agent）
+
+- **Decision:** FastAPI（REST API + 画像前処理）と ADK Agent（LLM 推論・ツールコール）を分離
+- **Rationale:** スケール特性が異なる。Agent はメモリ・CPU 集約的なので独立スケールが必要。FastAPI は軽量で高スループット。
+- **Trade-off:** コンテナ間通信のオーバーヘッドが発生するが、Cloud Run 内で内部 HTTP 通信なので許容範囲。
+
+### ADL-008: CandidateItem スキーマを共通化
+
+- **Decision:** `ClothingSource`（CLOSET / RAKUTEN）に関わらず `CandidateItem` スキーマを統一
+- **Rationale:** コーディネート生成 Use Case がソースを意識しない設計。将来のソース追加でも Use Case 以降の変更が不要。
+
+### ADL-011: ADK Event Stream → Flutter SSE の中継方式
+
+- **Decision:** ADK コンテナが Firestore の `sessions/{sessionId}/agentEvents/{eventId}` サブコレクションにイベントを書き込み、FastAPI コンテナが Firestore の `on_snapshot` リスナーで変更を受け取り SSE として Flutter に配信する
+- **Alternatives:**
+  - B: ADK → FastAPI コールバック HTTP POST（in-memory Queue 経由）
+  - C: ADK → Redis Pub/Sub → FastAPI SSE
+- **Rationale:** Firestore はすでにスタックに存在し新インフラ不要。Cloud Run の水平スケール時に「SSE を張っているインスタンスと ADK コールバック先が異なる」問題（選択肢 B の致命的欠陥）を自動的に回避できる。Accordion UI 用途ではイベント表示に +200〜500ms の追加レイテンシは体感上許容範囲。
+- **Trade-off:** Firestore の読み書きコスト（イベント数 × 課金）と `agentEvents` サブコレクションの TTL 削除が必要。レイテンシが将来問題になる場合は Redis Pub/Sub（選択肢 C）に移行する。
+- **Early PoC required:** ADK の `runner.run_async()` から取得できるイベントの粒度・形式を着手前に確認する。
+
+### ADL-010: 共有デモクローゼットの導入
+
+- **Decision:** CC BY-SA 4.0 の Kaggle データセットを使った全ユーザー共通クローゼット（`shared_closet`）を Firestore + Elasticsearch + R2 に配置する
+- **Rationale:** ハッカソンデモで初回ユーザーが服をアップロードせずに即体験できる。`ClothingSearchPort` 抽象化（ADL-003）を活かし、既存 Port に `SharedClosetSearchAdapter` を追加するだけで対応可能。
+- **License:** CC BY-SA 4.0 — 商用利用可、帰属表示が必要。UI に Attribution を表示する。
+- **Trade-off:** シーディングスクリプトの初期セットアップコストと R2/Elasticsearch への2,000〜3,000件のデータ投入が必要。ただし一度実行すれば静的データとして維持できる。
+- **Elasticsearch:** `user_id: "__shared__"` / `is_shared: true` フラグで同一インデックスに共存させ、クエリ時にフィルタリング。
+
+### ADL-009: セッション管理とタイムアウト（LINE & Web GUI）
+
+- **Decision:** 「1セッションにつき最終コーディネート画像は1つ」の原則を採用し、Firestore で状態を管理する。セッション完了後またはタイムアウト後の画像アップロードは「新規セッション」として扱う。
+- **Rationale:** 
+  - LINE自体にはセッションという概念がなく、状態はすべてバックエンド（Firestore）で管理する必要があるため、数時間後のアクセスでもFirestore上の状態が有効なら再開自体は可能とする。この確認として、専用のAgentを配置して、ユーザーに確認を促すメッセージを送る。
+  - しかし、LINEという単一タイムラインのUIで複数セッションが並行したり、画像生成後に同じセッションで別の服を追加したりすると、エージェントのコンテキストやUXが複雑化する。
+  - Web GUI側でもLINEの体験と統一感を持たせるため、MVPでは「新しい服の画像アップロード＝新しいコーディネートの開始（新規セッション）」と明確に区別する。
+- **Implementation (LINEの仕様対応):** LINEからのWebhook要求に対する `replyToken` は発行後数分で無効になるため、エージェントの処理が長引き `replyToken` がタイムアウトした場合は、ユーザーの `userId` を使った **Push API** に切り替えてメッセージや画像を送信するフォールバックを実装する。
+
+### ADL-012: シークレット管理に Secret Manager を採用
+
+- **Decision:** 機密情報（LINE トークン、R2 アクセスキー、楽天 App ID、Elasticsearch API キー）は Google Cloud Secret Manager で管理し、Cloud Run デプロイ時に `--set-secrets` で環境変数としてマウントする。非機密の設定値は `--set-env-vars` で直接設定する。
+- **Alternatives:** Cloud Run の環境変数に機密情報を直接設定する案。
+- **Rationale:** 環境変数に機密情報を直接設定すると Cloud Run のコンソール・デプロイ設定・ログに平文で露出する。Secret Manager はバージョン管理・アクセス制御（IAM）・監査ログを提供する。アプリ側はすべて環境変数として読むため、コードは管理方法を意識しない。
+- **Gemini / Firestore 認証:** API キーを発行せず、Cloud Run のサービスアカウントに IAM ロールを付与し ADC 経由で認証する。これにより管理すべきシークレットの数を削減する。
+- **Trade-off:** Secret Manager のセットアップと IAM 付与の初期コストが発生するが、ハッカソン後の運用・公開を考慮すると機密情報の平文露出を避けることが優先される。
+
+### ADL-013: Elasticsearch は Compute Engine e2-medium 単一ノードで Self-hosted
+
+- **Decision:** Elasticsearch を Google Compute Engine の `e2-medium` VM（2 vCPU, 4GB RAM）に単一ノード構成でセルフホストする
+- **Alternatives:**
+  - A: Cloud Run サイドカー（状態永続化が複雑）
+  - B: GCP Marketplace マネージドサービス（月額コスト）
+  - C: Elastic Cloud SaaS（外部依存、ネットワークレイテンシ）
+- **Rationale:** ハッカソン MVP のデータ量（shared_closet 2,000 件 + user closet 数十件）は e2-medium で十分。Basic ライセンスは無料。セットアップ時間 15-20 分。ハッカソン終了後に VM 削除で廃止できる。
+- **Implementation:** `sudo apt-get install elasticsearch` でインストール、`systemctl enable elasticsearch` で自動起動。Cloud Run との通信は VPC Peering または Cloud NAT 経由でプライベートに接続。
+- **Trade-off:** 脆弱性管理・バージョン管理は手動。ただし MVP 期間（1-2 日）ではハッカソン終了後に廃止されるため、長期保守の負担はない。
+- **Early PoC required:** Compute Engine 上での Elasticsearch 起動、Cloud Run からのプライベート接続確認。
+
+### ADL-014: R2 署名付き URL + CORS で Flutter Web からの直接アップロード
+
+- **Decision:** FastAPI の `GetUploadUrlUseCase` が R2 SDK で 15 分 TTL の署名付き PUT URL を発行。Flutter Web はその URL に直接 PUT リクエストを送信。R2 バケットに CORS ルールを設定し、プリフライト（OPTIONS）と PUT 両方を許可。
+- **Alternatives:**
+  - A: FastAPI 経由でファイルアップロード（ネットワークトラフィック増加、FastAPI に I/O 負荷）
+  - B: R2 STS AssumeRole（複雑、Cloudflare 側の設定が少ない）
+- **Rationale:** 署名付き URL は AWS S3 標準パターン。Cloudflare R2 は S3 互換性を持つため実装が最小化される。Flutter から R2 への直接アップロードにより FastAPI の I/O 負荷を削減。
+- **CORS 設定:** R2 バケットに `AllowedMethods: [PUT, OPTIONS]`、`AllowedOrigins: [Flutter Web ドメイン]` を設定。ブラウザからのプリフライトに対応。
+- **Trade-off:** HTTPS 必須（署名付き URL は HTTP では無効）。CORS 設定はドメインごとに更新が必要。
+
+### ADL-016: Cloud Run コンテナの最小インスタンス数設定
+
+- **Decision:**
+  - `adk-agent-service`: `--min-instances=1`（常時 1 インスタンス温かい状態）
+  - `fastapi-service`: `--min-instances=0`（コールドスタート許容）
+- **Alternatives:**
+  - A: 両方 min-instances: 0（コスト最小化）
+  - B: 両方 min-instances: 1（高 SLA、高コスト）
+- **Rationale:** ADK の LLM 推論（Gemini API 呼び出し）はコールドスタートで 10-30 秒かかり、ユーザーの待ち時間に直結する。ハッカソンデモではレイテンシが重要。一方 FastAPI は HTTP リクエストの多くが軽量で 1 秒以内のコールドスタートで許容可能。`adk-agent-service` のみ温かく保つことで、コスト（月 ~$15）と体験のバランスを取る
+- **Trade-off:** 常時 1 インスタンス起動による月額追加コスト vs. ユーザー体験（レイテンシ削減）。MVP では後者を優先。
+
+### ADL-017: ローカル開発環境を Docker Compose + Makefile で標準化
+
+- **Decision:** docker-compose.yml で Elasticsearch + Firestore Emulator を隔離。FastAPI・ADK はローカル Python 環境で起動。Makefile で `make dev`/`make test` コマンドを統一
+- **Alternatives:**
+  - A: Skaffold でマイクロサービスのローカル開発を完全自動化（学習コスト高）
+  - B: 全てを docker-compose で管理（初回ビルドが重い、Hot Reload が複雑）
+  - C: 各メンバーが手作業でセットアップ（再現性なし）
+- **Rationale:** FastAPI・ADK の開発ループは頻繁に再起動・code reloading が必要。コンテナ内での開発は反復速度が低下。一方 Elasticsearch・Firestore Emulator は「状態を持つ外部依存」なので docker-compose で隔離することで、各メンバーが同じ状態で開発できる。Makefile で `make dev` を叩くだけで全体が起動する設計により、オンボーディングが迅速
+- **Files to Create:**
+  - `docker-compose.yml` — Elasticsearch 8.x + Firestore Emulator
+  - `Makefile` — 開発コマンド
+  - `.env.example` — テンプレート（ダミー値）
+  - `README_LOCAL_DEV.md` — 詳細手順
+
+### ADL-015: クローゼット一覧・削除・セッション作成の Use Case 判断
+
+- **Decision:**
+  - `GetClosetItemsUseCase` は定義しない。Flutter が Firebase SDK で `users/{uid}/closet` コレクションをリアルタイムリスナーで直接購読する
+  - `DeleteClosetItemUseCase` を FastAPI `DELETE /closet/items/{item_id}` として定義する
+  - `GetSharedClosetItemsUseCase` は Phase 1 スコープ外とする
+  - `CreateSessionUseCase` を FastAPI `POST /sessions` として定義する。初期 `status` は `SOURCE_SELECTING`
+- **Rationale:**
+  - クローゼット一覧はロジックを持たない純粋な read。Firebase Security Rules で認証を担保しつつフロントエンドで直接取得することで FastAPI のホップを排除できる。また `ProcessUploadedClothingItemUseCase` による `status` 更新がリアルタイムで Flutter に反映され、アップロード処理中の UX が自然になる
+  - 削除は Firestore・R2・Elasticsearch の 3 ストレージを整合的に削除する副作用があるため、バックエンド Use Case として定義する
+  - `CreateSessionUseCase` は `AnalyzeClothingImageUseCase`（6.1）の Input である `sessionId` の前提となるセッションを作成する致命的欠落であった。Web GUI Phase 1a ではクローゼットに服が登録済みの状態でコーディネートを開始するため、初期状態を `SOURCE_SELECTING` とする
+- **Trade-off:** Firestore への直接アクセスを Flutter に許可することで Firebase Security Rules の管理が必要になるが、そのトレードオフは Use Case を 1 つ削減できることで相殺される
+
+---
+
+## 14. Out of Scope (Phase 1)
+
+- **LINE 統合（Phase 1a では対象外）:** Web GUI Accordion UI が完成するまで LINE 実装は開始しない
+- 背景削除（Background Removal）: MVP では不要
+- 明示的フィードバック以外のユーザー評価・スコアリング機能
+- 管理者ダッシュボード
+- ベクトル検索の Ranking スコアを使った推薦最適化（Phase 2 想定）
+- OMO（Online Merges Offline）機能
+- BtoB 機能
+
+---
+
+## 15. 実装フェーズ（優先順位）
+
+### Phase 1a — Web GUI エージェントオーケストレーション（最優先）
+
+| # | タスク | 完了条件 |
+|---|---|---|
+| 1 | ADK Agent（StylingOrchestratorAgent + ClosetAgent + StylingAgent）の基本実装 | ローカルで ADK Web UI 上で動作確認 |
+| 2 | ADK Event Stream を SSE で FastAPI から配信するエンドポイント実装 | `GET /sessions/{id}/stream` が ADK イベントを SSE で返す |
+| 3 | Flutter Accordion UI — SSE を受信してリアルタイム表示 | エージェントの思考ステップが折りたたみ可能な UI でリアルタイム表示される |
+| 4 | Firebase Auth によるログイン（Google Sign-In のみ） | 未認証ユーザーはアクセス不可 |
+| 5 | クローゼット画像アップロード（Web GUI 経由、R2 保存） | 画像が R2 に保存され Firestore にメタデータが記録される |
+| 6 | コーディネート提案フロー End-to-End（Web GUI） | 画像アップロード → エージェント思考表示 → 候補提示 → 選択 → 画像生成 |
+| 7 | 共有デモクローゼットのシーディング（`scripts/seed_shared_closet/run_seed.py`） | `shared_closet` に 2,000 件以上のアイテムが投入され、`SHARED_CLOSET` ソースで検索・コーディネート提案が動作する |
+
+### Phase 1b — LINE チャネル統合（Phase 1a 完了後）
+
+| # | タスク | 完了条件 |
+|---|---|---|
+| 1 | LINE Webhook エンドポイント実装（即時 200 返却） | LINE からの署名検証が通り 200 を即時返却する |
+| 2 | Cloud Tasks 経由での非同期 Agent 実行 | Webhook 受信 → Cloud Tasks 投入 → Agent 非同期実行のフローが動作 |
+| 3 | LINE Reply / Push API でのコーディネート返信 | Agent 完了後に LINE トーク画面にコーディネート画像が届く |
+| 4 | 楽天 API 検索ツール実装（Cloud Tasks レート制限） | 1 秒 1 リクエスト制限の遵守を Cloud Tasks で保証 |
+
+---
+
+## 16. Shared Demo Closet（全ユーザー共通クローゼット）
+
+### 16.1 概要
+
+全ユーザーが即座にアプリを体験できるよう、パブリックドメインのデータセットを使った共有クローゼット（`shared_closet`）を提供する。ユーザーは自分の服をアップロードしなくても、`SHARED_CLOSET` を選択することでコーディネート提案を試すことができる。
+
+### 16.2 データソース
+
+| 項目 | 内容 |
+|---|---|
+| **データセット** | [Clothing Dataset Full (Kaggle)](https://www.kaggle.com/datasets/agrigorev/clothing-dataset-full) |
+| **ライセンス** | CC BY-SA 4.0（商用利用可、帰属表示・同一条件配布が必要） |
+| **元カテゴリ数** | 20種類以上（Blazer, Blouse, Dress, Hoodie, Outwear, Pants, Shirt, Shorts, Skirt, T-Shirt など） |
+| **採用枚数** | 各カテゴリから最大 150 枚、合計 2,000〜3,000 枚程度 |
+| **品質フィルタ** | Kaggle データセット内の `image_labels_merged.csv` のラベル信頼度上位のものを優先採用 |
+
+### 16.3 帰属表示（Attribution）要件
+
+CC BY-SA 4.0 に基づき、以下を実装する：
+
+- Web GUI のフッターまたは「共有クローゼットについて」モーダルに以下を表示：
+  > 共有クローゼットの画像は [Clothing Dataset (CC BY-SA 4.0)](https://www.kaggle.com/datasets/agrigorev/clothing-dataset-full) を使用しています。
+- `CandidateItem.attribution` フィールドに `"Clothing Dataset (CC BY-SA 4.0)"` を設定する。
+
+### 16.4 シーディングスクリプト要件
+
+| 項目 | 仕様 |
+|---|---|
+| **配置場所** | `gen-fashion/scripts/seed_shared_closet/`（アプリリポジトリ内で管理。チームが同条件で再現できるよう、データ準備スクリプトもバージョン管理する方針） |
+| **スクリプト** | `run_seed.py`（単一ファイル、`python run_seed.py` で即起動） |
+| **処理フロー** | Kaggle API でダウンロード → カテゴリ別サンプリング → R2 アップロード → Gemini で Embedding 生成 → Elasticsearch インデクシング → Firestore への `shared_closet` ドキュメント書き込み |
+| **冪等性** | 再実行しても重複しない（`item_id` を元画像ファイル名のハッシュから生成） |
+| **依存関係** | `pip install -r requirements.txt`、Kaggle API トークン（`~/.kaggle/kaggle.json`）、`GOOGLE_CLOUD_PROJECT` 環境変数 |
+| **サンプリング設定** | `MAX_ITEMS_PER_CATEGORY`（デフォルト: `150`）を環境変数で制御可能 |
+
+### 16.5 ドメインルール
+
+- `shared_closet` への書き込みはシーディングスクリプトのみ（一般ユーザーは読み取り専用）。
+- `shared_closet` アイテムは `MAX_CLOSET_IMAGES_PER_USER` の制限対象外。
+- ユーザーが自分のクローゼットを持っていない場合でも `SHARED_CLOSET` は常に選択可能とし、初回ユーザーの体験を保証する。
+- Phase 1a のコーディネート提案フローでは、ソース選択肢として `SHARED_CLOSET` / `CLOSET`（クローゼットデータがある場合のみ）/ `RAKUTEN` の順に提示する。
+
+---
+
+## 17. Open Questions / PoC Items
+
+| 項目 | 優先度 | 内容 |
+|---|---|---|
+| コーディネート画像生成 | HIGH | Imagen 4 / Gemini 2.0 Flash で服画像を入力した際のコーディネート画像生成が実現可能か PoC |
+| Elasticsearch Compute Engine セットアップ | MEDIUM | Compute Engine e2-medium VM への Elasticsearch インストール・起動・Cloud Run プライベート接続の動作検証（セットアップ時間目安: 20 分） |
+| LINE Reply Token 有効期限 | MEDIUM（Phase 1b） | Cloud Tasks の遅延が 1 分を超えた場合の Push API へのフォールバック設計 |
