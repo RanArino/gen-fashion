@@ -72,10 +72,10 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 
 | ID | Feature | Status | Description | Req ref |
 |---|---|---|---|---|
-| M1-1 | Image generation PoC script | ❌ Not yet implemented | `poc/image_generation/run_poc.py` — runs Imagen 4 + Nano Banana 2 on same input, saves both results. Self-contained (`pip install -r requirements.txt`). | §6.5, ADL-005 |
-| M1-2 | Image gen model decision | ❌ Not yet implemented | Decide Imagen 4 vs Nano Banana 2 (quality/cost/speed); document outcome. Fallback = collage. | §6.5, ADL-005, §17 |
-| M1-3 | Elasticsearch on Compute Engine PoC | ❌ Not yet implemented | Install/start ES on `e2-medium` VM; verify Cloud Run private connectivity; confirm JP analyzer not needed. | §9.2, ADL-013, §17 |
-| M1-4 | ADK Event Stream granularity PoC | ❌ Not yet implemented | Inspect event granularity/format from `runner.run_async()` to confirm ADL-011 relay design. | ADL-011, §17 |
+| M1-1 | Image generation PoC script | 🟡 In progress | `poc/image_generation/run_poc.py` — runs Imagen 4 + Nano Banana 2 on same input, saves both results. Self-contained (`pip install -r requirements.txt`). | §6.5, ADL-005 |
+| M1-2 | Image gen model decision | 🟡 In progress | Decide Imagen 4 vs Nano Banana 2 (quality/cost/speed); document outcome. Fallback = collage. | §6.5, ADL-005, §17 |
+| M1-3 | Elasticsearch on Compute Engine PoC | 🟡 In progress | Install/start ES on `e2-medium` VM; verify Cloud Run private connectivity; confirm JP analyzer not needed. | §9.2, ADL-013, §17 |
+| M1-4 | ADK Event Stream granularity PoC | 🟡 In progress | Inspect event granularity/format from `runner.run_async()` to confirm ADL-011 relay design. | ADL-011, §17 |
 
 **Exit criteria:** Image gen approach chosen, ES reachable privately from Cloud Run, ADK event format documented.
 
