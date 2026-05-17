@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gen-fashion-fastapi"
+version = "0.1.0"
+description = "FastAPI service for gen-fashion digital wardrobe SaaS"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.104.0",
+    "uvicorn[standard]==0.24.0",
+    "pydantic==2.5.0",
+    "pydantic-settings==2.1.0",
+    "elasticsearch==8.11.0",
+    "firebase-admin==6.2.0",
+    "google-cloud-tasks==2.14.0",
+    "httpx==0.25.0",
+]
