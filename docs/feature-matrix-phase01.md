@@ -51,16 +51,16 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 
 | ID | Feature | Status | Description | Req ref |
 |---|---|---|---|---|
-| M0-1 | Hexagonal/DDD project skeleton | ❌ Not yet implemented | Directory layout for Closet & Styling bounded contexts: domain (aggregates, VOs), ports, adapters, use cases. No logic, structure only. | §3, §4 |
-| M0-2 | Domain model — Closet Context | ❌ Not yet implemented | `ClothingItem` (Aggregate Root), `ClothingItemId`, `ClothingTag`, `ImageEmbedding` value objects with invariants. | §4.2, §4.3 |
-| M0-3 | Domain model — Styling Context | ❌ Not yet implemented | `StyleSession` (Aggregate Root + state machine), `StyleSessionId`, `CoordinateProposal`, `UserPreference`, `StyleResult`, `ClothingSource` enum. | §4.2, §4.3 |
-| M0-4 | Port interfaces (abstract) | ❌ Not yet implemented | Define all Input/Output Port interfaces (`ClosetRepositoryPort`, `EmbeddingSearchPort`, `ClothingSearchPort`, `ImageStoragePort`, `TaskQueuePort`, `ImageGenerationPort`, etc.) — no implementations. | §5.1, §5.2 |
-| M0-5 | Two-container project structure | ❌ Not yet implemented | `fastapi-service` and `adk-agent-service` as separate buildable containers/apps. | §9.1, ADL-007 |
-| M0-6 | `docker-compose.yml` (local deps) | ❌ Not yet implemented | Elasticsearch 8.x (`localhost:9200`) + Firestore Emulator (`localhost:8080`) containerized. | §9.4, ADL-017 |
-| M0-7 | `Makefile` dev commands | ❌ Not yet implemented | `make dev` (start all), `make test`, `make clean`. | §9.4, ADL-017 |
-| M0-8 | `.env.example` template | ❌ Not yet implemented | Git-tracked env var template per §9.4 / §12.2. | §9.4, §12.2 |
-| M0-9 | `README_LOCAL_DEV.md` | ❌ Not yet implemented | Detailed local setup instructions. | §9.4, ADL-017 |
-| M0-10 | Environment variable loading | ❌ Not yet implemented | App reads all config (secret + non-secret) uniformly as env vars. | §12.1, §12.2 |
+| M0-1 | Hexagonal/DDD project skeleton | ✅ Implemented | Directory layout for Closet & Styling bounded contexts: domain (aggregates, VOs), ports, adapters, use cases. No logic, structure only. | §3, §4 |
+| M0-2 | Domain model — Closet Context | ✅ Implemented | `ClothingItem` (Aggregate Root), `ClothingItemId`, `ClothingTag`, `ImageEmbedding` value objects with invariants. | §4.2, §4.3 |
+| M0-3 | Domain model — Styling Context | ✅ Implemented | `StyleSession` (Aggregate Root + state machine), `StyleSessionId`, `CoordinateProposal`, `UserPreference`, `StyleResult`, `ClothingSource` enum. | §4.2, §4.3 |
+| M0-4 | Port interfaces (abstract) | ✅ Implemented | Define all Input/Output Port interfaces (`ClosetRepositoryPort`, `EmbeddingSearchPort`, `ClothingSearchPort`, `ImageStoragePort`, `TaskQueuePort`, `ImageGenerationPort`, etc.) — no implementations. | §5.1, §5.2 |
+| M0-5 | Two-container project structure | ✅ Implemented | `fastapi-service` and `adk-agent-service` as separate buildable containers/apps. | §9.1, ADL-007 |
+| M0-6 | `docker-compose.yml` (local deps) | ✅ Implemented | Elasticsearch 8.x (`localhost:9200`) + Firestore Emulator (`localhost:8080`) containerized. | §9.4, ADL-017 |
+| M0-7 | `Makefile` dev commands | ✅ Implemented | `make dev` (start all), `make test`, `make clean`. | §9.4, ADL-017 |
+| M0-8 | `.env.example` template | ✅ Implemented | Git-tracked env var template per §9.4 / §12.2. | §9.4, §12.2 |
+| M0-9 | `README_LOCAL_DEV.md` | ✅ Implemented | Detailed local setup instructions. | §9.4, ADL-017 |
+| M0-10 | Environment variable loading | ✅ Implemented | App reads all config (secret + non-secret) uniformly as env vars. | §12.1, §12.2 |
 
 **Exit criteria:** `make dev` boots Elasticsearch + Firestore Emulator + FastAPI + ADK locally; project compiles with empty adapters.
 
