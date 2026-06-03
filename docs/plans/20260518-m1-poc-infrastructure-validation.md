@@ -24,16 +24,23 @@ The three de-risked decisions are:
 ## Progress
 
 
-- [ ] Phase 1: Create image generation PoC script (M1-1)
-- [ ] Phase 2: Run PoC, compare Imagen 4 vs Nano Banana 2, record model decision (M1-2)
-- [ ] Phase 3: Provision ES on Compute Engine, configure VPC access, verify Cloud Run connectivity (M1-3)
-- [ ] Phase 4: Write minimal ADK agent PoC, capture `runner.run_async()` events, document schema (M1-4)
+- [x] (2026-06-03) Phase 1: Image generation PoC script (M1-1)
+  - `poc/image_generation/run_poc.py` — feeds the garment photos to a Gemini image model (Nano Banana) and saves the try-on image to `results/`; collage fallback (ADL-005) on failure.
+  - `requirements.txt` switched to `google-genai`; `.env.example`, `samples/README.md` updated. Runs on real garment photos in `samples/`.
+  - Imagen path and `make_placeholders.py` removed (see Decision Log / Surprises).
+- [x] (2026-06-03) Phase 2: Model decision recorded (M1-2) — Nano Banana chosen, Imagen dropped. See Decision Log.
+- [ ] Phase 3: Provision ES on Compute Engine, configure VPC access, verify Cloud Run connectivity (M1-3) — requires GCP access
+- [x] (2026-05-18) Phase 4: Write minimal ADK agent PoC, capture `runner.run_async()` events, document schema (M1-4)
+  - `poc/adk_event_stream/run_poc.py` written — minimal agent with `get_clothing_tags` tool, captures all events to `sample_events.jsonl`
+  - `requirements.txt`, `.env.example` created
+  - Must be run with GCP credentials to produce `sample_events.jsonl`; commit that file once captured
 
 
 ## Surprises & Discoveries
 
 
-(None yet. Populate as work proceeds.)
+- (2026-06-03, M1-1/M1-2) **Imagen is the wrong tool for multi-garment try-on, and it is not a prompt problem.** With the *same* prompt and *same* reference photos, Nano Banana (Gemini image model) faithfully reproduced both garments worn on a person, while Imagen `imagen-3.0-capability-001` subject-customization ignored the references and synthesised a generic outfit. Imagen subject-customization is designed to recontextualise a *single* product, not to dress a person in multiple reference garments. → Imagen dropped from the image-gen approach.
+- (2026-06-03) **Region quirk:** `gemini-3-pro-image-preview` (Nano Banana 2/Pro) returns 404 from `us-central1` but generates from `GOOGLE_CLOUD_LOCATION=global`. Vertex `models.get()` lists it in both regions, but generation is global-only. `gemini-2.5-flash-image` generates from `us-central1`.
 
 
 ## Decision Log
@@ -41,9 +48,12 @@ The three de-risked decisions are:
 
 (Empty at plan creation. Populate as decisions are made during execution.)
 
-- Decision: (placeholder — fill in Imagen 4 vs Nano Banana 2 outcome after Phase 2)
-  Rationale: (fill in after running PoC)
-  Date/Author: TBD
+- Decision: **Use Nano Banana (Gemini image model) for coordinate image generation; Imagen is not used.** The PoC and `style_synthesizer` (M4-7) standardise on `gemini-2.5-flash-image` (Nano Banana 1); `gemini-3-pro-image-preview` (Nano Banana 2/Pro, requires `location=global`) is the quality-upgrade option.
+  - Quality: Nano Banana faithfully reproduces both input garments worn on a person. Imagen `imagen-3.0-capability-001` ignored the references (generic output) — wrong tool for multi-garment try-on, not a prompt issue.
+  - Speed: `gemini-2.5-flash-image` ~12–14s; `gemini-3-pro-image-preview` ~30s (observed in PoC).
+  - Cost: per-image Gemini image pricing — confirm on the pricing page before M4-7 ships.
+  - Rollback: collage of input garments (ADL-005), implemented in `run_poc.py` (`_build_collage`).
+  - Date/Author: 2026-06-03 / Ran
 
 
 ## Outcomes & Retrospective
@@ -72,7 +82,8 @@ M1 produces no changes to the main application code. All PoC work lives under `p
 
 ### Key Files and Paths
 
-- `docs/feature-matrix-phase01.md` — Milestone tracker. Update M1-1 through M1-4 when this plan starts (🟡) and when each item completes (✅).
+- `docs/feature-matrix-phase01.md` — Milestone tracker. **Must be updated in the same change as any M1 completion**: flip the row from 🟡 to ✅ when the acceptance criteria for that item are met.
+- `docs/plans/20260518-m1-poc-infrastructure-validation.md` (this file) — **Must also be updated in the same change**: tick the matching Progress checkbox, add a timestamp, and record any findings in Surprises & Discoveries or Decision Log. Both files change together — never update one without the other.
 - `docs/req-phase01.md` §6.5, §9.2, ADL-005, ADL-011, ADL-013, §17 — Source requirements for all four M1 items.
 - `poc/` — New directory. All PoC code lives here; it is never imported by the main application.
 - `fastapi-service/` and `adk-agent-service/` — Main application code. Do not modify during M1.
@@ -474,6 +485,8 @@ All four of these must be true:
 
 
 (Populate during execution. Include VM internal IP, VPC connector name, PoC run timestamps, image gen decision evidence, and the full `sample_events.jsonl` content once captured.)
+
+**Image gen (M1-1/M1-2):** `poc/image_generation/run_poc.py` run 2026-06-03 on `gemini-2.5-flash-image` @ `us-central1`, project `gen-story-496911`, 2 garment inputs → faithful two-garment try-on in ~13.6s. Output `results/nanobanana_result.jpg` (git-ignored). Imagen comparison: `imagen-3.0-capability-001` produced a non-faithful generic outfit and was dropped.
 
 **ES VM internal IP:** (TBD)
 
