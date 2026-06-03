@@ -30,10 +30,11 @@ The three de-risked decisions are:
   - Imagen path and `make_placeholders.py` removed (see Decision Log / Surprises).
 - [x] (2026-06-03) Phase 2: Model decision recorded (M1-2) — Nano Banana chosen, Imagen dropped. See Decision Log.
 - [ ] Phase 3: Provision ES on Compute Engine, configure VPC access, verify Cloud Run connectivity (M1-3) — requires GCP access
-- [x] (2026-05-18) Phase 4: Write minimal ADK agent PoC, capture `runner.run_async()` events, document schema (M1-4)
+- [x] (2026-06-04) Phase 4: Write minimal ADK agent PoC, capture `runner.run_async()` events, document schema (M1-4)
   - `poc/adk_event_stream/run_poc.py` written — minimal agent with `get_clothing_tags` tool, captures all events to `sample_events.jsonl`
-  - `requirements.txt`, `.env.example` created
-  - Must be run with GCP credentials to produce `sample_events.jsonl`; commit that file once captured
+  - `requirements.txt`, `.env.example` created (updated to include `GOOGLE_GENAI_USE_VERTEXAI=True`)
+  - Run 2026-06-04 with `gemini-2.5-flash` on Vertex AI `us-central1`; `sample_events.jsonl` generated and committed
+  - Event schema documented in Artifacts; see Decision Log for model name correction
 
 
 ## Surprises & Discoveries
@@ -41,6 +42,9 @@ The three de-risked decisions are:
 
 - (2026-06-03, M1-1/M1-2) **Imagen is the wrong tool for multi-garment try-on, and it is not a prompt problem.** With the *same* prompt and *same* reference photos, Nano Banana (Gemini image model) faithfully reproduced both garments worn on a person, while Imagen `imagen-3.0-capability-001` subject-customization ignored the references and synthesised a generic outfit. Imagen subject-customization is designed to recontextualise a *single* product, not to dress a person in multiple reference garments. → Imagen dropped from the image-gen approach.
 - (2026-06-03) **Region quirk:** `gemini-3-pro-image-preview` (Nano Banana 2/Pro) returns 404 from `us-central1` but generates from `GOOGLE_CLOUD_LOCATION=global`. Vertex `models.get()` lists it in both regions, but generation is global-only. `gemini-2.5-flash-image` generates from `us-central1`.
+- (2026-06-04, M1-4) **ADK 2.1.0 defaults to Gemini API (API key) mode, not Vertex AI.** Setting `GOOGLE_GENAI_USE_VERTEXAI=True` is required to use application default credentials via Vertex AI. Without it, ADK raises `ValueError: No API key was provided`.
+- (2026-06-04, M1-4) **`gemini-2.0-flash` is not available on Vertex AI for this project.** The model is absent from `models.list()` output. `gemini-2.5-flash` is available and was used for the ADK PoC. Teams using Vertex AI backend should use `gemini-2.5-flash`; `gemini-2.0-flash` is only accessible via the direct Gemini API (`GOOGLE_GENAI_API_KEY`).
+- (2026-06-04, M1-4) **ADK 2.1.0 uses a single `Event` class** — there are no distinct `LlmRequest`, `LlmResponse`, `ToolCall`, `ToolResult` subtypes. Content type is identified by inspecting `payload.content.parts[*].function_call` / `function_response` / `text` fields. The `thought_signature` field contains raw bytes that serialize as a Python bytes literal string — Firestore must store this as a base64 string or bytes field rather than raw JSON string.
 
 
 ## Decision Log
@@ -492,7 +496,22 @@ All four of these must be true:
 
 **VPC connector name:** `gen-fashion-connector`
 
-**ADK event schema:** (copy `sample_events.jsonl` here after Step 13)
+**ADK event schema (M1-4):** Run 2026-06-04, model `gemini-2.5-flash` on Vertex AI `us-central1`, project `gen-story-496911`. Elapsed: 3.27s. `sample_events.jsonl` committed at `poc/adk_event_stream/sample_events.jsonl`.
+
+Schema questions answered:
+
+1. **Distinct event types:** Only `Event` (single class in ADK 2.1.0). No distinct `LlmRequest`, `LlmResponse`, `ToolCall`, `ToolResult` subtypes. Content type is determined by inspecting `payload.content.parts[*]` fields:
+   - `function_call` present → model-initiated tool call (seq 1)
+   - `function_response` present → tool result injected into context (seq 2)
+   - `text` present + `is_final_response()` → final answer (seq 3)
+
+2. **Streaming vs batched:** Tokens are **batched** — no partial/streaming token events. Each `Event` delivers a complete payload. The `partial` field is always `null`. Accordion UI must wait for the final event (`is_final_response()`) before displaying the answer; intermediate events (ToolCall, ToolResponse) can be displayed as they arrive.
+
+3. **Event count per turn:** **3 events** for one complete turn: reason→tool call (1) → tool result (2) → final answer (3). Turns without tool calls would be 1 event.
+
+4. **JSON serialisability:** `model_dump()` (Pydantic) works. However: `thought_signature` contains raw bytes serialized as a Python bytes literal string (e.g., `"b'\\n\\xce...'"`) — this is not valid JSON for Firestore and must be base64-encoded or stored as a Firestore `Bytes` field. All other fields are natively JSON-serializable.
+
+   **ADL-011 Firestore relay implication:** A minimal transformation step is needed — strip or base64-encode `thought_signature` before writing to `sessions/{sessionId}/agentEvents/{eventId}`.
 
 
 ## Interfaces and Dependencies
