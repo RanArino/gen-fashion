@@ -75,7 +75,7 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 | M1-1 | Image generation PoC script | ✅ Implemented | `poc/image_generation/run_poc.py` — feeds garment photos to Nano Banana (Gemini image model) for virtual try-on; collage fallback. Self-contained (`pip install -r requirements.txt`). | §6.5, ADL-005 |
 | M1-2 | Image gen model decision | ✅ Implemented | **Decision: Nano Banana (`gemini-2.5-flash-image`); Imagen dropped** (subject-customization can't do multi-garment try-on). `gemini-3-pro-image-preview` is the quality-upgrade option. See ExecPlan Decision Log. | §6.5, ADL-005, §17 |
 | M1-3 | Elasticsearch on Compute Engine PoC | 🟡 In progress | Install/start ES on `e2-medium` VM; verify Cloud Run private connectivity; confirm JP analyzer not needed. | §9.2, ADL-013, §17 |
-| M1-4 | ADK Event Stream granularity PoC | ✅ Implemented | `runner.run_async()` yields 3 `Event` objects per tool-call turn (ToolCall/ToolResult/FinalAnswer); batched (no streaming); `model_dump()` serializable. `thought_signature` bytes need base64 encoding for Firestore. See ExecPlan Artifacts. | ADL-011, §17 |
+| M1-4 | ADK Event Stream granularity PoC | ✅ Implemented | `runner.run_async()` yields 3 `Event` objects per tool-call turn (ToolCall/ToolResult/FinalAnswer); batched (no streaming); `model_dump()` requires normalization before Firestore storage (`thought_signature`: bytes→base64; `long_running_tool_ids`: set→array). See ExecPlan Artifacts. | ADL-011, §17 |
 
 **Exit criteria:** Image gen approach chosen, ES reachable privately from Cloud Run, ADK event format documented.
 

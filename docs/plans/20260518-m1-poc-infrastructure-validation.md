@@ -509,9 +509,11 @@ Schema questions answered:
 
 3. **Event count per turn:** **3 events** for one complete turn: reason→tool call (1) → tool result (2) → final answer (3). Turns without tool calls would be 1 event.
 
-4. **JSON serialisability:** `model_dump()` (Pydantic) works. However: `thought_signature` contains raw bytes serialized as a Python bytes literal string (e.g., `"b'\\n\\xce...'"`) — this is not valid JSON for Firestore and must be base64-encoded or stored as a Firestore `Bytes` field. All other fields are natively JSON-serializable.
-
-   **ADL-011 Firestore relay implication:** A minimal transformation step is needed — strip or base64-encode `thought_signature` before writing to `sessions/{sessionId}/agentEvents/{eventId}`.
+4. **JSON serialisability:** `model_dump()` produces a dict, but the PoC script verifies it with `json.dumps(..., default=str)` which **silently stringifies** non-JSON-native values. This means **normalization is required** before Firestore/JSON storage; at minimum two fields:
+   - `thought_signature`: raw `bytes` → serialized as Python bytes-literal string (e.g., `"b'\\n\\xce...'"`) — must be base64-encoded or stored as Firestore `Bytes`
+   - `long_running_tool_ids`: Python `set` → serialized as the string `"set()"` — must be converted to an array or omitted
+   
+   Any field falling through `default=str` is a lossy conversion. The relay in ADL-011 must apply a normalization pass (e.g., `_normalize_event(event.model_dump())`) before writing to `sessions/{sessionId}/agentEvents/{eventId}`, not a direct `model_dump()` dump.
 
 
 ## Interfaces and Dependencies
