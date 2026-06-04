@@ -14,11 +14,11 @@ The three de-risked decisions are:
 
 1. **Image generation model choice** (M1-1, M1-2). The requirements (§6.5, ADL-005) mandate that coordinate outfit images must come from Imagen 4 or Nano Banana 2, not Gemini 2.0 Flash. Before M4 implements `style_synthesizer`, this PoC verifies that at least one of these two models can synthesize a wearable outfit image from multiple clothing photos. A passing PoC confirms the `GenerateCoordinateUseCase` approach; a failing one triggers the collage fallback.
 
-2. **Elasticsearch on Compute Engine** (M1-3). The plan calls for a self-hosted single-node ES on an `e2-medium` VM in `asia-northeast1` (ADL-013, §9.2). Before M2 builds the `ElasticsearchEmbeddingRepository`, this PoC proves ES installs, starts, and is reachable privately from Cloud Run.
+2. **Elasticsearch on Compute Engine** (M1-3). ADL-013 / §9.2 target a self-hosted single-node ES on an `e2-medium` VM in `asia-northeast1`, reached privately from Cloud Run. **Re-scoped 2026-06-04 (see Decision Log).** Only the parts that are free and that block local feature work are done in M1: confirming the Japanese-analyzer requirement against the local Docker ES (`make dev`). The GCE VM, Serverless VPC connector, Cloud Run private connectivity, the vector hybrid search, and the shared-closet embedding seeding are **deferred to the deployment phase** (~1–2 weeks before submission). M2 does not wait on them — it builds against the local Docker ES behind the existing `EmbeddingSearchPort`, starting with a keyword/Firestore-backed adapter and swapping in the vector hybrid + GCE host later. ADL-013 itself is unchanged; only the build sequencing is.
 
 3. **ADK event stream granularity** (M1-4). ADL-011 proposes that the ADK container writes agent events to Firestore, which FastAPI then relays as SSE to Flutter. Before M5 implements this relay, this PoC inspects `runner.run_async()` output in practice to confirm the event format and granularity are suitable for the Accordion UI.
 
-**Acceptance:** Image gen model chosen (or collage fallback confirmed) with the decision written in this plan's Decision Log; Elasticsearch reachable from Cloud Run at `http://<internal-ip>:9200` returning a 200 health response; ADK event schema documented in Artifacts with a captured sample event log.
+**Acceptance:** Image gen model chosen (or collage fallback confirmed) with the decision written in this plan's Decision Log; the M1-3 re-scope decision recorded in the Decision Log and the Japanese-analyzer requirement resolved against the local Docker ES (the GCE / VPC / Cloud Run private-connectivity check is deferred to the deployment phase, not M1); ADK event schema documented in Artifacts with a captured sample event log.
 
 
 ## Progress
@@ -29,7 +29,9 @@ The three de-risked decisions are:
   - `requirements.txt` switched to `google-genai`; `.env.example`, `samples/README.md` updated. Runs on real garment photos in `samples/`.
   - Imagen path and `make_placeholders.py` removed (see Decision Log / Surprises).
 - [x] (2026-06-03) Phase 2: Model decision recorded (M1-2) — Nano Banana chosen, Imagen dropped. See Decision Log.
-- [ ] Phase 3: Provision ES on Compute Engine, configure VPC access, verify Cloud Run connectivity (M1-3) — requires GCP access
+- [ ] Phase 3 (M1-3) — **re-scoped 2026-06-04 (see Decision Log)**
+  - [ ] Phase 3a (now, local, free): confirm the Japanese-analyzer requirement against the local Docker ES (`make dev`, `localhost:9200`); record the outcome in Surprises & Discoveries.
+  - [ ] Phase 3b (deferred to deployment phase, ~1–2 weeks before submission): provision the GCE VM, firewall, and Serverless VPC connector, and verify Cloud Run private connectivity. Run the connectivity smoke test ~3 weeks before submission so VPC/IAM surprises do not land in the final days.
 - [x] (2026-06-04) Phase 4: Write minimal ADK agent PoC, capture `runner.run_async()` events, document schema (M1-4)
   - `poc/adk_event_stream/run_poc.py` written — minimal agent with `get_clothing_tags` tool, captures all events to `sample_events.jsonl`
   - `requirements.txt`, `.env.example` created (updated to include `GOOGLE_GENAI_USE_VERTEXAI=True`)
@@ -58,6 +60,14 @@ The three de-risked decisions are:
   - Cost: per-image Gemini image pricing — confirm on the pricing page before M4-7 ships.
   - Rollback: collage of input garments (ADL-005), implemented in `run_poc.py` (`_build_collage`).
   - Date/Author: 2026-06-03 / Ran
+
+- Decision: **Defer vector search, the GCE/VPC Elasticsearch deployment, and shared-closet embedding seeding to the deployment phase; keep `EmbeddingSearchPort` and proceed with a keyword/Firestore-backed adapter first.** ADL-013 (self-hosted ES on GCE) and the hybrid-search design stand — only the build *sequencing* changes.
+  - Rationale (flow): the coordinate flow draws candidates from three switchable sources (`RAKUTEN`, `CLOSET`, `SHARED_CLOSET`; req §6.3 L307–310, L941). `RAKUTEN` needs no ES; the user `CLOSET` is tens of items and is satisfiable by Firestore + keyword filtering. Vector similarity over the 2,000-item `SHARED_CLOSET` is the only part that truly needs the vector hybrid, and even there keyword/category filtering is demo-viable. Vector search is therefore not on the MVP critical path.
+  - Rationale (architecture): the project is hexagonal — `EmbeddingSearchPort` → `ElasticsearchEmbeddingRepository`. A lighter adapter (keyword-only over the local Docker ES, or a Firestore-scan adapter for the small user closet) sits behind the same port, and the vector/GCE adapter swaps in later without touching use cases. Deferral cost is ~zero.
+  - Rationale (cost/risk): an always-on `e2-medium` + VPC connector bill 24/7; standing them up while M2–M5 are still local is wasted spend, and ADL-013 already disposes of the VM after the hackathon. The one genuine unknown is the Cloud Run → VPC → GCE private path (org policy / IAM / Shared VPC), so it gets an early standalone smoke test (~3 weeks before submission) rather than being discovered during the final deploy sprint.
+  - Proceeds now (local, free): M2-9 builds against the local Docker ES; the Japanese-analyzer requirement is checked against `localhost:9200`.
+  - Rollback: if a rich 2,000-item `SHARED_CLOSET` demo becomes the hero path, bring the GCE ES forward but still ship keyword-only hybrid first and add the embedding vectors last.
+  - Date/Author: 2026-06-04 / Ran
 
 
 ## Outcomes & Retrospective
@@ -153,9 +163,17 @@ The Decision Log entry from this phase directly informs M4-7 (`style_synthesizer
 Save representative result images in `poc/image_generation/results/` as-is. Do not commit generated images to git.
 
 
-### Phase 3: Elasticsearch on Compute Engine (M1-3)
+### Phase 3: Elasticsearch — local now, GCE later (M1-3)
 
-This phase is infrastructure work performed in GCP, not local code. The goal is to prove the ADL-013 design before M2-9 (`ElasticsearchEmbeddingRepository`) is implemented.
+**Re-scoped 2026-06-04 (see Decision Log).** This phase is split. Phase 3a is the only part done in M1; it is local and free. Phase 3b is the GCE / VPC / Cloud Run work, deferred to the deployment phase. The original GCE commands are preserved verbatim in Concrete Steps (Steps 6–9, 11) for use during 3b.
+
+#### Phase 3a — Confirm the Japanese-analyzer requirement locally (do now)
+
+`make dev` already runs Elasticsearch 8.x in Docker at `localhost:9200` (M0-6) — the same engine version the GCE VM will run, so the analyzer question is answerable here with no GCP. Create a test index with the default `standard` analyzer, index a document with a Japanese clothing tag (e.g. `"ワンピース"`), run a match query, and clean up (Concrete Steps Step 10). If the match succeeds, the standard analyzer is sufficient for MVP and no Japanese-specific plugin is required; record the outcome in Surprises & Discoveries. This unblocks the `clothing_items` index design used by M2-9.
+
+#### Phase 3b — Provision GCE ES and verify private connectivity (deferred to deployment phase)
+
+Deferred to ~1–2 weeks before submission. Proves the ADL-013 design end-to-end: ES installed and running on an `e2-medium` VM, a Serverless VPC connector, and Cloud Run reaching the VM by internal IP. Commands are in Concrete Steps Steps 6–9 and 11.
 
 **Step A — Provision the VM.** Create a GCE VM named `es-gen-fashion` in `asia-northeast1-a` with machine type `e2-medium`, 30 GB SSD boot disk, Debian 12, and the tag `elasticsearch`. Note the VM's internal IP address.
 
@@ -165,11 +183,9 @@ This phase is infrastructure work performed in GCP, not local code. The goal is 
 
 **Step D — Serverless VPC Access.** Create a Serverless VPC Access connector in `asia-northeast1` (if one does not already exist in the project). This is what lets Cloud Run services reach the GCE VM by internal IP. Note the connector name for later use in Cloud Run deployments (`--vpc-connector`).
 
-**Step E — Verify Cloud Run connectivity.** Deploy a minimal Cloud Run service (a single Python `httpx.get` call to `http://<vm-internal-ip>:9200`) with the VPC connector attached and `--vpc-egress=private-ranges-only`. The service must return the ES cluster health JSON. A 200 response from this test service proves the full connectivity path.
+**Step E — Verify Cloud Run connectivity (run this one early).** Deploy a minimal Cloud Run service (a single Python `httpx.get` call to `http://<vm-internal-ip>:9200`) with the VPC connector attached and `--vpc-egress=private-ranges-only`. The service must return the ES cluster health JSON. A 200 response proves the full connectivity path. **Run this smoke test ~3 weeks before submission** to retire the org-policy / IAM / Shared-VPC risk before the deploy sprint; delete the service after.
 
-**Step F — Verify Japanese analyzer is not needed.** Create a test index with the default `standard` analyzer. Index a sample document with a Japanese clothing tag (e.g., `"ワンピース"`). Run a match query for the same tag. If the match succeeds, the standard analyzer is sufficient for MVP and no Japanese-specific plugin is required. Document the outcome in Surprises & Discoveries.
-
-**Step G — Record outputs.** Capture the ES VM's internal IP, the VPC connector name, and the test Cloud Run service URL. These values go into `.env.example` (as `ELASTICSEARCH_HOST=http://<internal-ip>:9200`) and into the Artifacts section of this plan.
+**Step F — Record outputs.** Capture the ES VM's internal IP, the VPC connector name, and the test Cloud Run service URL. These values go into `.env.example` (as `ELASTICSEARCH_HOST=http://<internal-ip>:9200`) and into the Artifacts section of this plan. (The Japanese-analyzer check that was previously Step F has moved to Phase 3a above.)
 
 
 ### Phase 4: ADK Event Stream Granularity (M1-4)
@@ -293,6 +309,8 @@ If either call fails, a `*_error.txt` file appears in `results/` instead. Open b
 
 ### Step 6: Provision Elasticsearch VM
 
+> **Phase 3b (deferred to the deployment phase, ~1–2 weeks before submission).** Steps 6–9 and 11 below are the GCE / VPC / Cloud Run work; do not run them during M1. **Step 10 is Phase 3a — run it now against the local Docker ES.** Per the Decision Log, run the Step 9 Cloud Run connectivity smoke test ~3 weeks before submission to retire the VPC/IAM risk early.
+
 Run from a terminal with `gcloud` authenticated to the target GCP project:
 
     gcloud compute instances create es-gen-fashion \
@@ -387,27 +405,27 @@ Delete the test service after confirming:
       --project=${GOOGLE_CLOUD_PROJECT} \
       --region=asia-northeast1
 
-### Step 10: Verify Japanese analyzer is not needed
+### Step 10: Verify the Japanese-analyzer requirement (Phase 3a — do now, local)
 
-From the VM or any machine that can reach ES (e.g., via the Cloud Run test above):
+Run against the local Docker ES that `make dev` already starts — no GCP needed. Set `ES=http://localhost:9200`; during Phase 3b you can re-run the same check against the VM with `ES=http://${ES_INTERNAL_IP}:9200`.
 
     # Create index with default analyzer
-    curl -X PUT "http://${ES_INTERNAL_IP}:9200/test_jp_analyzer" \
+    curl -X PUT "$ES/test_jp_analyzer" \
       -H "Content-Type: application/json" \
       -d '{"settings":{"number_of_shards":1}}'
 
-    # Index a document with a Japanese tag
-    curl -X POST "http://${ES_INTERNAL_IP}:9200/test_jp_analyzer/_doc/1" \
+    # Index a document with a Japanese tag (refresh so it is searchable at once)
+    curl -X POST "$ES/test_jp_analyzer/_doc/1?refresh=true" \
       -H "Content-Type: application/json" \
       -d '{"tag":"ワンピース"}'
 
     # Query it back
-    curl "http://${ES_INTERNAL_IP}:9200/test_jp_analyzer/_search?q=tag:ワンピース"
+    curl "$ES/test_jp_analyzer/_search?q=tag:ワンピース"
 
     # Clean up
-    curl -X DELETE "http://${ES_INTERNAL_IP}:9200/test_jp_analyzer"
+    curl -X DELETE "$ES/test_jp_analyzer"
 
-If the document appears in the search results, the standard analyzer is sufficient. Record the outcome in Surprises & Discoveries.
+If the document appears in the search results, the standard analyzer is sufficient for MVP and no Japanese-specific plugin is required. Record the outcome in Surprises & Discoveries.
 
 ### Step 11: Update `.env.example` with ES host
 
@@ -455,7 +473,12 @@ The Decision Log in this file contains a model choice entry with rationale. The 
 
 ### M1-3 acceptance
 
-All four of these must be true:
+**Re-scoped 2026-06-04 (see Decision Log).** M1 acceptance covers Phase 3a only — both must be true:
+
+- The deferral decision (vector search + GCE/VPC + seeding → deployment phase; keep `EmbeddingSearchPort`; keyword/Firestore adapter first) is recorded in the Decision Log.
+- The Japanese-analyzer check (Step 10) has been run against the local Docker ES and its outcome recorded in Surprises & Discoveries.
+
+Phase 3b acceptance (verified later, during the deployment phase — not required to close M1):
 
 - `curl http://localhost:9200` on the VM returns `"tagline": "You Know, for Search"`.
 - `systemctl status elasticsearch` shows `active (running)` on the VM.
@@ -546,7 +569,7 @@ Schema questions answered:
 
 **Downstream milestones unblocked by M1:**
 
-- M2-9 (`ElasticsearchEmbeddingRepository`) requires the ES host URL confirmed in M1-3.
+- M2-9 (`ElasticsearchEmbeddingRepository`) builds against the local Docker ES behind `EmbeddingSearchPort` (keyword/Firestore adapter first); the GCE ES host URL and the vector hybrid are deferred to the deployment phase per the Decision Log. The only M1 dependency is M1-3 Phase 3a (the local JP-analyzer check).
 - M4-7 (`style_synthesizer` tool) requires the model decision from M1-2.
 - M5-8 (ADK → Firestore event relay) requires the event schema confirmed in M1-4.
 - M5-9 (SSE streaming endpoint) depends on M5-8, which depends on M1-4.
