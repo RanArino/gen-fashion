@@ -5,6 +5,7 @@ from app.ports.clothing_search import ClothingSearchPort
 from app.ports.image_storage import ImageStoragePort
 from app.ports.task_queue import TaskQueuePort
 from app.ports.image_generation import ImageGenerationPort
+from app.ports.gemini_analysis import ClothingAnalysisResult, GeminiAnalysisPort
 
 __all__ = [
     "ClosetRepositoryPort",
@@ -14,4 +15,6 @@ __all__ = [
     "ImageStoragePort",
     "TaskQueuePort",
     "ImageGenerationPort",
+    "ClothingAnalysisResult",
+    "GeminiAnalysisPort",
 ]
