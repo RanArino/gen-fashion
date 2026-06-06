@@ -36,6 +36,8 @@ This command:
 - Builds Docker images for both FastAPI and ADK services
 - Starts Elasticsearch 8.x on port 9200
 - Starts Firestore Emulator on port 8080
+- Starts Firebase Auth Emulator on port 9099
+- Starts MinIO S3-compatible storage on ports 9000 and 9001
 - Starts FastAPI service on port 8000
 - Starts ADK Agent service on port 3000
 
@@ -54,12 +56,20 @@ curl http://localhost:9200/_cluster/health
 
 # Firestore emulator UI
 open http://localhost:8080/
+
+# Firebase Auth emulator
+curl http://localhost:9099/
+
+# MinIO console
+open http://localhost:9001/
 ```
 
 Expected responses:
 - FastAPI: `{"status":"ok"}`
 - Elasticsearch: JSON object with `"status":"green"` or `"yellow"`
 - Firestore: Web UI loads
+- Firebase Auth: emulator responds on port 9099
+- MinIO: console loads; local credentials are `minioadmin` / `minioadmin`
 
 ## Development Workflow
 
@@ -143,6 +153,24 @@ The Google Cloud SDK emulator is large. First run may take a while. If it fails:
 # (Fall back to Cloud Firestore if needed)
 ```
 
+### Local Auth Token
+
+With `make dev` running, create a Firebase Auth emulator user and capture an ID token:
+
+```bash
+TOKEN=$(curl -s -X POST \
+  "http://localhost:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"returnSecureToken":true}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["idToken"])')
+```
+
+Use it with authenticated API calls:
+
+```bash
+curl "http://localhost:8000/closet/upload-url?item_id=<uuid>" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## Service Endpoints
 
 | Service | URL | Purpose |
@@ -150,6 +178,8 @@ The Google Cloud SDK emulator is large. First run may take a while. If it fails:
 | FastAPI | http://localhost:8000 | REST API for closet & session management |
 | Elasticsearch | http://localhost:9200 | Vector search for clothing items |
 | Firestore Emulator | http://localhost:8080 | Database emulator for local dev |
+| Firebase Auth Emulator | http://localhost:9099 | Local Firebase ID tokens |
+| MinIO | http://localhost:9001 | Local R2/S3-compatible object storage console |
 | ADK Agent | http://localhost:3000 | Agent orchestrator (internal) |
 
 ## Environment Variables
@@ -157,9 +187,15 @@ The Google Cloud SDK emulator is large. First run may take a while. If it fails:
 See `.env.example` for all available options. Key variables:
 
 - `FIRESTORE_EMULATOR_HOST`: Firestore Emulator address
-- `ELASTICSEARCH_HOST`: Elasticsearch address
+- `FIREBASE_AUTH_EMULATOR_HOST`: Firebase Auth Emulator address
+- `ELASTICSEARCH_URL`: Elasticsearch URL
+- `GEMINI_API_KEY` / `GOOGLE_GENAI_API_KEY`: Gemini developer API key for local image analysis
+- `IMAGE_ANALYSIS_MODEL`: Gemini model for clothing image analysis; local dev defaults to `gemini-2.5-flash`
+- `R2_ENDPOINT_URL`: R2 or MinIO S3-compatible endpoint URL used by the API container
+- `R2_PUBLIC_ENDPOINT_URL`: public endpoint embedded in signed URLs for browser/curl uploads
+- `TASK_QUEUE_MODE`: `local` for local HTTP worker calls, `cloud_tasks` for production queueing
 - `AGENT_MODEL`: LLM model (default: gemini-2.0-flash)
-- `MAX_CLOSET_IMAGES_PER_USER`: Max items per user (default: 50)
+- `MAX_CLOSET_IMAGES_PER_USER`: Max items per user (default: 20)
 
 ## Next Steps
 
