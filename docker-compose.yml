@@ -17,13 +17,42 @@ services:
 
   firestore-emulator:
     image: google/cloud-sdk:latest
-    command: /bin/bash -c "apt-get update && apt-get install -y openjdk-11-jre && gcloud beta emulators firestore start --host-port=0.0.0.0:8080"
+    command: /bin/bash -c "apt-get update && apt-get install -y openjdk-21-jre && gcloud beta emulators firestore start --host-port=0.0.0.0:8080"
     environment:
       - FIRESTORE_EMULATOR_HOST=0.0.0.0:8080
     ports:
       - "8080:8080"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  firebase-auth-emulator:
+    image: node:20-alpine
+    working_dir: /workspace
+    command: sh -c "npm install -g firebase-tools@latest && firebase emulators:start --only auth --project gen-fashion-local"
+    ports:
+      - "9099:9099"
+    volumes:
+      - ./firebase.json:/workspace/firebase.json:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(9099,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,14 +65,30 @@ services:
       - "8000:8000"
     environment:
       - FIRESTORE_EMULATOR_HOST=firestore-emulator:8080
-      - ELASTICSEARCH_HOST=elasticsearch:9200
-      - FIREBASE_PROJECT_ID=gen-fashion-local
-      - MAX_CLOSET_IMAGES_PER_USER=50
+      - FIREBASE_AUTH_EMULATOR_HOST=firebase-auth-emulator:9099
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - GOOGLE_CLOUD_PROJECT=gen-fashion-local
+      - MAX_CLOSET_IMAGES_PER_USER=20
+      - GOOGLE_GENAI_USE_VERTEXAI=false
+      - IMAGE_ANALYSIS_MODEL=gemini-2.5-flash
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY:-dummy-key}
+      - R2_ENDPOINT_URL=http://minio:9000
+      - R2_PUBLIC_ENDPOINT_URL=http://localhost:9000
+      - R2_ACCESS_KEY_ID=minioadmin
+      - R2_SECRET_ACCESS_KEY=minioadmin
+      - R2_BUCKET_NAME=gen-fashion-images
+      - TASK_QUEUE_MODE=local
+      - ADK_INTERNAL_BASE_URL=http://fastapi-service:8000
       - AGENT_MODEL=gemini-2.0-flash
     depends_on:
       elasticsearch:
         condition: service_healthy
       firestore-emulator:
+        condition: service_healthy
+      firebase-auth-emulator:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     volumes:
       - ./fastapi-service:/app
