@@ -19,7 +19,7 @@ Concretely, the following becomes possible where today every endpoint returns HT
 3. The background job (`POST /internal/tasks/process-upload`) fetches the image, runs Gemini image analysis to extract `{category, colors, tags, season, style}`, generates an embedding, flips the Firestore document to `status: "READY"`, and indexes the item in Elasticsearch.
 4. The client can delete an item (`DELETE /closet/items/{item_id}`), which removes it from Firestore, Elasticsearch, and object storage.
 
-This is the **backend slice of milestone M2** (`docs/feature-matrix-phase01.md`). It covers nine requirements: M2-2, M2-3, M2-4, M2-5, M2-6, M2-7, M2-8, M2-9, M2-10. The three client-facing requirements in M2 — M2-1 (Flutter Google Sign-In), M2-11 (Flutter closet UI), M2-12 (Firebase Security Rules) — are **deferred to a follow-up plan** because no Flutter application exists in the repository yet (there is no `pubspec.yaml`). The backend built here is the API those client pieces will consume, and it is the exact set of requirements whose stubs already live in `fastapi-service` (each stub is annotated `Implement in M2-N`). See the Decision Log for the scope rationale.
+This is the **backend slice of milestone M2** (`docs/feature-matrix-phase01.md`). It covers nine requirements: M2-2, M2-3, M2-4, M2-5, M2-6, M2-7, M2-8, M2-9, M2-10. The three client-facing requirements in M2 — M2-1 (Flutter Google Sign-In), M2-11 (Flutter closet UI), M2-12 (Firebase Security Rules) — are **deferred to a follow-up plan** because no Flutter application exists in the repository yet (there is no `pubspec.yaml`). The backend built here is the API those client pieces will consume, and it replaces the original `fastapi-service` M2 stubs annotated `Implement in M2-N`. See the Decision Log for the scope rationale.
 
 **Why it matters:** M3 (Shared Demo Closet), M4 (ADK Agents Core), and M5 (Web E2E) all assume that closet items exist in Firestore + Elasticsearch with analysis metadata and embeddings. This milestone is the pipeline that produces that data. Until it exists, every downstream search and coordination feature has nothing to search over.
 
@@ -29,12 +29,12 @@ This is the **backend slice of milestone M2** (`docs/feature-matrix-phase01.md`)
 ## Progress
 
 
-- [ ] Phase 0 — Foundations: dependencies, central config, env reconciliation, `ClothingItem` lifecycle fields.
-- [ ] Phase 1 — Firebase ID-token middleware (M2-2) with a test-friendly override.
-- [ ] Phase 2 — Output adapters: R2/S3 storage (M2-7), Firestore closet repo (M2-8), Elasticsearch repo (M2-9, keyword-first), task queue (M2-10, local + Cloud Tasks).
-- [ ] Phase 3 — Use cases: get-upload-url (M2-3), register (M2-4), delete (M2-6), process-upload worker (M2-5).
-- [ ] Phase 4 — HTTP wiring: closet routes + new internal-tasks router, dependency providers.
-- [ ] Phase 5 — Tests and local end-to-end validation; flip the nine matrix rows from 🟡 to ✅ only when their acceptance is met.
+- [x] (2026-06-04 13:15Z) Phase 0 — Foundations: dependencies, central config, env reconciliation, `ClothingItem` lifecycle fields.
+- [x] (2026-06-04 13:15Z) Phase 1 — Firebase ID-token middleware (M2-2) with FastAPI dependency overrides used in route tests.
+- [x] (2026-06-04 13:15Z) Phase 2 — Output adapters: R2/S3 storage (M2-7), Firestore closet repo (M2-8), Elasticsearch repo (M2-9, keyword-first), task queue (M2-10, local + Cloud Tasks), and Gemini analysis adapter.
+- [x] (2026-06-04 13:15Z) Phase 3 — Use cases: get-upload-url (M2-3), register (M2-4), delete (M2-6), process-upload worker (M2-5).
+- [x] (2026-06-04 13:15Z) Phase 4 — HTTP wiring: closet routes + new internal-tasks router, dependency providers, startup index initialization.
+- [x] (2026-06-04 13:58Z) Phase 5 — Full validation complete: `pytest -q` reports `28 passed`, Docker Compose boots Firestore/Auth/MinIO/Elasticsearch/FastAPI, `scripts/m2_closet_smoke.py --expect-status ERROR` proves the worker failure path, and `scripts/m2_closet_smoke.py --expect-status READY` proves authenticated signed upload, Gemini analysis, Firestore READY metadata including `embeddingId`, Elasticsearch indexing, storage presence, and delete cleanup.
 
 
 ## Surprises & Discoveries
@@ -43,7 +43,21 @@ This is the **backend slice of milestone M2** (`docs/feature-matrix-phase01.md`)
 - (2026-06-04, planning) **`adk-agent-service` is TypeScript, not Python.** Its `src/` contains `.ts` stubs and `package.json` lists only `typescript`/`@types/node` with empty `dependencies`. Requirement §6.9 places `ProcessUploadedClothingItemUseCase` in `adk-agent-service`, but the Python stub for it already lives at `fastapi-service/app/use_cases/closet/process_uploaded_item.py`, and `fastapi-service` already has the Firestore/Elasticsearch ports and adapters it needs. See Decision Log for where the worker lands.
 - (2026-06-04, planning) **Env var names diverge between the running config and the spec.** Root `.env.example` and `docker-compose.yml` use `ELASTICSEARCH_HOST`, `FIREBASE_PROJECT_ID`, `GOOGLE_GENAI_API_KEY`, and `MAX_CLOSET_IMAGES_PER_USER=50`, while req §9.4/§12.2 specify `ELASTICSEARCH_URL`, `GOOGLE_CLOUD_PROJECT`, `GEMINI_API_KEY`/`GOOGLE_GENAI_USE_VERTEXAI`, and a default of `20`. Phase 0 reconciles these in one place.
 - (2026-06-04, planning) **`EmbeddingSearchPort.index_item(item_id, user_id, embedding)` cannot carry the index document.** The Elasticsearch `clothing_items` mapping (§8.2) needs `tags`, `category`, `colors`, `season`, `is_shared` as well. The port signature must widen (Phase 2 / Decision Log).
-- (Carried from M1, relevant here) **Gemini model availability is backend-dependent.** Per the M1 plan, `gemini-2.0-flash` is reachable via the developer API (`GEMINI_API_KEY`, `GOOGLE_GENAI_USE_VERTEXAI=false`) but was *absent* from Vertex `models.list()` for this project, where `gemini-2.5-flash` is available. The analysis model is therefore env-configurable.
+- (Carried from M1, updated during execution) **Gemini model availability is backend-dependent and time-sensitive.** The M1 plan found `gemini-2.0-flash` reachable earlier, but the Developer API now returns `404 NOT_FOUND` for it. Official Gemini model docs list `gemini-2.5-flash` as the stable Flash model with image input and structured outputs, so the FastAPI analysis default and local Compose env now use `gemini-2.5-flash`. The analysis model remains env-configurable.
+- (2026-06-04, execution) **The local shell's default `python3` is CPython 3.14, which cannot install the repo's pinned `pydantic==2.5.0` / `pydantic-core==2.14.1`.** `python3 -m pip install -r requirements.txt` was blocked by PEP 668, and a Python 3.14 venv failed building `pydantic-core` with `ForwardRef._evaluate()` API mismatch. A temporary Python 3.12 venv installed the dependencies successfully and ran the tests.
+- (2026-06-04, execution) **Docker availability changed during execution.** An early `docker compose run --rm fastapi-service pytest -q` failed because the Docker daemon was unavailable. Later, `docker compose up -d --build` built the images and started Elasticsearch, MinIO, and Firebase Auth Emulator successfully, exposing a Firestore emulator container startup issue instead.
+- (2026-06-04, execution) **The latest `google/cloud-sdk` base no longer installs the older JRE packages.** Firestore Emulator startup first failed with `Package 'openjdk-11-jre' has no installation candidate`; the current Debian trixie package set also lacks `openjdk-17-jre-headless` and points to Java 21, so the Compose command now installs `openjdk-21-jre`.
+- (2026-06-04, execution) **`google-genai==0.3.0` exposes the API surface this adapter imports.** A local import check confirmed `genai.Client`, `types.Part.from_bytes`, and `types.EmbedContentConfig` exist. The actual image embedding call remains best-effort and unverified against the live Gemini service.
+- (2026-06-04, execution) **The local E2E path needed an actual Auth token source.** The original local stack had Firestore Emulator only; without a Firebase Auth Emulator or a real Firebase token, the terminal smoke test could not exercise authenticated closet routes. A Firebase Auth Emulator service and `firebase.json` were added instead of a `DEV_AUTH_BYPASS`, preserving the real `verify_firebase_token` dependency.
+- (2026-06-04, execution) **Presigned MinIO URLs needed a public endpoint distinct from the container endpoint.** FastAPI must use `http://minio:9000` for in-network S3 operations, but browser/curl clients on the host need signed URLs using `http://localhost:9000`. `R2_PUBLIC_ENDPOINT_URL` was added for presigned URL generation while `R2_ENDPOINT_URL` remains the internal adapter endpoint.
+- (2026-06-04, execution) **Local queue enqueue must not fail just because the worker failed.** With a dummy Gemini key, the worker can correctly mark an item `ERROR`, but `POST /complete` should still return `PROCESSING` after enqueueing. `LocalHttpTaskQueueAdapter` now logs a failing local worker response and returns a task id, matching the production separation between enqueue success and worker execution success.
+- (2026-06-04, execution) **`elasticsearch==8.11.0` does not install the async transport dependency.** The live worker failed before entering the process-upload use case with `You must have 'aiohttp' installed to use AiohttpHttpNode`, leaving the smoke item in `PROCESSING`. `aiohttp` is now an explicit FastAPI service dependency.
+- (2026-06-04, execution) **The terminal smoke script cannot rely on MinIO CORS support.** Local MinIO returned `NotImplemented` for `PutBucketCors`; the smoke script now tolerates only that response because terminal `PUT` uploads do not need browser CORS.
+- (2026-06-04, execution) **Local verification artifacts must be excluded from Docker context.** Creating `fastapi-service/.venv312` caused a 273 MB Docker build context before `.dockerignore` existed. A narrow service `.dockerignore` now excludes local venvs, bytecode, and pytest cache.
+- (2026-06-04, execution) **`embeddingId` is an Elasticsearch document pointer, not proof a vector exists.** Firestore initially wrote `embeddingId` only when the optional embedding vector existed. The M2 document contract says `embeddingId: item_id` is valid after `READY`, and the worker indexes a keyword ES document even when embedding is absent, so `FirestoreClosetRepository` now writes `embeddingId` for every `READY` item and omits it for `PROCESSING`.
+- (2026-06-04, execution) **The local queue must be truly asynchronous for live Gemini latency.** Awaiting the internal worker request inside `POST /complete` caused an `httpx.ReadTimeout` when Gemini processing took longer than the HTTP client default. `LocalHttpTaskQueueAdapter` now returns the task id immediately and dispatches the worker call in a background task, logging any request or handler failure.
+- (2026-06-04, execution) **Live Gemini required three adjustments.** The Pydantic response model generated nullable schema branches that `google-genai==0.3.0` rejected, so the adapter now passes an explicit non-nullable JSON schema. The Developer API now rejects `gemini-2.0-flash`; the FastAPI analysis default and Compose env now use `gemini-2.5-flash`. The smoke fixture also had to generate a valid JPEG at runtime rather than relying on a pasted base64 image.
+- (2026-06-04, security review) **The internal worker route shipped without authentication.** `POST /internal/tasks/process-upload` had no auth dependency, trusted `userId`/`item_id` from the body, and is reachable on the published host port (`docker-compose` maps `8000:8000`), so the `/internal` prefix was cosmetic — an attacker who learned a `(userId, item_id)` pair could force reprocessing and overwrite another tenant's Firestore/Elasticsearch metadata (and burn Gemini calls). `CloudTasksAdapter` also set no `oidc_token`, so production had no producer-side defense either. Addressed with a fail-closed shared-secret guard now and a tracked BLOCKING deploy gate for OIDC + internal ingress (see Decision Log).
 
 
 ## Decision Log
@@ -74,22 +88,41 @@ This is the **backend slice of milestone M2** (`docs/feature-matrix-phase01.md`)
   Rationale: Per M1-3, vector search is off the MVP critical path; the exact `gemini-embedding-2` image-embedding call is the one genuine unknown (see Interfaces and Dependencies). Decoupling `READY` from embedding success protects the demo path.
   Date/Author: 2026-06-04 / planning agent.
 
+- Decision: **Keep M2-2…M2-10 in 🟡 until the local-stack E2E smoke test is observed.**
+  Rationale: Backend code and focused tests are complete, and the dummy-key local-stack smoke path has observed Firebase Auth Emulator, signed storage upload, Firestore writes, local worker dispatch, `ERROR` transition, and delete cleanup. The backend rows were kept 🟡 until the live Gemini-backed `READY` smoke also observed Firestore metadata, Elasticsearch indexing, storage presence, and delete cleanup. That proof is now complete, so M2-2…M2-10 can move to ✅.
+  Date/Author: 2026-06-04 / execution agent.
+
+- Decision: **Add Firebase Auth Emulator to the local stack rather than adding an env-gated auth bypass.**
+  Rationale: M2-2 specifically verifies Firebase ID tokens. The Auth emulator lets the terminal smoke test obtain an emulator-issued ID token and still exercise the production-shaped auth dependency. A bypass would be easier but would prove less of the requested behavior.
+  Date/Author: 2026-06-04 / execution agent.
+
+- Decision: **Use separate internal and public S3-compatible endpoints for local storage.**
+  Rationale: Docker containers resolve `minio`, but the host running curl or a browser does not. Signed URLs are client-facing, so they must contain a host-reachable endpoint. Keeping `R2_ENDPOINT_URL` for adapter I/O and adding `R2_PUBLIC_ENDPOINT_URL` for presigned URLs preserves both paths without special-casing MinIO in use cases.
+  Date/Author: 2026-06-04 / execution agent.
+
+- Decision: **Guard `/internal/*` with a fail-closed shared secret now; defer OIDC + Cloud Run internal ingress to a BLOCKING deploy gate.** A security review (confidence 8) flagged that `POST /internal/tasks/process-upload` had no authentication, acts on a caller-supplied `userId`, and is reachable on the published host port — the `/internal` prefix gives no isolation. Mitigation chosen ("guard now + track gate"): a `require_internal_secret` dependency on the whole internal router compares an `X-Internal-Secret` header against `INTERNAL_TASK_SECRET` (`secrets.compare_digest`); unset ⇒ the route is locked (503). Both task producers send the header (`LocalHttpTaskQueueAdapter` always; `CloudTasksAdapter` as a stopgap). The local stack sets a default secret so `make dev`/smoke are unaffected.
+  Rationale: The full production fix needs deploy-time inputs that do not exist yet (the invoker service-account email and the Cloud Run service URL/audience), so it cannot be built or tested locally now. But req §10.3's "Cloud Tasks runs inside the VPC, so no auth needed" is an *unenforced assumption* — Cloud Run is public by default — so leaving the route naked risks shipping a cross-tenant write/abuse vulnerability. The shared secret removes the trivial-exploit path now and creates the exact seam the OIDC check drops into later.
+  BLOCKING deploy gate (must hold before any public deploy): (1) `CloudTasksAdapter` sets `oidc_token` (invoker SA + audience) and `require_internal_secret` verifies the Google-signed bearer via `google.oauth2.id_token`; (2) Cloud Run ingress for `fastapi-service` is set to `internal` (or internal-and-cloud-load-balancing); (3) `INTERNAL_TASK_SECRET` is a real Secret-Manager value, not the dev default. See the `# TODO(deploy)` in `app/adapters/cloud_tasks_adapter.py`.
+  Date/Author: 2026-06-04 / execution agent.
+
 
 ## Outcomes & Retrospective
 
 
-(To be completed at milestone end. Record which of M2-2…M2-10 reached ✅, the measured timings of the worker, the resolved `gemini-embedding-2` call, and any adapter surprises.)
+Backend implementation for M2-2…M2-10 is complete in `fastapi-service`: authenticated closet routes, internal worker route, central settings, storage/Firestore/Elasticsearch/task-queue/Gemini adapters, and use cases now replace the 501 stubs. Focused unit, route, adapter-mapping, local queue, presigned URL endpoint, Firestore `embeddingId`, and live Elasticsearch adapter tests pass.
+
+The nine backend matrix rows are now ✅. Docker Compose boots the local stack, `scripts/m2_closet_smoke.py --expect-status ERROR` passes with the default dummy Gemini key, and `scripts/m2_closet_smoke.py --expect-status READY` passes with the `.env` Gemini key. The READY smoke observes authenticated upload, storage, Firestore READY metadata (`category`, `colors`, `tags`, `season`, `embeddingId`), local worker dispatch, Elasticsearch indexing, and delete cleanup across Firestore/Elasticsearch/storage.
 
 
 ## Context and Orientation
 
 
-### Current State
+### Historical Baseline
 
 
-M0 and M1 are complete. `/Users/ran/my-app/gen-fashion/` holds a hexagonal Python service (`fastapi-service`), a TypeScript ADK skeleton (`adk-agent-service`), PoC scripts under `poc/`, and `docker-compose.yml` that boots Elasticsearch 8.11 (`localhost:9200`) and the Firestore emulator (`localhost:8080`).
+M0 and M1 were complete before this plan. `/Users/ran/my-app/gen-fashion/` held a hexagonal Python service (`fastapi-service`), a TypeScript ADK skeleton (`adk-agent-service`), PoC scripts under `poc/`, and `docker-compose.yml` that booted Elasticsearch 8.11 (`localhost:9200`) and the Firestore emulator (`localhost:8080`).
 
-In `fastapi-service`, the M2 surface area exists only as stubs:
+At the start of this plan, the M2 surface area in `fastapi-service` existed only as stubs:
 
 - Ports (`app/ports/`) are defined abstract classes: `ClosetRepositoryPort`, `EmbeddingSearchPort`, `ImageStoragePort`, `TaskQueuePort`, plus `ClothingSearchPort`, `StylingRepositoryPort`, `ImageGenerationPort`.
 - Adapters (`app/adapters/`) subclass the ports but every method raises `NotImplementedError("Implement in M2-N: …")`: `r2_image_storage.py`, `firestore_closet_repo.py`, `elasticsearch_embedding_repo.py`, `cloud_tasks_adapter.py`.
@@ -97,9 +130,9 @@ In `fastapi-service`, the M2 surface area exists only as stubs:
 - Routes (`app/handlers/closet_routes.py`) return `HTTPException(501, "Implement in M2-N")` for `GET /closet/upload-url`, `POST /closet/items/{item_id}/complete`, `DELETE /closet/items/{item_id}`.
 - DI providers (`app/dependencies.py`) already return the adapter classes (e.g. `get_image_storage() -> R2ImageStorage()`), so wiring is mostly about filling adapters in, not rebuilding the graph.
 
-The domain model `ClothingItem` (`app/domain/closet/aggregates.py`) currently has `id`, `user_id`, `image_url`, `tags`, `embedding`, `created_at`, `updated_at`. It has **no** processing `status`, `category`, `colors`, or `season` — fields the Firestore document (§8.1) requires. Phase 0 adds them.
+The domain model `ClothingItem` (`app/domain/closet/aggregates.py`) had `id`, `user_id`, `image_url`, `tags`, `embedding`, `created_at`, `updated_at`, but no processing `status`, `category`, `colors`, or `season` fields. Phase 0 added them.
 
-`fastapi-service/requirements.txt` has `fastapi`, `uvicorn`, `pydantic`, `pydantic-settings`, `elasticsearch==8.11.0`, `firebase-admin==6.2.0`, `google-cloud-tasks==2.14.0`, `httpx`, `pytest`, `pytest-asyncio`, `python-multipart`. It lacks `boto3` (R2/S3) and `google-genai` (Gemini analysis + embedding). `google-cloud-firestore` arrives transitively via `firebase-admin`.
+`fastapi-service/requirements.txt` already had `fastapi`, `uvicorn`, `pydantic`, `pydantic-settings`, `elasticsearch==8.11.0`, `firebase-admin==6.2.0`, `google-cloud-tasks==2.14.0`, `httpx`, `pytest`, `pytest-asyncio`, and `python-multipart`. Phase 0 added the explicit `boto3`, `google-genai`, `google-cloud-firestore`, and `aiohttp` dependencies needed by this milestone.
 
 
 ### Architecture Glossary
@@ -163,7 +196,7 @@ Create a single typed settings module `fastapi-service/app/config.py` using `pyd
         # Gemini
         gemini_api_key: str | None = None
         google_genai_use_vertexai: bool = False
-        image_analysis_model: str = "gemini-2.0-flash"
+        image_analysis_model: str = "gemini-2.5-flash"
         embedding_model: str = "gemini-embedding-2"
         embedding_dimensions: int = 768
 
@@ -311,7 +344,7 @@ Local/testing strategy: `docker-compose.yml` runs only the Firestore emulator, n
 
 Implement `index_item` as an upsert keyed by `item_id` (omit the `embedding` field when `None`), `delete_item` as a delete-by-id that ignores 404, and keep `search_similar` minimal (filter by `user_id`; vector `knn` is M5). Update the abstract `EmbeddingSearchPort` signature and the docstrings to match; this is the one intentional port change in M2 (Decision Log).
 
-**M2-10 task queue (`app/adapters/cloud_tasks_adapter.py` + new `app/adapters/local_task_queue.py`).** Implement `CloudTasksAdapter.enqueue_task` with `google.cloud.tasks_v2` to create an HTTP task POSTing the JSON payload to `{adk_internal_base_url}{handler_path}` on `CLOUD_TASKS_QUEUE_EMBED`. Add `LocalHttpTaskQueueAdapter` that, on `enqueue_task`, fires an `httpx.AsyncClient().post(...)` to the same URL (await it for deterministic local tests, or schedule it; await is simpler and fine locally). `get_task_status` can return a static `"UNKNOWN"` for MVP. Selection happens in `app/dependencies.py` (Phase 4).
+**M2-10 task queue (`app/adapters/cloud_tasks_adapter.py` + new `app/adapters/local_task_queue.py`).** Implement `CloudTasksAdapter.enqueue_task` with `google.cloud.tasks_v2` to create an HTTP task POSTing the JSON payload to `{adk_internal_base_url}{handler_path}` on `CLOUD_TASKS_QUEUE_EMBED`. Add `LocalHttpTaskQueueAdapter` that, on `enqueue_task`, schedules an `httpx.AsyncClient().post(...)` to the same URL in the background and returns the task id immediately, logging request or handler failures. `get_task_status` can return a static `"UNKNOWN"` for MVP. Selection happens in `app/dependencies.py` (Phase 4).
 
 
 ### Phase 3 — Use cases
@@ -412,10 +445,14 @@ Add MinIO env to the `fastapi-service` block and set the spec-aligned vars (also
 
     - ELASTICSEARCH_URL=http://elasticsearch:9200
     - GOOGLE_CLOUD_PROJECT=gen-fashion-local
+    - FIREBASE_AUTH_EMULATOR_HOST=firebase-auth-emulator:9099
     - MAX_CLOSET_IMAGES_PER_USER=20
     - GOOGLE_GENAI_USE_VERTEXAI=false
-    - GEMINI_API_KEY=${GEMINI_API_KEY:-dummy-key}
+    - IMAGE_ANALYSIS_MODEL=gemini-2.5-flash
+    - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY:-dummy-key}
     - R2_ENDPOINT_URL=http://minio:9000
+    - R2_PUBLIC_ENDPOINT_URL=http://localhost:9000
     - R2_ACCESS_KEY_ID=minioadmin
     - R2_SECRET_ACCESS_KEY=minioadmin
     - R2_BUCKET_NAME=gen-fashion-images
@@ -428,6 +465,13 @@ Then start the stack:
     make dev
 
 Expected: `elasticsearch`, `firestore-emulator`, `minio`, `fastapi-service` come up healthy. `http://localhost:8000/health` returns `{"status":"ok"}`.
+
+Add a Firebase Auth Emulator service on port `9099` using `firebase.json`, and include it in `fastapi-service.depends_on`. With the emulator running, create a local ID token using:
+
+    TOKEN=$(curl -s -X POST \
+      "http://localhost:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key" \
+      -H "Content-Type: application/json" \
+      -d '{"returnSecureToken":true}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["idToken"])')
 
 
 ### Step 3 — Create the bucket and CORS (one-time, local)
@@ -456,7 +500,14 @@ Expected: existing domain/health tests keep passing; new use-case tests pass as 
 ### Step 5 — Local end-to-end smoke test
 
 
-With `make dev` up and Phase 1's test override or `FIREBASE_AUTH_EMULATOR_HOST` configured, exercise the full path. Outline (adapt token handling to the chosen local auth approach):
+With `make dev` up and `FIREBASE_AUTH_EMULATOR_HOST` configured, exercise the full path. First create an emulator token:
+
+    TOKEN=$(curl -s -X POST \
+      "http://localhost:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key" \
+      -H "Content-Type: application/json" \
+      -d '{"returnSecureToken":true}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["idToken"])')
+
+Then run the upload flow:
 
     # 1. Ask for an upload URL (item_id generated client-side)
     ITEM_ID=$(python -c "import uuid;print(uuid.uuid4())")
@@ -484,6 +535,19 @@ With `make dev` up and Phase 1's test override or `FIREBASE_AUTH_EMULATOR_HOST` 
 
 If `GEMINI_API_KEY` is a dummy value, analysis/embedding will fail; supply a real developer key to see `status: "READY"`, or assert the documented `ERROR` path. Record the run in Artifacts.
 
+The same flow is automated by:
+
+    cd /Users/ran/my-app/gen-fashion
+    python3.12 -m venv fastapi-service/.venv312
+    fastapi-service/.venv312/bin/python -m pip install -r fastapi-service/requirements.txt
+    fastapi-service/.venv312/bin/python scripts/m2_closet_smoke.py --expect-status READY
+
+When using the default dummy Gemini key, run:
+
+    fastapi-service/.venv312/bin/python scripts/m2_closet_smoke.py --expect-status ERROR
+
+Expected: the script prints JSON containing `item_id`, `user_id`, `final_status`, and `"deleted": true`.
+
 
 ## Validation and Acceptance
 
@@ -498,7 +562,7 @@ Acceptance is the M2 backend exit behavior, observed end to end:
 - **M2-6:** `DELETE /closet/items/{id}` returns `204` and the item is gone from Firestore, Elasticsearch, and storage; deleting a missing item returns `404`.
 - **Suite:** `python -m pytest -q` in `fastapi-service` passes, including the new use-case unit tests and the ES adapter test (skipped only if `localhost:9200` is unreachable).
 
-Flip each matrix row to ✅ only when its specific item above is demonstrated. Until then it stays 🟡.
+The backend matrix rows M2-2…M2-10 have been flipped to ✅ because each item above is demonstrated. Client-facing M2 rows remain deferred.
 
 
 ## Idempotence and Recovery
@@ -515,14 +579,81 @@ Flip each matrix row to ✅ only when its specific item above is demonstrated. U
 ## Artifacts and Notes
 
 
-(To be filled during execution.) Capture: the end-to-end smoke-test transcript from Step 5 showing `PROCESSING`→`READY` and the `204` delete; one example Firestore document and the matching Elasticsearch `_doc`; the resolved `google-genai` embedding call (model id, dimensionality, whether image-embedding worked or the keyword-only fallback was used); and `pytest -q` output.
+- Dependency install verification:
+
+    `python3` was CPython 3.14 and could not install the pinned Pydantic stack. A temporary Python 3.12 venv installed `fastapi-service/requirements.txt` successfully. Temporary venv directories were removed after verification so no dependency tree is left in the workspace.
+
+- Test verification:
+
+    From `/Users/ran/my-app/gen-fashion/fastapi-service`, using the temporary Python 3.12 venv:
+
+        .venv312/bin/python -m pytest -q
+        ............................                                             [100%]
+        28 passed, 2 warnings in 1.14s
+
+    This run was inside the FastAPI Compose container. `tests/adapters/test_elasticsearch_embedding_repo.py` now probes `get_settings().resolved_elasticsearch_url`, so it exercised the live Elasticsearch index lifecycle through `http://elasticsearch:9200` instead of skipping. The suite emits only the existing FastAPI `on_event` deprecation warnings.
+
+- Smoke script verification:
+
+        fastapi-service/.venv312/bin/python -m py_compile scripts/m2_closet_smoke.py
+        fastapi-service/.venv312/bin/python scripts/m2_closet_smoke.py --expect-status ERROR
+
+    The script compiles and passes with the default dummy Gemini key. The latest ERROR-path smoke run returned:
+
+        {
+          "deleted": true,
+          "final_status": "ERROR",
+          "item_id": "cead3eb6-c5f9-441d-98dd-7f5d1c82ea50",
+          "user_id": "uJzgsWJg9bQlr5Dvq3G15haauwDl"
+        }
+
+    This run proves the local Auth Emulator token flow, signed MinIO upload, Firestore PROCESSING placeholder, local worker execution, worker ERROR transition, and delete cleanup for Firestore/storage with Elasticsearch delete idempotency. A real `READY` run was then attempted after forwarding `GOOGLE_GENAI_API_KEY` from `.env`; see the later notes for the model/schema fixes required by the live Gemini API.
+
+    The READY-path smoke run then passed with the `.env` Gemini key:
+
+        fastapi-service/.venv312/bin/python scripts/m2_closet_smoke.py --expect-status READY --timeout-seconds 180
+        {
+          "deleted": true,
+          "final_status": "READY",
+          "item_id": "9390d2d7-6f85-4595-ba8a-3bffac06445d",
+          "user_id": "dBpRTokJ7N3dCMOiTZkWbyJ4QSqM"
+        }
+
+    The READY smoke script now asserts Firestore `category`, `colors`, `tags`, `season`, and `embeddingId`, checks the matching Elasticsearch document, verifies storage before deletion, deletes through the API, and confirms deletion from Firestore, Elasticsearch, and storage.
+
+- Compose/static config verification:
+
+        docker compose config --quiet
+
+    This completed successfully, with Docker Compose warning only that the top-level `version` field is obsolete.
+
+- Docker/local-stack verification attempt:
+
+        docker compose run --rm fastapi-service pytest -q
+        unable to get image 'google/cloud-sdk:latest': Cannot connect to the Docker daemon at unix:///Users/ran/.docker/run/docker.sock. Is the docker daemon running?
+
+    This was the first attempt. Later, Docker became available and:
+
+        docker compose up -d --build
+
+    successfully started Elasticsearch, Firestore Emulator, Firebase Auth Emulator, MinIO, FastAPI, and the ADK service. Firestore Emulator required `openjdk-21-jre` in the latest `google/cloud-sdk` image. FastAPI required explicit `aiohttp` for `AsyncElasticsearch`.
+
+    The later real-Gemini `READY` smoke run completed that Step 5 proof, including the matching worker-created Elasticsearch document.
+
+- `google-genai` import check:
+
+        Client True
+        Part.from_bytes True
+        EmbedContentConfig True
+
+    The actual `gemini-embedding-2` image embedding call remains best-effort. The READY smoke validates the worker's accepted M2 behavior: the item reaches READY and is indexed in Elasticsearch even if embedding generation is unavailable or rejected by the current API.
 
 
 ## Interfaces and Dependencies
 
 
 - **`boto3`** (new) — S3-compatible client for Cloudflare R2 and the local MinIO stand-in: presigned PUT/GET URLs, `put/get/head/delete_object`. Needed for M2-7 and the worker's byte fetch.
-- **`google-genai`** (new) — Gemini client for image analysis (structured output, M2-5/§6.1) and embedding generation (§8.3). Local dev authenticates with `GEMINI_API_KEY` (developer API); production sets `GOOGLE_GENAI_USE_VERTEXAI=true` and uses ADC (§12.2). **Open item:** the exact `gemini-embedding-2` call that embeds *image bytes* at `output_dimensionality=768` is unverified in this repo. §8.3 asserts image+text share one vector space; the M1 plan only exercised text/agent paths. The worker treats embedding as best-effort and proceeds without a vector on failure (Decision Log), so M2 acceptance does not depend on resolving this; it must be confirmed before M5-5 vector search.
+- **`google-genai`** (new) — Gemini client for image analysis (structured output, M2-5/§6.1) and embedding generation (§8.3). Local dev authenticates with `GEMINI_API_KEY` or `GOOGLE_GENAI_API_KEY` (developer API); production sets `GOOGLE_GENAI_USE_VERTEXAI=true` and uses ADC (§12.2). The current local analysis default is `gemini-2.5-flash`. **Open item:** the exact `gemini-embedding-2` call that embeds *image bytes* at `output_dimensionality=768` remains best-effort for this repo. §8.3 asserts image+text share one vector space; the M1 plan only exercised text/agent paths. The worker proceeds without a vector on embedding failure (Decision Log), so M2 acceptance does not depend on resolving this; it must be confirmed before M5-5 vector search.
 - **`google-cloud-firestore`** (made explicit) — `AsyncClient` for the closet repository (M2-8). Honors `FIRESTORE_EMULATOR_HOST` locally; uses ADC in production.
 - **`elasticsearch==8.11.0`** (present) — `AsyncElasticsearch` for the `clothing_items` index (M2-9). Local Docker ES from `make dev`; GCE-hosted ES is deferred (M1-3).
 - **`firebase-admin==6.2.0`** (present) — `auth.verify_id_token` for the middleware (M2-2).
