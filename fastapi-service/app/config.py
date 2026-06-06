@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     cloud_tasks_location: str = "asia-northeast1"
     adk_internal_base_url: str = "http://localhost:8000"
 
+    # Shared secret guarding the /internal/* worker routes. Sent by the task
+    # producers (LocalHttpTaskQueueAdapter / CloudTasksAdapter) and verified by
+    # require_internal_secret. Unset => the internal routes are locked (503).
+    # Deployment hardening (OIDC + Cloud Run internal ingress) is a separate,
+    # BLOCKING deploy gate — see the M2 ExecPlan Decision Log.
+    internal_task_secret: str | None = None
+
     @property
     def project_id(self) -> str:
         return self.google_cloud_project or self.firebase_project_id or "gen-fashion-local"
