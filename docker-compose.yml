@@ -80,6 +80,7 @@ services:
       - R2_BUCKET_NAME=gen-fashion-images
       - TASK_QUEUE_MODE=local
       - ADK_INTERNAL_BASE_URL=http://fastapi-service:8000
+      - INTERNAL_TASK_SECRET=${INTERNAL_TASK_SECRET:-local-dev-internal-secret}
       - AGENT_MODEL=gemini-2.0-flash
     depends_on:
       elasticsearch:
