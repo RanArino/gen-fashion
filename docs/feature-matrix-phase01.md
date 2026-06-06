@@ -1,6 +1,6 @@
 # Phase 1 Feature Matrix — gen-fashion
 
-> **Last updated:** 2026-06-04
+> **Last updated:** 2026-06-06
 > **Source of truth:** [req-phase01.md](req-phase01.md) — this matrix tracks **implementation status** of the requirements defined there. Every feature row links back to the relevant section / Use Case of `req-phase01.md`.
 > **Scope:** Phase 1 MVP (Hackathon). Phase 1a (Web GUI) is implemented first; Phase 1b (LINE) follows.
 
@@ -85,7 +85,9 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 
 **Scope:** Authenticated users upload, view, and delete closet images; uploaded images are analyzed and embedded asynchronously. Reference: `req-phase01.md` §6.7–6.10, §8, §10, §11, ADL-014, ADL-015.
 
-> **ExecPlan (2026-06-04):** [20260604-m2-closet-management-backend.md](plans/20260604-m2-closet-management-backend.md) covers the **backend slice** of M2 — the nine server-side requirements M2-2…M2-10, which are verifiable end-to-end against `make dev`. The three client-facing requirements (M2-1, M2-11, M2-12) are **deferred to a follow-up frontend plan** because no Flutter app exists in the repo yet; they stay ❌ until then.
+> **ExecPlan (2026-06-04):** [20260604-m2-closet-management-backend.md](plans/20260604-m2-closet-management-backend.md) covers the **backend slice** of M2 — the nine server-side requirements M2-2…M2-10, which are verifiable end-to-end against `make dev`. This backend plan is **complete** (M2-2…M2-10 are ✅).
+>
+> **ExecPlan (2026-06-06):** [20260606-m2-closet-management-frontend.md](plans/20260606-m2-closet-management-frontend.md) covers the **frontend slice** of M2 — the three client-facing requirements M2-1, M2-11, M2-12 — building a new `flutter-web-app/` (Google Sign-In, closet upload/list/delete UI, Firestore Security Rules) that drives the backend above. It also adds **one additive, read-only backend endpoint** (`GET /closet/items/{id}/download-url`) so closet thumbnails load via short-lived signed URLs while storage stays private (R2-ready). These three rows are now **🟡 In progress** under this plan.
 >
 > **Backend implementation status (2026-06-04):** M2-2…M2-10 are implemented. `pytest -q` passes (`28 passed`) with live Elasticsearch reachable from Compose. Docker Compose boots Firestore Emulator, Firebase Auth Emulator, MinIO, Elasticsearch, and FastAPI. `scripts/m2_closet_smoke.py --expect-status ERROR` passes with the default dummy Gemini key, and `scripts/m2_closet_smoke.py --expect-status READY` passes with the `.env` Gemini key, proving authenticated signed upload, storage, Firestore READY metadata, local worker dispatch, Elasticsearch indexing, and delete cleanup.
 >
@@ -93,7 +95,7 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 
 | ID | Feature | Status | Description | Req ref |
 |---|---|---|---|---|
-| M2-1 | Firebase Auth — Google Sign-In | ❌ Not yet implemented | Flutter Web login via Google Sign-In; first login creates `users/{uid}`. **Deferred:** needs a Flutter app (none exists yet); to be planned in a dedicated frontend ExecPlan **after** the [M2 backend ExecPlan](plans/20260604-m2-closet-management-backend.md) is complete. | §10.1, §15 Phase 1a #4 |
+| M2-1 | Firebase Auth — Google Sign-In | 🟡 In progress | Flutter Web login via Google Sign-In; first login creates `users/{uid}`. Planned in the [M2 frontend ExecPlan](plans/20260606-m2-closet-management-frontend.md): `signInWithPopup(GoogleAuthProvider())` against the Auth Emulator locally, client-side `users/{uid}` bootstrap, auth gate. | §10.1, §15 Phase 1a #4 |
 | M2-2 | FastAPI Firebase ID Token middleware | ✅ Implemented | `verify_firebase_token` dependency implemented; Firebase Auth Emulator token smoke passes; route tests verify missing bearer token returns 401. | §10.3 |
 | M2-3 | `GetUploadUrlUseCase` | ✅ Implemented | `GET /closet/upload-url` returns a 15-min signed PUT URL and enforces `MAX_CLOSET_IMAGES_PER_USER`; live READY smoke uploads through a host-reachable MinIO signed URL. | §6.7 |
 | M2-4 | `RegisterClothingItemUseCase` | ✅ Implemented | `POST /closet/items/{item_id}/complete` writes a PROCESSING placeholder and enqueues the worker task; live smoke proves Firestore placeholder + local worker dispatch. | §6.8 |
@@ -103,8 +105,8 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 | M2-8 | `FirestoreClosetRepository` | ✅ Implemented | Async Firestore CRUD/count for `users/{userId}/closet` with domain/document mapping, including `embeddingId: item_id` for READY documents; READY smoke verifies metadata fields. | §5.2, §8.1 |
 | M2-9 | `ElasticsearchEmbeddingRepository` | ✅ Implemented | `clothing_items` index create/upsert/delete and keyword-first search implemented; live ES adapter test passes and READY smoke verifies worker-created ES document. | §5.2, §8.2 |
 | M2-10 | Cloud Tasks adapter (`TaskQueuePort`) | ✅ Implemented | `CloudTasksAdapter` plus async fire-and-forget `LocalHttpTaskQueueAdapter`, selected by settings; tests and smoke prove enqueue isolation and internal-worker dispatch. | §5.2, §6.8 |
-| M2-11 | Flutter closet management UI | ❌ Not yet implemented | Upload (direct R2 PUT), list via Firestore realtime listener, delete. **Deferred:** needs a Flutter app (none exists yet); to be planned in a dedicated frontend ExecPlan **after** the [M2 backend ExecPlan](plans/20260604-m2-closet-management-backend.md) is complete. | §11, ADL-015 |
-| M2-12 | Firebase Security Rules (closet) | ❌ Not yet implemented | Rules allowing per-user direct read of `users/{uid}/closet`. **Deferred:** pairs with the Flutter direct-read path; to be planned in a dedicated frontend ExecPlan **after** the [M2 backend ExecPlan](plans/20260604-m2-closet-management-backend.md) is complete. | ADL-015 |
+| M2-11 | Flutter closet management UI | 🟡 In progress | Upload (direct R2/MinIO PUT), list via Firestore realtime listener, delete. Planned in the [M2 frontend ExecPlan](plans/20260606-m2-closet-management-frontend.md): `flutter-web-app/` closet grid driven by `users/{uid}/closet` snapshots, signed-URL upload, `DELETE` flow. | §11, ADL-015 |
+| M2-12 | Firebase Security Rules (closet) | 🟡 In progress | Rules allowing per-user direct read of `users/{uid}/closet`. Planned in the [M2 frontend ExecPlan](plans/20260606-m2-closet-management-frontend.md): `firestore.rules` (owner read, client write denied) verified by a `@firebase/rules-unit-testing` suite. | ADL-015 |
 
 **Exit criteria:** A logged-in user uploads an image → R2 stores it → Firestore metadata reaches `status: READY` → ES indexed; delete removes all three. *(The backend ExecPlan proves this at the API layer via `make dev` + a scripted curl flow; the Flutter client that drives it is the deferred follow-up plan.)*
 
