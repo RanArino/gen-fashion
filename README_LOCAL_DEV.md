@@ -96,6 +96,12 @@ The first run will `flutter pub get` automatically. Sign in via the mocked
 Google provider in the Firebase Auth Emulator popup; no real OAuth client is
 needed.
 
+The local Firebase web options have demo defaults in `lib/config.dart`. For
+production builds, pass the real Firebase web config via `--dart-define`
+(`FIREBASE_API_KEY`, `FIREBASE_APP_ID`, `FIREBASE_MESSAGING_SENDER_ID`,
+`FIREBASE_PROJECT_ID`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_STORAGE_BUCKET`).
+Generated `flutter-web-app/lib/firebase_options.dart` files are ignored.
+
 ### Firestore Security Rules unit tests (M2-12)
 
 The dev `docker-compose` Firestore emulator (gcloud) does not enforce rules,
