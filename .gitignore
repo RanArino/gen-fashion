@@ -66,3 +66,11 @@ poc/adk_event_stream/.env
 
 # ローカル限定ドキュメント（コミットしない）
 docs/local/
+
+# The Python `lib/` rule above also matches the Flutter app's Dart source
+# directory (flutter-web-app/lib). Re-include it so the app source is tracked.
+!flutter-web-app/lib/
+
+# Do not commit generated FlutterFire project config. The web app reads local
+# demo defaults and production Firebase values from --dart-define instead.
+flutter-web-app/lib/firebase_options.dart
