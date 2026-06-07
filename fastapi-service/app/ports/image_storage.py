@@ -18,6 +18,13 @@ class ImageStoragePort(ABC):
         raise NotImplementedError("Implement in M2-7: Cloudflare R2 adapter")
 
     @abstractmethod
+    async def get_signed_download_url(
+        self, user_id: str, item_id: str, expiration_seconds: int = 3600
+    ) -> str:
+        """Generate a signed GET URL for the caller's own object."""
+        raise NotImplementedError("Implement in M2-7: Cloudflare R2 adapter")
+
+    @abstractmethod
     async def delete_image(self, image_path: str) -> None:
         """Delete an image from storage."""
         raise NotImplementedError("Implement in M2-7: Cloudflare R2 adapter")
