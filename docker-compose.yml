@@ -48,6 +48,10 @@ services:
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
+      # Browser CORS for Flutter Web direct PUT uploads (Phase 8, M2 frontend ExecPlan).
+      # MinIO ignores S3 PutBucketCors; this env var is the only working knob locally.
+      # Production R2 uses the §8.4 bucket CORS rule instead.
+      - MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:8088
     ports:
       - "9000:9000"
       - "9001:9001"
