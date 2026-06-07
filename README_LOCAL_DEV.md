@@ -7,6 +7,10 @@ This guide walks you through setting up gen-fashion for local development using 
 - Docker and Docker Compose installed
 - Python 3.11+ (for local FastAPI development without Docker)
 - Node 20+ (for local ADK development without Docker)
+- Flutter SDK (stable, web enabled) — for the `flutter-web-app/` closet client
+  - `flutter config --enable-web`
+- `firebase-tools` and a Java 11+ JRE — for the Firestore Security Rules unit
+  tests (`firebase emulators:exec --only firestore`)
 - Git
 
 ## Quick Start
@@ -71,6 +75,40 @@ Expected responses:
 - Firebase Auth: emulator responds on port 9099
 - MinIO: console loads; local credentials are `minioadmin` / `minioadmin`
 
+### Run the Flutter Web client
+
+The closet UI (M2-1, M2-11) lives in `flutter-web-app/`. With `make dev`
+running, start it on the pinned port `8088`:
+
+```bash
+make web
+```
+
+This is equivalent to:
+
+```bash
+cd flutter-web-app && flutter run -d chrome --web-port 8088 \
+  --dart-define=API_BASE_URL=http://localhost:8000 \
+  --dart-define=USE_EMULATORS=true
+```
+
+The first run will `flutter pub get` automatically. Sign in via the mocked
+Google provider in the Firebase Auth Emulator popup; no real OAuth client is
+needed.
+
+### Firestore Security Rules unit tests (M2-12)
+
+The dev `docker-compose` Firestore emulator (gcloud) does not enforce rules,
+so rule enforcement is verified separately:
+
+```bash
+cd firebase
+npm install
+firebase emulators:exec --only firestore --project gen-fashion-local "npm test"
+```
+
+This requires `firebase-tools` and a Java 11+ JRE; see `firebase/README.md`.
+
 ## Development Workflow
 
 ### Running Tests
@@ -80,6 +118,12 @@ make test
 ```
 
 This runs pytest on the FastAPI service.
+
+To run the Flutter client tests:
+
+```bash
+cd flutter-web-app && flutter analyze && flutter test
+```
 
 ### Stopping Services
 
