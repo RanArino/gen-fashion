@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // A user owns their profile document. Created by the Flutter client on
+    // first sign-in; closet writes go through the backend Admin SDK (which
+    // bypasses these rules).
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create, update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if false;
+
+      // Closet items are readable by the owner; all writes are backend-only.
+      match /closet/{itemId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
+      }
+    }
+    // Everything else is denied by default.
+  }
+}
