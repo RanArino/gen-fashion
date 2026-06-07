@@ -1,0 +1,14 @@
+{
+  "name": "gen-fashion-firebase-rules-test",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Firestore Security Rules unit tests for gen-fashion (M2-12).",
+  "scripts": {
+    "test": "node --test firestore-rules.test.mjs"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0"
+  }
+}
