@@ -52,6 +52,18 @@ class R2ImageStorage(ImageStoragePort):
             ExpiresIn=3600,
         )
 
+    async def get_signed_download_url(
+        self, user_id: str, item_id: str, expiration_seconds: int = 3600
+    ) -> str:
+        return self._presign_client.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": self._bucket,
+                "Key": self.image_path_for(user_id, item_id),
+            },
+            ExpiresIn=expiration_seconds,
+        )
+
     async def delete_image(self, image_path: str) -> None:
         self._client.delete_object(Bucket=self._bucket, Key=image_path)
 
