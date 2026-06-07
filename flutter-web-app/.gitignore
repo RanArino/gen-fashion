@@ -1,0 +1,21 @@
+# Flutter / Dart / Pub
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+
+# pubspec.lock IS committed for applications (this is an app, not a package).
+
+# Symbolication / obfuscation
+app.*.symbols
+app.*.map.json
+
+# IDE / OS
+*.iml
+*.ipr
+*.iws
+.idea/
+.DS_Store
+*.log
