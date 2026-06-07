@@ -22,6 +22,7 @@ from app.ports import (
 )
 from app.use_cases.closet import (
     DeleteClosetItemUseCase,
+    GetDownloadUrlUseCase,
     GetUploadUrlUseCase,
     ProcessUploadedClothingItemUseCase,
     RegisterClothingItemUseCase,
@@ -65,6 +66,10 @@ def get_gemini_analysis() -> GeminiAnalysisPort:
 
 def get_upload_url_use_case() -> GetUploadUrlUseCase:
     return GetUploadUrlUseCase(get_closet_repository(), get_image_storage())
+
+
+def get_download_url_use_case() -> GetDownloadUrlUseCase:
+    return GetDownloadUrlUseCase(get_image_storage())
 
 
 def get_register_clothing_item_use_case() -> RegisterClothingItemUseCase:
