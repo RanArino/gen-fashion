@@ -134,6 +134,7 @@
 | `ClosetManagementInputPort` | `ClosetManagementAdapter` (FastAPI) | 署名付き URL 発行（`GET /closet/upload-url`）・アップロード完了受付（`POST /closet/items/{item_id}/complete`）・アイテム削除（`DELETE /closet/items/{item_id}`） |
 | `CloudTasksWorkerInputPort` | `CloudTasksWorkerAdapter` (adk-agent-service) | Cloud Tasks からの非同期ジョブ受信（`POST /internal/tasks/process-upload`） |
 | `SessionInputPort` | `SessionAdapter` (FastAPI) | セッション開始（`POST /sessions`） |
+| `AgentRunInputPort` | `AgentRunAdapter` (adk-agent-service) | Web GUI のコーディネート実行トリガー（FastAPI からの直接 HTTP `POST /internal/run-session`、ADL-020） |
 
 ### 5.2 Output Ports
 
@@ -194,6 +195,7 @@ class CandidateItem(BaseModel):
 - **Input:** `sessionId`, `analysisResult`
 - **Output:** `UserPreference { style, colors, occasion, budget }`
 - **Agent Tool:** `ask_preference`（LINE インタラクティブメッセージで選択肢を提示）
+- **Web GUI（Phase 1a）の方式:** Accordion のマルチターン対話ではなく、**エージェント実行の起動前に Flutter で好み入力フォームを表示**し、収集した `UserPreference` を `runner.run_async()` の初期コンテキストとして渡す（Web では `ask_preference` のインタラクティブツール・マルチターン ADK セッションは使わない）。LINE（Phase 1b）は従来どおり `ask_preference` のインタラクティブメッセージを使用する。
 
 ### 6.5 GenerateCoordinateUseCase
 
@@ -370,7 +372,22 @@ sessions/{sessionId}
   - styleResult: map
   - createdAt: timestamp
   - updatedAt: timestamp
+
+sessions/{sessionId}/agentEvents/{eventId}   # ADK エージェント実行イベント（ADL-011 リレー / ADL-021）
+  - seq: int                   # セッション内の連番
+  - agentName: string          # イベント発行元エージェント名（マルチエージェント識別）
+  - eventKind: enum (tool_call | tool_result | final_answer | thinking | a2ui_surface)
+  - toolName: string           # tool_call / tool_result のみ
+  - toolArgs: map
+  - toolResult: map
+  - text: string               # final_answer のみ
+  - a2uiPayload: map           # a2ui_surface のみ: 結果UIコンポーネント（A2UI、ADL-018）
+  - thoughtSignature: string   # base64（M1-4 検証: bytes→base64 正規化が必要）
+  - createdAt: timestamp
+  - ttlAt: timestamp           # Firestore TTL=24h で自動削除（ADL-021）
 ```
+
+> `agentEvents` は ADK 実行の進捗（思考トレース + A2UI 結果UI）を保持する。`adk-agent-service` が直接書き込み（ADL-021）、FastAPI が `on_snapshot` で購読して SSE 配信する（ADL-011）。
 
 ### 8.2 Elasticsearch インデックス設計
 
@@ -670,6 +687,7 @@ async def resolve_user(line_user_id: str) -> str | None:
 - Firebase Auth によるログイン。
 - クローゼット管理画面（画像アップロード、上限: `MAX_CLOSET_IMAGES_PER_USER` = 20）。
 - **エージェント思考の可視化:** 複数エージェントが議論・推論する様子を Accordion UI でリアルタイム表示する（ADK Event Stream を WebSocket or SSE で Flutter に配信）。
+- **結果 UI のレンダリング方針（ADL-018）:** ユーザー向けの結果 UI（コーディネート候補カード・好み入力・最終コーディネート画像）は、エージェントが出力する **A2UI ペイロード**を Flutter 公式の `genui` で描画する方針とする（採否は Flutter Web スパイクで確定）。**思考トレース（Accordion）と結果 UI（A2UI）は別ストリームとして概念分離する。**
 
 ---
 
@@ -771,8 +789,9 @@ async def resolve_user(line_user_id: str) -> str | None:
   - B: ADK → FastAPI コールバック HTTP POST（in-memory Queue 経由）
   - C: ADK → Redis Pub/Sub → FastAPI SSE
 - **Rationale:** Firestore はすでにスタックに存在し新インフラ不要。Cloud Run の水平スケール時に「SSE を張っているインスタンスと ADK コールバック先が異なる」問題（選択肢 B の致命的欠陥）を自動的に回避できる。Accordion UI 用途ではイベント表示に +200〜500ms の追加レイテンシは体感上許容範囲。
-- **Trade-off:** Firestore の読み書きコスト（イベント数 × 課金）と `agentEvents` サブコレクションの TTL 削除が必要。レイテンシが将来問題になる場合は Redis Pub/Sub（選択肢 C）に移行する。
-- **Early PoC required:** ADK の `runner.run_async()` から取得できるイベントの粒度・形式を着手前に確認する。
+- **Trade-off:** Firestore の読み書きコスト（イベント数 × 課金）と `agentEvents` サブコレクションの TTL 削除が必要（**TTL=24h**、§8.1 `ttlAt` / ADL-021）。レイテンシが将来問題になる場合は Redis Pub/Sub（選択肢 C）に移行する。
+- **書き込み主体:** イベントおよび実行中のセッション状態遷移は `adk-agent-service` が `FirestoreStyleSessionRepository` 経由で直接書き込む（ADL-021）。
+- **Early PoC required:** ADK の `runner.run_async()` から取得できるイベントの粒度・形式を着手前に確認する（M1-4 で完了済み）。
 
 ### ADL-010: 共有デモクローゼットの導入
 
@@ -858,6 +877,48 @@ async def resolve_user(line_user_id: str) -> str | None:
   - 削除は Firestore・R2・Elasticsearch の 3 ストレージを整合的に削除する副作用があるため、バックエンド Use Case として定義する
   - `CreateSessionUseCase` は `AnalyzeClothingImageUseCase`（6.1）の Input である `sessionId` の前提となるセッションを作成する致命的欠落であった。Web GUI Phase 1a ではクローゼットに服が登録済みの状態でコーディネートを開始するため、初期状態を `SOURCE_SELECTING` とする
 - **Trade-off:** Firestore への直接アクセスを Flutter に許可することで Firebase Security Rules の管理が必要になるが、そのトレードオフは Use Case を 1 つ削減できることで相殺される
+
+### ADL-018: エージェント出力に A2UI を採用し、Flutter レンダリングは `genui` スパイク後に確定
+
+- **Decision:** エージェント（ClosetAgent / StylingAgent）の**ユーザー向け結果 UI**（候補カード・好み入力フォーム・最終コーディネート画像）を、独自スキーマではなく **A2UI（Agent-to-UI）標準のペイロード**として出力する。ADK の `A2uiSchemaManager` で LLM に妥当な A2UI JSON を生成させる。クライアント側のレンダリングは Flutter 公式の `genui` パッケージを第一候補とするが、**採否は Flutter Web 上でのスパイク検証後に確定する**。
+- **Alternatives:** 独自 `ui_payload` スキーマ + 自前 Flutter レンダラー（bespoke）。
+- **Rationale:**
+  - **拡張性:** 標準カタログ + 再利用可能なレンダラーにより、エージェント／コンポーネント種別が増えても描画コードを線形に書き足さずに済む。bespoke は多エージェント化で破綻する。
+  - **既存設計との整合:** A2UI は transport-agnostic のため、ADL-011 の Firestore リレー（`sessions/{sessionId}/agentEvents`）にそのまま乗る。**A2A は不要。**
+  - **クロスチャネル再利用:** 同一の A2UI 出力を Phase 1a の Flutter と Phase 1b の LINE Flex 等、複数レンダラーで再利用できる。
+  - **タイミング:** M5（Accordion UI・候補カード）は未着手のため、いま採用するのが最も低コスト（後から bespoke を移行すると二重実装）。
+- **検証事実（2026-06-08, Web/OSS 調査）:** A2UI は Google のオープン標準（Apache 2.0）。Flutter 公式レンダラー `genui`（旧 `flutter_genui`、発行元 verified `labs.flutter.dev`、A2UI v0.9 実装）が実在し Web 対応。「Flutter には埋め込みづらい」という当初懸念は否定された。
+- **Trade-off / リスク:** `genui` は "highly experimental, API will change drastically"（pre-1.0）。Web は対応するが primary focus ではない。→ churn/成熟度リスクが本質的論点。
+- **Early spike required:** `genui` を Flutter **Web** で静的 A2UI ペイロード1枚描画して採否判断。Web がガタつく場合は MVP は bespoke フォールバックとするが、**エージェント出力は A2UI のまま維持**しレンダラーを差し替え可能にする。
+- **設計原則:** 「ユーザーが見る／操作する結果 UI」（A2UI）と、`tool_call` / `tool_result` の**思考トレース**（Accordion = 観測用、別ストリーム）を概念分離する。
+- **影響:** ADL-011 はそのまま（ペイロード形式が A2UI になるだけ）。§11 と M5-10（Flutter Accordion / 結果 UI）の方針を改訂する（feature-matrix の同期は M4/M5 ExecPlan 着手時）。
+- **Date/Author:** 2026-06-08 / Ran
+
+### ADL-019: エージェント間連携は MVP で ADK ネイティブ委譲、A2A は将来の分割パス
+
+- **Decision:** Phase 1 ではエージェント間連携を **ADK ネイティブの sub-agent delegation**（単一 `adk-agent-service` プロセス内）で実装する。**A2A（Agent2Agent）プロトコルは MVP では採用しない。**
+- **Rationale:**
+  - ADK は「エージェントの実装フレームワーク（プロセス内委譲）」、A2A は「サービス/ベンダーをまたぐエージェント間通信プロトコル」で、レイヤーが異なる（競合しない）。
+  - 全エージェントが 1 プロセス内に存在する現構成では ADK 委譲で十分。A2A はネットワークホップ・シリアライズ・Agent Card インフラを足すだけで利点がない。
+- **将来の適用条件:** ClosetAgent（検索系・IO 寄り・高速）と StylingAgent（画像生成・~13–30s・高コスト）を**別 Cloud Run サービスに分割**する場合（ADL-007 の延長）、または外部エージェントとの interop が必要になった場合に A2A を導入する。
+- **A2A-ready の設計規律（今から守る）:** エージェント起動時にコンテキストを明示的に受け渡す（共有インメモリ状態を持たない）、サブエージェント単位でツールセットを分離する、状態の源泉は Firestore。これにより「サブエージェントを A2A サービスに切り出す」のが設定変更レベルで済む。
+- **Date/Author:** 2026-06-08 / Ran
+
+### ADL-020: Web GUI のエージェント実行トリガーは FastAPI → adk-agent-service の直接 HTTP（Cloud Tasks は LINE のみ）
+
+- **Decision:** Web GUI（Phase 1a）のコーディネート実行は、ソース選択（`SelectClothingSourceUseCase`、§6.2）完了後に **FastAPI が `adk-agent-service` を直接 HTTP 呼び出し**（`POST /internal/run-session`、§5.1 `AgentRunInputPort`）して起動する。`adk-agent-service` は実行を非同期（バックグラウンド）で開始して即時 `202` を返し、進捗は `agentEvents` 経由で SSE 配信する（ADL-011）。**Cloud Tasks 経由の起動は LINE（Phase 1b）のみ**とする。
+- **Alternatives:** A: Web も Cloud Tasks 経由で起動（LINE とフロー統一だがキュー遅延が増える）。
+- **Rationale:** LINE の 5 秒 Webhook タイムアウト制約（ADL-006）は Web には存在しない。Web ではユーザーが Accordion UI を見ながら待つため、Cloud Tasks のキュー遅延をデモのクリティカルパスから外す方が体感が良い。
+- **Trade-off:** 起動経路が Web（直接 HTTP）と LINE（Cloud Tasks）の 2 種類になるが、`adk-agent-service` 側のエージェント実行本体は共通で、各チャネルの制約に最適化される。
+- **Date/Author:** 2026-06-08 / Ran
+
+### ADL-021: セッション状態遷移と agentEvents の Firestore 書き込みは adk-agent-service が直接行う
+
+- **Decision:** エージェント実行中のセッション状態遷移（`SEARCHING` / `PROPOSING` / `GENERATING` / `COMPLETED` / `ERROR`）と、`sessions/{sessionId}/agentEvents` への実行イベント書き込みは、**`adk-agent-service` が `FirestoreStyleSessionRepository` 経由で Firestore へ直接書き込む**。すなわち `adk-agent-service` は自前の Firestore 書き込み経路を持つ。
+- **Rationale:** ADL-011 のリレー方式では ADK コンテナがイベントの発生源であり、FastAPI を経由せず直接 Firestore に書く方がホップが少なく、`on_snapshot` → SSE 配信（FastAPI）と責務が自然に分離する。状態遷移もエージェント実行の進行に同期するため、実行主体（ADK）が書くのが整合的。
+- **agentEvents TTL:** `agentEvents` サブコレクションは Firestore TTL ポリシーで **24h** 後に自動削除する（§8.1 `ttlAt`）。
+- **Trade-off:** `adk-agent-service` と `fastapi-service` の双方が `StyleSessionRepositoryPort` の書き込み権限を持つが、書き込み対象は明確に分かれる（FastAPI=セッション作成 §6.11、ADK=実行中の状態遷移・イベント）。
+- **Date/Author:** 2026-06-08 / Ran
 
 ---
 
