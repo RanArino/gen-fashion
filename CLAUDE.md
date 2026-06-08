@@ -39,6 +39,12 @@ When work relates to any requirement tracked in `feature-matrix-**.md`, keep the
 - If an ExecPlan targets a requirement marked `❌ Not yet implemented`, change that requirement to `🟡 In progress` in the same change as the plan.
 - When creating or updating an ExecPlan from `feature-matrix-**.md`, synchronize the matrix before finishing the turn, including status icons, notes, and summary counts.
 
+When the repository has an architecture overview document (`docs/architecture-overview.md` — the architecture / system-composition visualization with its implemented-vs-planned status coloring), keep it synchronized with ExecPlans:
+
+- Read it before writing or updating an ExecPlan, to ground the plan in the current architecture and the boundary between already-implemented and not-yet-implemented code.
+- Update it in the same change when the plan adds, removes, or re-wires a component, port/adapter, data store, or external service, or moves any element across the implemented ↔ planned boundary — including the diagrams, status coloring, and milestone summary.
+- If the plan changes none of the above, note that no architecture-overview update is needed before finishing the turn.
+
 For small, single-purpose edits, a short working plan is enough:
 
 ```text
@@ -69,6 +75,14 @@ Common examples include:
 - Rust: `cargo test`, `cargo clippy`, `cargo build`
 
 If a check cannot be run because dependencies, services, credentials, or network access are unavailable, record that limitation and explain what was verified instead.
+
+## Code Review
+
+When reviewing code (including `/code-review` and pull-request reviews), verify the change against `docs/architecture-overview.md` if it exists:
+
+- Confirm that new or changed components, ports/adapters, data stores, and external integrations match the documented architecture.
+- Treat drift between the code and the architecture overview — stale diagrams, an outdated implemented-vs-planned status, or a wrong milestone summary — as a review finding, the same as a feature-matrix sync gap.
+- Update the document as part of the review when the change makes it stale, or call out explicitly what needs updating if you cannot.
 
 ## Documentation
 
