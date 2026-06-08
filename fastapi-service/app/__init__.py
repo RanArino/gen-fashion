@@ -1,0 +1,1 @@
+"""gen-fashion FastAPI service."""
