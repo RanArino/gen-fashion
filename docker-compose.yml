@@ -71,12 +71,12 @@ services:
       - FIRESTORE_EMULATOR_HOST=firestore-emulator:8080
       - FIREBASE_AUTH_EMULATOR_HOST=firebase-auth-emulator:9099
       - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - GOOGLE_CLOUD_PROJECT=gen-fashion-local
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-gen-fashion-local}
+      - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
+      - GOOGLE_APPLICATION_CREDENTIALS=/credentials/vertex-ai-sa.json
       - MAX_CLOSET_IMAGES_PER_USER=20
-      - GOOGLE_GENAI_USE_VERTEXAI=false
+      - GOOGLE_GENAI_USE_VERTEXAI=true
       - IMAGE_ANALYSIS_MODEL=gemini-2.5-flash
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY:-dummy-key}
       - R2_ENDPOINT_URL=http://minio:9000
       - R2_PUBLIC_ENDPOINT_URL=http://localhost:9000
       - R2_ACCESS_KEY_ID=minioadmin
@@ -97,6 +97,7 @@ services:
         condition: service_healthy
     volumes:
       - ./fastapi-service:/app
+      - ${GOOGLE_APPLICATION_CREDENTIALS_HOST:-./credentials/vertex-ai-sa.json}:/credentials/vertex-ai-sa.json:ro
     command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   adk-agent-service:
@@ -106,13 +107,16 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY:-dummy-key}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-gen-fashion-local}
+      - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
+      - GOOGLE_APPLICATION_CREDENTIALS=/credentials/vertex-ai-sa.json
       - AGENT_MODEL=gemini-2.0-flash
       - FASTAPI_SERVICE_URL=http://fastapi-service:8000
     depends_on:
       - fastapi-service
     volumes:
       - ./adk-agent-service:/app
+      - ${GOOGLE_APPLICATION_CREDENTIALS_HOST:-./credentials/vertex-ai-sa.json}:/credentials/vertex-ai-sa.json:ro
     command: sh -c "npm run build && npm start"
 
 volumes: {}
