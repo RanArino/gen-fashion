@@ -51,6 +51,7 @@ dist/
 # Credentials
 firebase-key.json
 service-account-key.json
+credentials/
 
 # Build artifacts
 *.o
