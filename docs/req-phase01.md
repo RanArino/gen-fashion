@@ -920,6 +920,20 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **Trade-off:** `adk-agent-service` と `fastapi-service` の双方が `StyleSessionRepositoryPort` の書き込み権限を持つが、書き込み対象は明確に分かれる（FastAPI=セッション作成 §6.11、ADK=実行中の状態遷移・イベント）。
 - **Date/Author:** 2026-06-08 / Ran
 
+### ADL-022: `adk-agent-service` は Python ADK で実装する（TypeScript 骨組みを置換）
+
+- **Decision:** `adk-agent-service` を **Python ADK（`google-adk`）** で実装する。M0 で先行配置されていた TypeScript の骨組み（`adk-agent-service/src/*.ts`、全メソッド `throw new Error("Implement in M4-x")`、ADK 依存なし）は M4 着手時に破棄・置換する。
+- **Alternatives:** A: 既存の TS 骨組みを土台に TS ADK で実装する。
+- **Rationale:**
+  - §2 技術スタックは「AI Agent = Google ADK」かつバックエンドを Python/FastAPI と規定しており、Python 前提。
+  - M1-4 の ADK イベント PoC（`poc/adk_event_stream/run_poc.py`）は **Python ADK の `runner.run_async()`** でイベント形式・粒度を確定済み。TS では再検証が必要になる。
+  - ADL-021 は `adk-agent-service` が `fastapi-service` と**同一の `FirestoreStyleSessionRepository`**（Python）でセッション状態・`agentEvents` を書き込むことを要求する。
+  - M4 のツールが再利用する実装（Gemini 構造化分析・Embedding＝`fastapi-service/app/adapters/gemini_analysis.py`、Elasticsearch `clothing_items` スキーマ＝`elasticsearch_embedding_repo.py`、Nano Banana 画像生成 PoC＝`poc/image_generation/run_poc.py`）はすべて Python で既存。TS にすると同等処理の再実装か HTTP 越し呼び出しが必要になり、利点がない。
+- **Container 整合:** 2 コンテナ分離（ADL-007）と Cloud Run 設定（§9.1、min-instances=1 ほか ADL-016）は不変。言語を Python に統一するのみ。`docker-compose.yml` の `adk-agent-service` は Python ベース（`adk api_server`）に置き換える。
+- **Trade-off:** M0 の TS 骨組みを捨てる（git 履歴に残る）。ただし骨組みは実装ゼロのため損失は最小。
+- **影響:** `architecture-overview.md` §8 の乖離メモ #1（TS/Python 未確定）は本 ADL で解消。M4 ExecPlan（`docs/plans/20260609-m4-adk-agents-core.md`）がこの決定に基づき実装する。
+- **Date/Author:** 2026-06-09 / Ran（M4 ExecPlan 起票時に提案）
+
 ---
 
 ## 14. Out of Scope (Phase 1)
