@@ -38,8 +38,8 @@ flowchart LR
 | **M0** | プロジェクト基盤・ローカル開発環境 | 1a | 🟩 **Done** |
 | **M1** | PoC & インフラ検証（画像生成・ADK イベント・ES） | 1a | 🟩 Done（M1-3 ES の GCE デプロイ部分のみ 🟨 WIP） |
 | **M2** | 認証 & クローゼット管理（Web） | 1a | 🟩 **Done**（E2E 検証済み） |
-| **M3** | 共有デモクローゼット | 1a | 🟧 **Stub**（`SharedClosetSearchAdapter` 骨組みのみ、seeding 未） |
-| **M4** | ADK エージェント中核 | 1a | 🟧 **Stub**（`adk-agent-service/src/` 全て骨組み） |
+| **M3** | 共有デモクローゼット | 1a | 🟧 **Stub → 着手**（M3 ExecPlan 進行中。ローカル keyword-first seed は本 MVP、フル vector seed は GCE ES デプロイ期＝M1-3 延期。コード未着手のため色は Stub のまま） |
+| **M4** | ADK エージェント中核 | 1a | 🟧 **Stub → 着手**（M4 ExecPlan 進行中・Python ADK へ移行 ADL-022。コード未着手のため色は Stub のまま） |
 | **M5** | コーディネートフロー & Accordion UI | 1a | 🟧 **Stub**（`styling/` use case・`session_routes` 全て 501） |
 | **M6** | LINE チャネル統合 | 1b | ⬜ **Not started**（ファイル無し） |
 
@@ -66,7 +66,7 @@ flowchart TB
       r_session["/sessions/* ルート (M5: create/source/stream)"]
       r_line["LINE Webhook ルート (M6)"]
     end
-    subgraph adk["adk-agent-service (現状: TS 骨組み) — 未稼働"]
+    subgraph adk["adk-agent-service (Python ADK へ移行中・ADL-022) — 未稼働"]
       orch["StylingOrchestratorAgent + sub-agents (M4)"]
     end
   end
@@ -194,9 +194,9 @@ flowchart LR
 
 ---
 
-## 3. ADK エージェント構成（M4 — 全て骨組み）
+## 3. ADK エージェント構成（M4 — 骨組み／Python ADK へ移行中）
 
-req §7.1 のエージェントトポロジ。`adk-agent-service/src/` に TS の骨組みクラスが置かれているが、全メソッドが `throw Error("Implement in M4-x")`。
+req §7.1 のエージェントトポロジ。現状 `adk-agent-service/src/` に TS の骨組みクラスが置かれている（全メソッド `throw Error("Implement in M4-x")`）が、M4 ExecPlan（`docs/plans/20260609-m4-adk-agents-core.md`）でこれを破棄し **Python ADK（`google-adk`）** に置換する（ADL-022）。下図のトポロジ自体は不変で、各エージェント／ツールを Python で実装する。
 
 ```mermaid
 flowchart TB
@@ -335,10 +335,10 @@ flowchart LR
 
 ## 8. 実装と要件の乖離メモ（可視化中に検出）
 
-図と実コードを突き合わせる過程で、req と実装の不一致を 2 点検出した。実装着手前に解消方針の確認が望ましい。
+図と実コードを突き合わせる過程で、req と実装の不一致を 2 点検出した。#1 は M4 ExecPlan 起票時に解消済み。#2 は引き続き申し送り。
 
-1. **`adk-agent-service` の言語スタック**: 現状の骨組みは **TypeScript/Node**（`src/*.ts`）。一方 req §2/§6/§7 と M1-4 の ADK イベント PoC（`runner.run_async()`）は **Python ADK** 前提。M4 着手時に「Python に統一」か「TS ADK を採用」かの確定が必要。
+1. ~~**`adk-agent-service` の言語スタック**~~ — **解消済み（2026-06-09, ADL-022）**: **Python ADK に統一**する決定を `req-phase01.md` ADL-022 に記録。現状の TS 骨組み（`src/*.ts`）は M4 ExecPlan（`docs/plans/20260609-m4-adk-agents-core.md`）で破棄・置換する。根拠は req §2/§6/§7、M1-4 の Python `runner.run_async()` PoC、ADL-021 の共有 `FirestoreStyleSessionRepository`、および既存 Python アダプタの再利用。
 
-2. **`process-upload` worker の配置**: req §6.9 / §9.1 は当該 worker を `adk-agent-service` 配置と記述。実装は **`fastapi-service` の `/internal/tasks/process-upload`**（feature-matrix M2-5 も fastapi-service と明記）。動作はするが req のコンテナ責務記述と不一致のため、req 側の追記で整合させると良い。
+2. **`process-upload` worker の配置**: req §6.9 / §9.1 は当該 worker を `adk-agent-service` 配置と記述。実装は **`fastapi-service` の `/internal/tasks/process-upload`**（feature-matrix M2-5 も fastapi-service と明記）。動作はするが req のコンテナ責務記述と不一致のため、req 側の追記で整合させると良い。**未解消**。
 
-> いずれも feature-matrix の status とは矛盾しない（M4/M5 は ❌ のまま）。本メモはドキュメント整合のための申し送り。
+> #2 は feature-matrix の status とは矛盾しない。本メモはドキュメント整合のための申し送り。
