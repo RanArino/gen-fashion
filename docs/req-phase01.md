@@ -350,8 +350,10 @@ users/{userId}/closet/{itemId}        # ユーザー個人クローゼット
   - embeddingId: string     # Elasticsearch document ID。status="READY" 以降のみ有効
   - createdAt: timestamp
 
-shared_closet/{itemId}                # 全ユーザー共通デモクローゼット（読み取り専用）
+shared_closet/{itemId}                # デモクローゼットのアイテム（読み取り専用）
   - imageUrl: string (R2 URL)
+  - closetId: string     # 所属デモクローゼット（"adult-01" | "adult-02" | "child-01"）
+  - closetKind: string   # "adult" | "child"
   - category: string
   - tags: string[]
   - season: string
@@ -360,6 +362,13 @@ shared_closet/{itemId}                # 全ユーザー共通デモクローゼ�
   - datasetSource: string  # "kaggle:agrigorev/clothing-dataset-full"
   - originalLabel: string  # データセット元のラベル（例: "T-Shirt"）
   - createdAt: timestamp   # シーディング日時
+
+shared_closets/{closetId}             # デモクローゼットのメタデータ（M5 の選択 UI 用）
+  - kind: string         # "adult" | "child"
+  - displayName: string  # 表示名（例: "Adult Closet A"）
+  - itemCount: int       # 含まれるアイテム数（約30）
+  - datasetSource: string
+  - createdAt: timestamp
 
 sessions/{sessionId}
   - userId: string
@@ -399,6 +408,8 @@ sessions/{sessionId}/agentEvents/{eventId}   # ADK エージェント実行イ�
       "item_id": { "type": "keyword" },
       "user_id": { "type": "keyword" },  // ユーザー個人: Firebase UID / 共有: "__shared__"
       "is_shared": { "type": "boolean" },
+      "closetId": { "type": "keyword" },   // デモクローゼット識別子（共有アイテムのみ）
+      "closetKind": { "type": "keyword" }, // "adult" | "child"
       "tags": { "type": "keyword" },
       "category": { "type": "keyword" },
       "colors": { "type": "keyword" },
@@ -977,7 +988,9 @@ async def resolve_user(line_user_id: str) -> str | None:
 
 ### 16.1 概要
 
-全ユーザーが即座にアプリを体験できるよう、パブリックドメインのデータセットを使った共有クローゼット（`shared_closet`）を提供する。ユーザーは自分の服をアップロードしなくても、`SHARED_CLOSET` を選択することでコーディネート提案を試すことができる。
+全ユーザーが即座にアプリを体験できるよう、パブリックドメインのデータセットを使ったデモ用クローゼットを提供する。ユーザーは自分の服をアップロードしなくても、`SHARED_CLOSET` を選択することでコーディネート提案を試すことができる。
+
+1着のクローゼットに100着以上あるのは非現実的なため、**1つの巨大な共有クローゼットではなく、現実的な規模（各約30着）のデモ用クローゼットを複数用意する**。データセットに性別カラムが無いため、`kids` フラグで **Adult / Child** に区分し、**Adult×2 + Child×1 の計3クローゼット**を作成する（`adult-01` / `adult-02` / `child-01`）。各アイテムは `user_id: "__shared__"` を維持しつつ `closetId` / `closetKind` を持ち、M5 のクローゼット選択 UI が `closetId` で絞り込む。M3-3 `SharedClosetSearchAdapter` は全 `__shared__` アイテムを返す現行実装のままで影響を受けない（クローゼット選択は M5 で追加）。
 
 ### 16.2 データソース
 
@@ -985,9 +998,11 @@ async def resolve_user(line_user_id: str) -> str | None:
 |---|---|
 | **データセット** | [Clothing Dataset Full (Kaggle)](https://www.kaggle.com/datasets/agrigorev/clothing-dataset-full) |
 | **ライセンス** | CC BY-SA 4.0（商用利用可、帰属表示・同一条件配布が必要） |
-| **元カテゴリ数** | 20種類以上（Blazer, Blouse, Dress, Hoodie, Outwear, Pants, Shirt, Shorts, Skirt, T-Shirt など） |
-| **採用枚数** | 各カテゴリから最大 150 枚、合計 2,000〜3,000 枚程度 |
-| **品質フィルタ** | Kaggle データセット内の `image_labels_merged.csv` のラベル信頼度上位のものを優先採用 |
+| **使用する画像** | `images_original/`（原寸・高画質）を使用。`images_compressed/`（低解像度）は不使用。採用枚数が少数のため圧縮版は不要で、デモ表示は高画質を優先する |
+| **採用カテゴリ** | コーデで見た目の差が出る衣服のみ採用。**下着・インナー系（`Undershirt`, `Body`）と低品質ラベル（`Other` / `Others` / `Not sure` / `Skip` / 空）は除外**。`Hat` / `Shoes` などの小物は採用（採用例: Blazer, Blouse, Dress, Hoodie, Longsleeve, Outwear, Pants, Polo, Shirt, Shorts, Skirt, T-Shirt, Top ＋ Hat / Shoes） |
+| **クローゼット構成** | Adult×2 + Child×1 の計3クローゼット。各クローゼットは**カテゴリ配分（quota）による自動構成**で約30着（トップス8 / アウター4 / ボトムス6 / ワンピ・スカート4 / 靴5 / 帽子3）。同区分のクローゼット同士はアイテム重複なし（決定的サンプリングで冪等） |
+| **採用枚数** | 3クローゼット × 各約30着 ＝ **合計約90着**（ハッカソンデモ規模で十分。1クローゼット100着以上は非現実的）。Adult 在庫4,500+ / Child 在庫350+ で充足 |
+| **品質フィルタ** | データセット同梱の `images.csv`（列 `image` / `label` ほか）のラベルを採用（旧仕様で想定した `image_labels_merged.csv` は実在せず、実体は `images.csv`） |
 
 ### 16.3 帰属表示（Attribution）要件
 
@@ -1006,7 +1021,9 @@ CC BY-SA 4.0 に基づき、以下を実装する：
 | **処理フロー** | Kaggle API でダウンロード → カテゴリ別サンプリング → R2 アップロード → Gemini で Embedding 生成 → Elasticsearch インデクシング → Firestore への `shared_closet` ドキュメント書き込み |
 | **冪等性** | 再実行しても重複しない（`item_id` を元画像ファイル名のハッシュから生成） |
 | **依存関係** | `pip install -r requirements.txt`、Kaggle API トークン（`~/.kaggle/kaggle.json`）、`GOOGLE_CLOUD_PROJECT` 環境変数 |
-| **サンプリング設定** | `MAX_ITEMS_PER_CATEGORY`（デフォルト: `150`）を環境変数で制御可能 |
+| **クローゼット生成** | `_CLOSETS`（adult-01 / adult-02 / child-01）と `_CLOSET_QUOTA`（カテゴリ配分）で各約30着を自動構成。`kids` フラグで adult/child プールに分割し、同区分は重複なく決定的に抽出。アイテムに `closetId` / `closetKind` を付与し、`shared_closets/{closetId}` にメタデータ（kind / displayName / itemCount）を書き込む |
+| **カテゴリ除外** | §16.2「採用カテゴリ」のとおり、下着・インナー系（`Undershirt`, `Body`）と低品質ラベル（`Other` 等）をスクリプトの除外リストで弾く |
+| **使用ディレクトリ** | 展開後の `images_original/` を読み込む。`images_compressed/` は使用しない |
 
 ### 16.5 ドメインルール
 
