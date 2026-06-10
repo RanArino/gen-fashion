@@ -75,3 +75,7 @@ docs/local/
 # Do not commit generated FlutterFire project config. The web app reads local
 # demo defaults and production Firebase values from --dart-define instead.
 flutter-web-app/lib/firebase_options.dart
+
+# scripts
+scripts/seed_shared_closet/.dataset_cache/
+scripts/seed_shared_closet/.venv/
