@@ -27,7 +27,7 @@ flowchart LR
   class A done; class B wip; class C stub; class D todo;
 ```
 
-> **🟧 Stub と ⬜ Not started はどちらも「これから実装予定」**である。違いは、M0 で骨組み（ポート IF・空のユースケース・空のエージェント）まで先行配置済みか否か。Phase 1a の機能（M3/M4/M5）は 🟧 Stub、Phase 1b（M6・LINE）は ⬜ 未着手。
+> **🟧 Stub と ⬜ Not started はどちらも「これから実装予定」**である。違いは、M0 で骨組み（ポート IF・空のユースケース・空のエージェント）まで先行配置済みか否か。Phase 1a の残機能（M4/M5）は 🟧 Stub、Phase 1b（M6・LINE）は ⬜ 未着手。M3 は local で実装完了（フル vector seed のみ deployment 待ち）。
 
 ---
 
@@ -38,12 +38,12 @@ flowchart LR
 | **M0** | プロジェクト基盤・ローカル開発環境 | 1a | 🟩 **Done** |
 | **M1** | PoC & インフラ検証（画像生成・ADK イベント・ES） | 1a | 🟩 Done（M1-3 ES の GCE デプロイ部分のみ 🟨 WIP） |
 | **M2** | 認証 & クローゼット管理（Web） | 1a | 🟩 **Done**（E2E 検証済み） |
-| **M3** | 共有デモクローゼット | 1a | 🟧 **Stub → 着手**（M3 ExecPlan 進行中。ローカル keyword-first seed は本 MVP、フル vector seed は GCE ES デプロイ期＝M1-3 延期。コード未着手のため色は Stub のまま） |
+| **M3** | 共有デモクローゼット | 1a | 🟩 **Done（local）**（seed script / SharedClosetSearchAdapter / attribution UI 実装済み。3クローゼットの live seed 済み＝90件・30/30/30・冪等性検証済み 2026-06-10。フル vector seed（GCE ES）のみ deployment 待ち） |
 | **M4** | ADK エージェント中核 | 1a | 🟧 **Stub → 着手**（M4 ExecPlan 進行中・Python ADK へ移行 ADL-022。コード未着手のため色は Stub のまま） |
 | **M5** | コーディネートフロー & Accordion UI | 1a | 🟧 **Stub**（`styling/` use case・`session_routes` 全て 501） |
 | **M6** | LINE チャネル統合 | 1b | ⬜ **Not started**（ファイル無し） |
 
-**現在地:** Phase 1a の前半（基盤＋クローゼット管理）まで動作。コア体験である**エージェントオーケストレーション（M4/M5）は骨組みのみ**で、ここからが主要実装対象。
+**現在地:** Phase 1a の前半（基盤＋クローゼット管理）まで動作し、共有デモクローゼットのコード実装（seed script / shared search / attribution）は完了。live seed/reseed とコア体験である**エージェントオーケストレーション（M4/M5）**が次の主要実装対象。
 
 ---
 
@@ -80,6 +80,7 @@ flowchart TB
     gem_img["Nano Banana (コーデ画像生成)"]
     rakuten["楽天 Ichiba API (M6)"]
     fauth["Firebase Authentication"]
+    shared_seed["scripts/seed_shared_closet/run_seed.py<br/>(live seed 済み: 3クローゼット90件; フル vector seed は deployment 待ち)"]
   end
 
   flutter_auth -->|"Firebase ID Token"| fastapi
@@ -96,6 +97,9 @@ flowchart TB
   r_internal --> gem_an
   r_internal --> es
   r_internal --> fs
+  shared_seed -.-> r2
+  shared_seed -.-> es
+  shared_seed -.-> fs
 
   r_session -.-> adk
   r_line -.-> ct
@@ -110,7 +114,7 @@ flowchart TB
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
 
-  class flutter_auth,r_closet,r_internal,fs,r2,ct,gem_an,fauth done;
+  class flutter_auth,r_closet,r_internal,fs,r2,ct,gem_an,fauth,shared_seed done;
   class es wip;
   class flutter_acc,r_session,adk,orch,gem_img,r_line stub;
   class lineapp,rakuten todo;
@@ -118,6 +122,7 @@ flowchart TB
 
 **読み取りポイント:**
 - 🟩 **動く経路**: Flutter（認証＋クローゼット）→ fastapi `/closet` → R2 / Firestore / Cloud Tasks → `/internal` worker → Gemini 分析 + ES インデックス。これが M2 で E2E 検証済みの幹線。
+- 🟨 **共有クローゼット**: seed script / shared search adapter / attribution UI は実装済み。live seed/reseed と GCE ES への full vector seed は未完了。
 - 🟧 **骨組みのみ**: `adk-agent-service` 全体、`/sessions/*`、SSE、画像生成、Accordion UI。
 - ⬜ **未着手**: LINE / LIFF / 楽天。
 - 🟨 ES はローカル Docker では動作。GCE VM + VPC + Cloud Run プライベート接続はデプロイ期に延期（M1-3）。
@@ -185,12 +190,12 @@ flowchart LR
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
 
   class h_closet,h_internal,u1,u2,u3,u4,u5,p1,p3,p4,p5 done;
-  class p2 wip;
-  class h_session,s1,s2,s3,s4,s5,p6,p7,p8 stub;
+  class p2,p7 wip;
+  class h_session,s1,s2,s3,s4,s5,p6,p8 stub;
   class h_line,p9 todo;
 ```
 
-> `ClothingSearchPort`(p7) は `SharedClosetSearchAdapter` の骨組みのみ存在（🟧）。`ClosetSearchAdapter` / `RakutenItemAdapter` は未作成（⬜）。`EmbeddingSearchPort`(p2) はキーワード検索まで実装済みだがベクトル/ハイブリッド検索の本番運用は ES デプロイ（M1-3）待ちで 🟨。
+> `ClothingSearchPort`(p7) は `SharedClosetSearchAdapter` が実装済み（署名付き共有画像 URL + attribution 返却）だが、`ClosetSearchAdapter` / `RakutenItemAdapter` は未作成（⬜）のため全体としては 🟨。`EmbeddingSearchPort`(p2) はキーワード検索まで実装済みだがベクトル/ハイブリッド検索の本番運用は ES デプロイ（M1-3）待ちで 🟨。
 
 ---
 
@@ -326,10 +331,10 @@ flowchart LR
   classDef wip fill:#fff3cd,stroke:#f9a825,color:#795548;
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
-  class M0,M2 done; class M1 wip; class M3,M4,M5 stub; class M6 todo;
+  class M0,M2,M3 done; class M1 wip; class M4,M5 stub; class M6 todo;
 ```
 
-**次の一手:** M3（共有クローゼット seeding）と M4（ADK エージェント）が M5（コア体験の E2E）の前提。クリティカルパスは **M4 → M5**。
+**次の一手:** M3（共有クローゼット seeding）は local 完了済み（フル vector seed のみ deployment 待ち）。残るクリティカルパスは **M4（ADK エージェント）→ M5（コア体験の E2E）**。
 
 ---
 
