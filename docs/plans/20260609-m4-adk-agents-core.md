@@ -36,10 +36,11 @@ Nano Banana image-gen PoC) is already Python. The decision is recorded as **ADL-
 
 **Acceptance (observable):** `cd adk-agent-service && adk web` lists a `styling_app` agent; selecting it and
 sending a coordination request causes the orchestrator to delegate to `ClosetAgent`, call `search_closet`,
-and return candidate items drawn from the local Elasticsearch `clothing_items` index (populated by uploading
-a few items through the existing M2 closet flow); `style_synthesizer` returns a generated image URL or the
-collage fallback; `pytest` in `adk-agent-service` passes for the tools and the registry. See **Validation
-and Acceptance**.
+and return candidate items drawn from the local Elasticsearch `clothing_items` index — primarily the
+**M3-seeded `SHARED_CLOSET` demo data** (90 items, `user_id:"__shared__"`, live-seeded & verified
+2026-06-10), optionally the developer's own M2-uploaded `CLOSET` items; `style_synthesizer` returns a
+generated image URL or the collage fallback; `pytest` in `adk-agent-service` passes for the tools and the
+registry. See **Validation and Acceptance**.
 
 
 ## Progress
@@ -53,7 +54,7 @@ and Acceptance**.
 - [ ] Phase 1 — Tool Registry + four tools (M4-4, M4-5, M4-6, M4-7, M4-8)
   - [ ] Tool Registry pattern (`tools/registry.py`): each tool an independent module registered by name.
   - [ ] `analyze_clothing_image` (M4-5) — Gemini structured-output analysis; reuse the M2-5 response schema.
-  - [ ] `search_closet` (M4-6) — embed the agent's description, hybrid (keyword-first + optional kNN) search over `clothing_items`, filtered by source.
+  - [ ] `search_closet` (M4-6) — embed the agent's description, hybrid (keyword-first + optional kNN) search over `clothing_items`, filtered by source; `SHARED_CLOSET` results carry the CC BY-SA 4.0 attribution (M3 parity).
   - [ ] `style_synthesizer` (M4-7) — Nano Banana (`gemini-2.5-flash-image`) generation with collage fallback; store result, return URL.
   - [ ] `ask_preference` (M4-8) — Web pre-session-form variant: echo/normalize the `UserPreference` from context (LINE interactive deferred to M6).
   - [ ] Verify: each tool is unit-tested with mocked Gemini/ES clients.
@@ -63,7 +64,7 @@ and Acceptance**.
   - [ ] `StylingOrchestratorAgent` (M4-1) — `sub_agents=[ClosetAgent, StylingAgent]`; exported as `root_agent`.
   - [ ] A2A-ready discipline (ADL-019): explicit context hand-off, no shared in-memory state, per-sub-agent toolsets.
 - [ ] Phase 3 — Validation & acceptance
-  - [ ] End-to-end on the ADK Web UI against M2-populated closet data; capture the event stream.
+  - [ ] End-to-end on the ADK Web UI against the M3-seeded shared closet (`SHARED_CLOSET`, no upload needed); optionally also `CLOSET` with M2-uploaded items. Capture the event stream.
   - [ ] `pytest` green; record the run in Artifacts and flip M4-1…M4-9 to ✅ in `feature-matrix-phase01.md`.
 
 
@@ -132,9 +133,10 @@ tools are live vs. fallback, the captured event-stream shape, and any handoffs i
 
 gen-fashion is a hexagonal/DDD monorepo under `/Users/ran/my-app/gen-fashion`. The requirements source of
 truth is `docs/req-phase01.md`; implementation status is tracked in `docs/feature-matrix-phase01.md`; the
-implemented-vs-planned visualization is `docs/architecture-overview.md`. M0 (foundation), M1 (PoC), and M2
-(auth + closet management, Web) are Done and verified. M3 (shared demo closet) and M4 (this plan) are the
-two unblocked next milestones; M4 is the critical path to M5 (full Web E2E coordination flow).
+implemented-vs-planned visualization is `docs/architecture-overview.md`. M0 (foundation), M1 (PoC), M2
+(auth + closet management, Web), and **M3 (shared demo closet — Done for the local subset, 2026-06-10;
+only the full vector seed on GCE ES remains deployment-deferred per M1-3)** are complete. M4 (this plan)
+is the active ExecPlan and the critical path to M5 (full Web E2E coordination flow).
 
 **Two containers (req §9.1, ADL-007).** `fastapi-service/` (Python/FastAPI) is the REST API and the M2-5
 upload-processing worker. `adk-agent-service/` is the AI-processing service that runs the ADK agents. This
@@ -158,6 +160,16 @@ plan rebuilds the latter in Python.
 - `fastapi-service/app/domain/styling/value_objects.py` — defines `ClothingSource` (`CLOSET` / `SHARED_CLOSET`
   / `RAKUTEN`), `CandidateItem`, `UserPreference`. M4 mirrors these shapes as plain dicts in tool returns
   (ADK tools must return JSON-serializable values); it does not import the module.
+- **M3 outputs (live-seeded & verified 2026-06-10).** The `clothing_items` index already holds **90 shared
+  items** (`user_id:"__shared__"`, `is_shared:true`) across **3 demo closets** (`adult-01`/`adult-02`/
+  `child-01`, 30 each, fields `closetId`/`closetKind`; metadata in Firestore `shared_closets/{closetId}`);
+  images live in MinIO/R2 under `__shared__/closet/{item_id}.jpg`. **These docs carry no `embedding`
+  vectors locally** (the `--with-embeddings` full seed is deployment-deferred, M1-3), so for
+  `SHARED_CLOSET` only the keyword clause of `search_closet` can match until then.
+  `fastapi-service/app/adapters/shared_closet_search.py` (M3-3) is the query-shape reference for the M4
+  tool: filter on `user_id:"__shared__"`, keyword `should` on `tags`/`category`, fail-soft, signed image
+  URLs, `attribution="Clothing Dataset (CC BY-SA 4.0)"`. M4 mirrors the shape; it does not import the
+  module (same stance as the other adapters above).
 
 **What M4 does NOT touch (it is M5):** `fastapi-service/app/handlers/session_routes.py` (501 stubs for
 `POST /sessions`, `/source`, `/stream`), `app/adapters/firestore_styling_repo.py` (M5-2 stub),
@@ -269,8 +281,16 @@ the natural-language `description` of complementary items (req §8.3 step 2); th
 and runs `adapters/elasticsearch.hybrid_search(...)`. The ES query is keyword-first (a `bool` with `terms` on
 `tags`/`category`/`colors`) plus an additive, fail-soft `knn` clause over `embedding` using the query vector,
 filtered by `user_id` for `CLOSET` and by `user_id="__shared__"` for `SHARED_CLOSET` (req §8.2). On any kNN
-error, fall back to keyword-only (Decision Log; M1-3). Return `CandidateItem`-shaped dicts (`item_id`, `source`,
-`image_url`, `category`, `tags`, `attribution=None`). `RAKUTEN` is Phase 1b — not wired here.
+error, fall back to keyword-only (Decision Log; M1-3). Note the M3-seeded shared docs have **no `embedding`
+field locally**, so for `SHARED_CLOSET` the kNN clause is inert until the deployment-phase vector seed —
+keyword results are the bar. Return `CandidateItem`-shaped dicts (`item_id`, `source`, `image_url`,
+`category`, `tags`, `attribution`) where `attribution="Clothing Dataset (CC BY-SA 4.0)"` for `SHARED_CLOSET`
+items and `None` for `CLOSET` (parity with the M3-3 adapter, req §16.3); for shared items resolve
+`image_url` from the R2 key `__shared__/closet/{item_id}.jpg` via `adapters/image_storage.py` (the ES doc
+may carry only the key). The shared docs also carry `closetId`/`closetKind` (3 demo closets), but
+**closet-level filtering is an M5 add-on** (M3 Decision Log: "data only" now) — M4's tool returns items
+across all `__shared__` closets and does not take a `closet_id` parameter. `RAKUTEN` is Phase 1b — not
+wired here.
 
 **`style_synthesizer` (M4-7).** Signature `style_synthesizer(user_id: str, item_image_urls: list[str],
 style_description: str) -> dict`. Fetch each garment's bytes, call `adapters/image_generation.generate(...)`
@@ -320,13 +340,16 @@ prompt tuning, verifiable immediately on the Web UI.
 ### Phase 3 — Validation & acceptance
 
 
-Seed a few real closet items through the existing M2 flow (sign in on the Flutter app, upload 2–3 garments;
-the M2-5 worker indexes them into `clothing_items` with the signed-in `user_id`). Run `adk web`, select
-`styling_app`, and drive a coordination turn for `source=CLOSET` with that `user_id`. Confirm: delegation to
-`ClosetAgent`, a `search_closet` tool call returning those items, and a `style_synthesizer` result (generated
-image or collage). Capture the event stream (it should match the M1-4 shape). Run `pytest`. Then flip
-M4-1…M4-9 to ✅ in `feature-matrix-phase01.md` with the evidence, and (since the agents are now real code,
-not stubs) move the M4 nodes in `architecture-overview.md` from Stub to Done.
+The primary acceptance path is the **hero "try without uploading" demo against the M3-seeded shared
+closet**: with local infra up (`make dev`; if the stores are empty because the containers were recreated,
+re-run `scripts/seed_shared_closet/run_seed.py` — idempotent), run `adk web`, select `styling_app`, and
+drive a coordination turn for `source=SHARED_CLOSET`. Confirm: delegation to `ClosetAgent`, a
+`search_closet` tool call returning seeded `__shared__` items **with the CC BY-SA 4.0 attribution**, and a
+`style_synthesizer` result (generated image or collage). Optionally also exercise `source=CLOSET` by
+uploading 2–3 garments through the existing M2 flow (the M2-5 worker indexes them with the signed-in
+`user_id`). Capture the event stream (it should match the M1-4 shape). Run `pytest`. Then flip M4-1…M4-9 to
+✅ in `feature-matrix-phase01.md` with the evidence, and (since the agents are now real code, not stubs)
+move the M4 nodes in `architecture-overview.md` from Stub to Done.
 
 
 ## Concrete Steps
@@ -365,16 +388,21 @@ Expected: the `adk web` server starts and the dropdown shows `styling_app`. Then
 **Phase 3 (acceptance).**
 
 
-    # 1. populate closet data via the existing M2 flow
+    # 1. confirm the M3-seeded shared closet is present (seeded & verified 2026-06-10)
     cd /Users/ran/my-app/gen-fashion && make dev        # boots ES, Firestore/Auth emulators, MinIO, fastapi
-    make web                                            # Flutter app; sign in, upload 2-3 garments
-    # confirm they reached ES:
-    curl -s 'http://localhost:9200/clothing_items/_search?size=3' | head
+    curl -s 'http://localhost:9200/clothing_items/_count' -H 'Content-Type: application/json' \
+      -d '{"query":{"term":{"user_id":"__shared__"}}}'   # expect count: 90
+    # if 0 (containers recreated; compose has no data volumes), re-seed — idempotent:
+    #   cd scripts/seed_shared_closet && . .venv/bin/activate && python run_seed.py
+
+    # (optional, for the CLOSET source) populate personal closet data via the M2 flow:
+    # make web   # Flutter app; sign in, upload 2-3 garments
 
     # 2. run the agents
     cd adk-agent-service && . .venv/bin/activate && adk web
-    # select styling_app; send: "Suggest an outfit from my closet. user_id=<uid> source=CLOSET"
-    # observe: delegation -> search_closet -> candidates -> style_synthesizer -> final answer
+    # select styling_app; send: "Suggest an outfit from the shared closet. user_id=<uid> source=SHARED_CLOSET"
+    # observe: delegation -> search_closet -> attributed __shared__ candidates -> style_synthesizer -> final answer
+    # (optional) repeat with "…from my closet. user_id=<uid> source=CLOSET" against the M2-uploaded items
 
     # 3. tests
     cd /Users/ran/my-app/gen-fashion/adk-agent-service && . .venv/bin/activate && pytest -q
@@ -391,10 +419,12 @@ visible.
 Acceptance is observable behavior, not "code exists":
 
 1. **ADK Web UI lists and runs the orchestrator.** `cd adk-agent-service && adk web` shows `styling_app`;
-   sending a `source=CLOSET` coordination request for a `user_id` that has uploaded closet items causes the
-   orchestrator to **delegate** to `ClosetAgent`, call **`search_closet`**, and return candidate items that
-   match the items visible in `clothing_items` (verified by the `curl` above). This satisfies the M4 exit
-   criterion "Orchestrator + sub-agents run on local ADK Web UI" and req §15 Phase 1a #1.
+   sending a `source=SHARED_CLOSET` coordination request causes the orchestrator to **delegate** to
+   `ClosetAgent`, call **`search_closet`**, and return candidate items drawn from the M3-seeded
+   `__shared__` docs in `clothing_items` (verified by the `curl` above), each carrying the CC BY-SA 4.0
+   attribution. Optionally, a `source=CLOSET` request for a `user_id` with M2-uploaded items returns those
+   items. This satisfies the M4 exit criterion "Orchestrator + sub-agents run on local ADK Web UI" and
+   req §15 Phase 1a #1.
 2. **Each tool is callable end-to-end.** `analyze_clothing_image` returns a structured analysis for a real
    garment URL; `search_closet` returns ES-backed candidates; `style_synthesizer` returns a reachable image
    URL (generated or collage); `ask_preference` returns a normalized preference dict.
@@ -406,10 +436,11 @@ Acceptance is observable behavior, not "code exists":
 Record the `adk web` transcript / event capture and the `pytest` summary in **Artifacts**. Only then flip
 M4-1…M4-9 to ✅ in `feature-matrix-phase01.md` and recolor the M4 nodes in `architecture-overview.md`.
 
-Limitation to state explicitly: full `SHARED_CLOSET` coordination needs the M3 seeding (2,000+ items) which is
-not built; M4 acceptance therefore uses the developer's own M2-uploaded closet items as the `CLOSET` source.
-`RAKUTEN` is Phase 1b. Cross-modal kNN may underperform; keyword-first results are the acceptance bar, with kNN
-as additive.
+Limitation to state explicitly: the local `SHARED_CLOSET` data is the M3 **keyword-only subset** (90 items,
+3 demo closets, no embedding vectors — the full 2,000+ vector seed on GCE ES is deployment-deferred per
+M1-3), so for `SHARED_CLOSET` the kNN clause matches nothing locally; keyword-first results are the
+acceptance bar, with kNN as additive (it can only fire for `CLOSET` items, whose M2-5 pipeline does embed).
+Closet-level (`closetId`) filtering is an M5 add-on. `RAKUTEN` is Phase 1b.
 
 
 ## Idempotence and Recovery
@@ -456,7 +487,10 @@ as additive.
   and a Gemini backend (direct API key `GOOGLE_GENAI_API_KEY`, or Vertex AI ADC with
   `GOOGLE_GENAI_USE_VERTEXAI=true`).
 - **Upstream artifacts:** the `clothing_items` ES schema (M2-9), the analysis response schema (M2-5), the
-  Nano Banana + collage PoC (M1-2), and the model IDs/dimensions in `fastapi-service/app/config.py`.
+  Nano Banana + collage PoC (M1-2), the model IDs/dimensions in `fastapi-service/app/config.py`, and the
+  **M3 shared-closet data + adapter** — the seeded `__shared__` docs (90 items, 3 closets,
+  `scripts/seed_shared_closet/run_seed.py`, re-runnable/idempotent) and the M3-3
+  `shared_closet_search.py` query shape + attribution string that `search_closet` mirrors.
 - **Downstream (M5, not built here):** `Runner` driving these agents behind `POST /internal/run-session`
   (ADL-020); the Firestore `agentEvents` relay and session-state writes via `FirestoreStyleSessionRepository`
   (ADL-011 / ADL-021); the SSE endpoint (M5-9) and Flutter Accordion / A2UI result UI (M5-10, ADL-018).
@@ -476,3 +510,16 @@ between them). Recommended working order is **M3 → M4**: M3 is smaller/lower-r
 `SHARED_CLOSET` data that turns M4's acceptance into the hero "try without uploading" demo (vs. only the
 developer's hand-uploaded `CLOSET`). Per the user's "one ExecPlan at a time" preference, M4 may be treated as
 **queued behind M3** — both plan files exist, but only M3 need be actively worked first.
+
+2026-06-10 (M3 completion sync) — **M3 is complete for the local subset** (live seed run & verified:
+90 items, 3 demo closets `adult-01`/`adult-02`/`child-01`, idempotent; only the full vector seed on GCE ES
+remains deployment-deferred per M1-3). **M4 is now the active ExecPlan.** Plan updated accordingly, before
+execution started: (a) acceptance/Phase 3 now lead with the hero `SHARED_CLOSET` demo against the seeded
+data instead of requiring hand-uploaded M2 items; (b) `search_closet` (M4-6) sets
+`attribution="Clothing Dataset (CC BY-SA 4.0)"` on `SHARED_CLOSET` results (parity with the M3-3 adapter,
+req §16.3) and resolves shared `image_url`s from the `__shared__/closet/{item_id}.jpg` R2 key; (c) noted
+that shared docs carry no embeddings locally (kNN inert for `SHARED_CLOSET` until the deployment-phase
+seed) and carry `closetId`/`closetKind`, with closet-level filtering an M5 add-on per the M3 Decision Log
+(no `closet_id` parameter in M4). No architecture or scope change — milestone boundaries, the three-agent
+topology, and the four tools are unchanged, so no `architecture-overview.md` or feature-matrix status
+update is needed for this revision.
