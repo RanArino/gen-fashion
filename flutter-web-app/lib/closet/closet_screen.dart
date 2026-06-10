@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_service.dart';
+import '../shared/attribution.dart';
 import 'closet_item.dart';
 import 'thumbnail.dart';
 import 'upload_service.dart';
@@ -106,40 +107,54 @@ class _ClosetScreenState extends State<ClosetScreen> {
             },
           ),
           IconButton(
+            tooltip: '共有クローゼットについて',
+            onPressed: () => showSharedClosetAboutDialog(context),
+            icon: const Icon(Icons.info_outline),
+          ),
+          IconButton(
             tooltip: 'Sign out',
             onPressed: () => _auth.signOut(),
             icon: const Icon(Icons.logout),
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _stream(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return Center(child: Text('Error: ${snap.error}'));
-          }
-          final docs = snap.data?.docs ?? const [];
-          if (docs.isEmpty) {
-            return const _EmptyState();
-          }
-          final items = docs
-              .map((d) => ClosetItem.fromFirestore(d.id, d.data()))
-              .toList();
-          return ClosetGrid(
-            items: items,
-            cache: _cache,
-            onDelete: _onDelete,
-          );
-        },
+      body: Column(
+        children: [
+          Expanded(child: _buildBody()),
+          const AttributionFooter(),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _busy ? null : _onUploadPressed,
         icon: const Icon(Icons.add_a_photo),
         label: _busy ? const Text('Uploading…') : const Text('Add item'),
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _stream(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return Center(child: Text('Error: ${snap.error}'));
+        }
+        final docs = snap.data?.docs ?? const [];
+        if (docs.isEmpty) {
+          return const _EmptyState();
+        }
+        final items = docs
+            .map((d) => ClosetItem.fromFirestore(d.id, d.data()))
+            .toList();
+        return ClosetGrid(
+          items: items,
+          cache: _cache,
+          onDelete: _onDelete,
+        );
+      },
     );
   }
 }
