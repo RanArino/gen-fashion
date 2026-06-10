@@ -52,36 +52,98 @@ and the Flutter app shows the attribution footer/modal. See **Validation and Acc
 ## Progress
 
 
-- [ ] Phase 0 — Seeding-script scaffold + dataset acquisition (M3-1)
-  - [ ] `scripts/seed_shared_closet/` with `run_seed.py`, `requirements.txt`, `.env.example`, `README.md` (self-contained per req §16.4).
-  - [ ] Kaggle download of `agrigorev/clothing-dataset-full` (primary) **and** a `--source-dir` local-images fallback for offline/CI.
-  - [ ] Config via env/flags: ES URL, R2 endpoint/creds/bucket, Firestore target, `MAX_ITEMS_PER_CATEGORY` (default 150), `--with-embeddings` (default off locally).
-- [ ] Phase 1 — Idempotent seeding pipeline (M3-1, M3-2)
-  - [ ] Category sampling with the `image_labels_merged.csv` quality filter.
-  - [ ] Per item: deterministic `item_id` (uuid5 of source filename) → R2 PUT `__shared__/closet/{item_id}.jpg` → optional Gemini embedding → ES upsert (`user_id:"__shared__"`, `is_shared:true`) → Firestore `shared_closet/{item_id}` set.
-  - [ ] Idempotency: re-run skips/overwrites deterministically; counts stable.
-  - [ ] Seed a local **subset** now; full-scale embedding seed on GCE ES deferred to deployment (M1-3).
-- [ ] Phase 2 — `SharedClosetSearchAdapter` (M3-3)
-  - [ ] Implement `ClothingSearchPort.search_by_source` / `search_all_sources` for `SHARED_CLOSET`: ES query filtered by `user_id:"__shared__"`, keyword-first + fail-soft kNN, returns `CandidateItem` with attribution.
-  - [ ] Unit test against a seeded/mocked ES.
-- [ ] Phase 3 — Attribution (M3-4)
-  - [ ] Backend: `CandidateItem.attribution = "Clothing Dataset (CC BY-SA 4.0)"` for shared items (set in the adapter).
-  - [ ] Flutter: reusable attribution footer + "About the shared closet" modal (CC BY-SA 4.0 text + Kaggle link); per-candidate-card attribution wired in M5.
-- [ ] Phase 4 — Validation & acceptance
-  - [ ] Seed run + idempotent re-run verified against `make dev`; adapter test green; `flutter analyze` clean.
-  - [ ] Flip M3 rows to ✅ (M3-2 stays partial until the deployment-phase full seed) and update `architecture-overview.md`.
+**▶ Current status (2026-06-10, latest — read this first).** The code re-scope to **3 demo closets**
+(Adult×2 + Child×1, 30 items each; see Decision Log) is **implemented and the multi-closet live seed is
+now COMPLETE**. The seed ran against local infra (`docker-compose up -d elasticsearch minio
+firestore-emulator`), all three stores verified at 90 items, idempotency confirmed, adapter pytest (8) +
+`flutter analyze` re-run green. **M3-2 is ✅ for the local subset**; the full vector seed on GCE ES stays
+deployment-deferred (M1-3). Precise timeline:
+
+1. ✅ M3 code (script + adapter + attribution) built; adapter unit tests (8) pass; `flutter analyze` clean.
+2. ✅ **First live seed ran** against local `make dev` (infra-only: ES+MinIO+Firestore emulator) →
+   **360 docs / 18 categories** from the high-res set. This surfaced the `images.csv` label-file fix and
+   the underwear/junk inclusion (see Surprises). **Update (2026-06-10):** this stale 360-doc data was still
+   present at reseed time (compose has no data volumes but the containers had not been recreated), so
+   `--purge` deleted it (ES 360 + MinIO 360) before the clean multi-closet seed.
+3. ✅ **Re-scoped & rewrote `run_seed.py`** for 3 closets: `kids`-split pools, `_CLOSET_QUOTA`
+   auto-composition, `closetId`/`closetKind` on ES+Firestore docs, `shared_closets/{closetId}` metadata,
+   `--purge` extended. **Builder dry-run verified (no store writes): 3×30 = 90 items, adult closets
+   disjoint, no underwear/junk.**
+4. ✅ Docs synced: req §16.1/§16.2/§16.4 + §8.1/§8.2, feature-matrix M3-2 → ✅, this plan, architecture-overview.
+5. ✅ **DONE (2026-06-10)** — multi-closet live seed (`--purge` → reseed → verify → idempotency), adapter
+   pytest re-run (8 passed), and `flutter analyze` re-check (No issues found) all complete. **created=90,
+   per-closet 30/30/30, idempotent re-run created=0/skipped=90.** Evidence in Artifacts. M3-2 → ✅ (local).
+
+Phase checklist (✅ = done; the single-closet design in 0/1 was superseded by step 3):
+
+- [x] Phase 0 — Seeding-script scaffold + dataset acquisition (M3-1)
+  - [x] `scripts/seed_shared_closet/` with `run_seed.py`, `requirements.txt`, `.env.example`, `README.md` (self-contained per req §16.4).
+  - [x] Kaggle download of `agrigorev/clothing-dataset-full` (~6.5 GB; uses high-res `images_original/` + `images.csv` labels) **and** a `--source-dir` local-images fallback. Cache-hit fixed so re-runs don't re-download.
+  - [x] Config via env/flags: ES URL, R2 endpoint/creds/bucket, Firestore target, `--with-embeddings` (default off locally). `--purge` flag added (now clears `shared_closet` + `shared_closets`).
+- [x] Phase 1 — Idempotent multi-closet seeding pipeline (M3-1, M3-2) — **code done; live seed run & verified (2026-06-10)**
+  - [x] **Re-scoped to 3 closets:** `kids`-split adult/child pools + `_CLOSET_QUOTA` auto-composition (tops8/outer4/bottoms6/dress4/shoes5/hat3); same-kind closets draw disjoint, deterministic items.
+  - [x] Per item: deterministic `item_id` (uuid5 of filename) → R2 PUT `__shared__/closet/{item_id}.jpg` → optional embedding → ES upsert (`user_id:"__shared__"`, `is_shared:true`, `closetId`, `closetKind`) → Firestore `shared_closet/{item_id}` set (+ `shared_closets/{closetId}` metadata).
+  - [x] Builder validated by **dry-run** (90 items, disjoint, no underwear/junk); `py_compile` clean.
+  - [x] **Live multi-closet seed against local infra (2026-06-10): created=90, closets 30/30/30, idempotent re-run created=0/skipped=90.** Evidence in Artifacts. (The superseded single-closet form had run live: 360 docs, purged first.)
+- [x] Phase 2 — `SharedClosetSearchAdapter` (M3-3) — **unchanged by the re-scope** (still returns all `__shared__`)
+  - [x] `search_by_source` / `search_all_sources` for `SHARED_CLOSET`: ES bool filter on `user_id:"__shared__"`, keyword `should` on `tags`/`category`, signed image URLs, fail-soft.
+  - [x] Unit tests pass in `tests/adapters/test_shared_closet_search.py` (mocked ES + fake storage).
+- [x] Phase 3 — Attribution (M3-4)
+  - [x] Backend: `CandidateItem.attribution = "Clothing Dataset (CC BY-SA 4.0)"` set in adapter.
+  - [x] Flutter: `lib/shared/attribution.dart` — `AttributionFooter` + `showSharedClosetAboutDialog`; wired into `closet_screen.dart`. `url_launcher: ^6.3.1` added.
+- [x] Phase 4 — Validation & acceptance — **complete (local subset; 2026-06-10)**
+  - [x] Adapter unit tests pass (8); `flutter analyze`: No issues found (re-run 2026-06-10).
+  - [x] Feature matrix updated: M3-1/M3-3/M3-4 → ✅; M3-2 → ✅ (local subset; full vector seed deployment-deferred).
+  - [x] **Multi-closet live seed + 3-store verification + idempotency + re-run of pytest/`flutter analyze` — DONE.** See Artifacts for evidence.
 
 
 ## Surprises & Discoveries
 
 
-- (To be filled during execution.) Likely candidates: Kaggle dataset layout / label-CSV column names; whether
-  the local single-node Docker ES (512m heap) comfortably holds the chosen subset; MinIO path/CORS quirks for
-  shared objects; and embedding cost/time if `--with-embeddings` is run locally.
+- The Kaggle dataset CSV uses column name `image` (not `filename`); the parser handles multiple name variants
+  (`image`, `filename`, `image_id`) for robustness.
+- The label CSV may unzip alongside the images rather than into a sibling directory; the script probes
+  multiple candidate paths.
+- `url_launcher` was absent from `pubspec.yaml`; added `^6.3.1` — resolved cleanly, `flutter analyze` clean.
+- **Live-seed findings (2026-06-09).** (a) The dataset's label file is **`images.csv`** (columns
+  `image`, `sender_id`, `label`, `kids`), **not** `image_labels_merged.csv` — `run_seed.py` was patched
+  to discover `images.csv` and probe `images_compressed/`/`images_original/`. (b) The download is
+  **6.5 GB** (`images_compressed/` 165 MB + `images_original/` 6.4 GB, 5,762 images each); Kaggle has no
+  folder-level partial download, so both resolutions arrive in the zip. (c) The Kaggle CLI reports the
+  licence as **`CC0-1.0`**, while req §16.3 / ADL-010 fix the attribution as `CC BY-SA 4.0` — discrepancy
+  flagged for separate confirmation; attribution string unchanged for now.
+- The first subset seed (20/category) produced 360 docs across 18 categories — but those included
+  underwear/innerwear (`Undershirt`, `Body`) and the junk label `Other` (it slipped through because
+  `_SKIP_LABELS` had `"Others"` plural while the data uses `"Other"` singular). Per user direction these
+  are now excluded (see Decision Log).
+- req-phase01.md §16.2 / §16.4 were updated (image variant, category exclusion, 500–1,000 target,
+  `images.csv`) — superseding the earlier "no req change needed" note.
 
 
 ## Decision Log
 
+
+- Decision: **Replace the single shared closet with 3 realistic demo closets (Adult×2 + Child×1, ~30
+  items each), composed automatically by category quota.** Rationale (user, 2026-06-09): a closet with
+  100+ garments is unrealistic; small curated-size wardrobes demo better. The dataset has **no gender
+  column** (`images.csv` = `image, sender_id, label, kids`), so men's/women's is impossible; we segment by
+  the `kids` flag into adult/child. Data model: items keep `user_id:"__shared__"` and gain
+  `closetId`/`closetKind`; a `shared_closets/{closetId}` metadata collection (kind/displayName/itemCount)
+  is added. **Closet-selection UI + adapter generalization are deferred to M5** (user chose "data only"
+  now) — so M3-3 `SharedClosetSearchAdapter` is unchanged and still returns all `__shared__` items.
+  Composition is auto via `_CLOSET_QUOTA` (tops 8 / outer 4 / bottoms 6 / dress 4 / shoes 5 / hat 3);
+  same-kind closets draw disjoint, deterministic items (idempotent). req §16.1/§16.2/§16.4 and §8.1/§8.2
+  updated. Dry-run verified: 3×30 = 90 items, adult closets non-overlapping, no underwear/junk.
+  Date/Author: 2026-06-09 / User + Claude (Opus 4.8).
+
+- Decision: **For the shared closet, use the high-resolution `images_original/` (not `images_compressed/`),
+  exclude non-styling categories, and target 500–1,000 items for the hackathon demo.** Rationale (user,
+  2026-06-09): the demo only needs 500–1,000 garments, so compression is unnecessary and high-quality
+  images present better; underwear/innerwear (`Undershirt`, `Body`) and junk labels (`Other`, `Others`,
+  `Not sure`, `Skip`) add no styling value and are dropped. `Hat`/`Shoes` are kept (visually meaningful
+  accessories). req §16.2 / §16.4 updated accordingly. Implementation: extend the seed's skip-list and
+  point the image source at `images_original/`; re-seed after a `--purge` so the excluded items are removed.
+  Date/Author: 2026-06-09 / User + Claude (Opus 4.8).
 
 - Decision: **Build M3 against local infra now (keyword-first, seeded subset); defer the full 2,000+ vector
   seed on GCE Elasticsearch to the deployment phase.** This is the direct application of the **M1-3** re-scope
@@ -130,9 +192,34 @@ and the Flutter app shows the attribution footer/modal. See **Validation and Acc
 ## Outcomes & Retrospective
 
 
-(To be completed at milestone boundaries and at M3 completion. Summarize the seeded counts, idempotency
-evidence, the adapter's search behavior, the attribution surface, and what remains for the deployment-phase
-full seed.)
+**M3 complete for the local subset (incl. multi-closet re-scope); multi-closet live seed run & verified (2026-06-10).**
+
+Adapter + attribution are done and verified. The seeding script is done **and re-scoped** to 3 demo
+closets; the **live seed has now run** against local infra — 90 items across `adult-01`/`adult-02`/`child-01`
+(30 each), verified in ES + MinIO + Firestore, idempotent on re-run, with adapter pytest (8) and
+`flutter analyze` green. **M3-2 is ✅ for local.** See the **Current status** block and **Artifacts** for
+the exact evidence.
+
+- **Seeding script** (`scripts/seed_shared_closet/run_seed.py`): self-contained, idempotent. Builds the 3
+  demo closets (`adult-01`, `adult-02`, `child-01`) via `kids`-split pools + `_CLOSET_QUOTA`
+  auto-composition (~30 items each, ~90 total). `item_id = uuid5(NAMESPACE_URL, "kaggle:…:{filename}")`;
+  each file maps to exactly one closet, so re-runs upsert. Writes `closetId`/`closetKind` to ES+Firestore
+  and `shared_closets/{closetId}` metadata. Uses high-res `images_original/` + `images.csv` labels;
+  underwear (`Undershirt`,`Body`) and junk (`Other`) excluded. `--with-embeddings` is deployment-only.
+- **`SharedClosetSearchAdapter`**: unchanged by the re-scope (still queries all `user_id:"__shared__"`).
+  Keyword-first, fail-soft, attribution set on every `CandidateItem`. Unit tests pass (mocked).
+- **Attribution**: `attribution = "Clothing Dataset (CC BY-SA 4.0)"`; Flutter `AttributionFooter` +
+  `showSharedClosetAboutDialog` wired into the closet screen. `flutter analyze`: No issues found.
+
+**What remains:**
+1. ✅ **(Done 2026-06-10)** Multi-closet live seed against local infra: `--purge` (cleared the stale
+   360-doc single-closet data) → reseed (90 items) → verified per-`closetId` counts (30/30/30) →
+   idempotency re-run (created=0) → re-ran adapter pytest (8 passed) + `flutter analyze` (clean).
+   **M3-2 → ✅** for local; feature-matrix + architecture-overview synced.
+2. **(Deployment phase, M1-3 deferral)** Re-run with `--with-embeddings` against the GCE-hosted ES to add
+   768-dim vectors — a config change (`ELASTICSEARCH_URL`, `GOOGLE_APPLICATION_CREDENTIALS`), no new code.
+3. **(M5 handoff)** Closet-selection UI + adapter `closetId` filter (the data model is ready now).
+4. **(Open)** Licence discrepancy: Kaggle CLI reports `CC0-1.0` vs req's `CC BY-SA 4.0` — confirm separately.
 
 
 ## Context and Orientation
@@ -191,6 +278,12 @@ M5.
 
 ## Plan of Work
 
+
+> ⚠️ **Historical design (partially superseded).** The sections below — Plan of Work, Concrete Steps, and
+> Validation — describe the **original single-shared-closet** design (150/category, `image_labels_merged.csv`,
+> a single `__shared__` set, the `:4000` Firestore UI). They are kept for provenance. The **current** design
+> is the **3-closet re-scope** — see **Current status** (Progress) and the **Decision Log**; commands live in
+> **Artifacts**. Where they conflict, the Progress/Decision Log/Artifacts sections win.
 
 Five phases. The seed pipeline (Phases 0–1) and the read adapter (Phase 2) are independent and could proceed
 in parallel; attribution (Phase 3) depends on the adapter for the backend half. Validation (Phase 4) ties it
@@ -398,12 +491,85 @@ with embedding vectors on the GCE-hosted ES is a deployment-phase re-run of the 
 ## Artifacts and Notes
 
 
-(Populate during execution.)
+**Adapter unit test run (2026-06-09):**
+```
+platform darwin -- Python 3.12.9, pytest-7.4.0
+tests/adapters/test_shared_closet_search.py::test_search_by_source_returns_attributed_candidates PASSED
+tests/adapters/test_shared_closet_search.py::test_search_by_source_wrong_source_raises_value_error PASSED
+tests/adapters/test_shared_closet_search.py::test_search_all_sources_includes_shared PASSED
+tests/adapters/test_shared_closet_search.py::test_search_non_empty_query_requires_keyword_match PASSED
+tests/adapters/test_shared_closet_search.py::test_search_all_sources_without_shared_returns_empty PASSED
+tests/adapters/test_shared_closet_search.py::test_search_empty_query_uses_filter_only PASSED
+tests/adapters/test_shared_closet_search.py::test_search_fails_soft_on_es_error PASSED
+tests/adapters/test_shared_closet_search.py::test_image_url_fallback_when_no_imageUrl PASSED
+8 passed in 7.15s
+```
 
-- The `_count` output for `user_id:"__shared__"` after the first and second runs (idempotency evidence).
-- A sample `shared_closet/{itemId}` Firestore document and the matching ES doc.
-- The `pytest -q` line including `test_shared_closet_search`.
-- A screenshot / note confirming the Flutter attribution surface.
+**Flutter analyze (2026-06-09):** `No issues found! (ran in 7.8s)`
+
+**First live seed — single-closet form, since superseded (2026-06-09):** ran against infra-only
+`docker-compose up -d elasticsearch minio firestore-emulator`:
+```json
+{ "total_samples": 360, "created": 360, "skipped": 0, "errors": 0, "with_embeddings": false }
+```
+ES `_count` (user_id:"__shared__") = 360 across 18 categories (incl. the now-excluded Undershirt/Body/Other).
+Firestore `shared_closet/*` carried the §8.1 fields. **Update (2026-06-10): the local containers have since
+been removed; the compose uses no data volumes, so this data is gone — the next seed is a clean slate.**
+
+**Builder dry-run — multi-closet form (2026-06-09, NO store writes):**
+```
+Loaded 4909 labelled entries; Closet adult-01: 30, adult-02: 30, child-01: 30; Built 90 items total
+adult-01 ∩ adult-02 overlap: 0    (each closet: Shoes5 Pants3 Shorts3 Hat3 +2 each tops/outer/dress, etc.)
+```
+
+**Multi-closet live seed — EXECUTED & VERIFIED (2026-06-10).** Ran against local infra
+(`docker-compose up -d elasticsearch minio firestore-emulator`; ES yellow, MinIO healthy, Firestore
+emulator reachable). Credentials/embeddings not needed (infra-only, `--with-embeddings` off).
+
+Purge (cleared the still-present stale single-closet data) then seed:
+```
+$ python run_seed.py --purge
+ES deleted: 360 | R2/MinIO deleted: 360 objects | Firestore deleted: 0 docs
+
+$ python run_seed.py
+{ "total_samples": 90, "created": 90, "skipped": 0, "errors": 0,
+  "closets": { "adult-01": 30, "adult-02": 30, "child-01": 30 }, "with_embeddings": false }
+```
+
+3-store verification:
+```
+# ES — total user_id:"__shared__"
+count: 90
+# ES — by closetId.keyword            # (closetId is dynamically mapped text → aggregate on .keyword)
+adult-01 30 | adult-02 30 | child-01 30
+# ES — by closetKind.keyword
+adult 60 | child 30
+# ES — category breakdown (no Undershirt/Body/Other):
+Shoes15 Hat9 Pants9 Shorts9 Dress6 Outwear6 Shirt6 Skirt6 T-Shirt6 Longsleeve4 Blazer3 Hoodie3 Polo3 Top3 Blouse2
+# ES — per-closet × category (adult-01 ≡ adult-02 quota; child-01 swaps a Blouse for a Longsleeve):
+adult-01 => Shoes5 Hat3 Pants3 Shorts3 Dress2 Outwear2 Shirt2 Skirt2 T-Shirt2 Blazer1 Blouse1 Hoodie1 Longsleeve1 Polo1 Top1
+adult-02 => Shoes5 Hat3 Pants3 Shorts3 Dress2 Outwear2 Shirt2 Skirt2 T-Shirt2 Blazer1 Blouse1 Hoodie1 Longsleeve1 Polo1 Top1
+child-01 => Shoes5 Hat3 Pants3 Shorts3 Dress2 Longsleeve2 Outwear2 Shirt2 Skirt2 T-Shirt2 Blazer1 Hoodie1 Polo1 Top1
+
+# MinIO — objects under __shared__/closet/
+90
+
+# Firestore — shared_closet/{itemId} sample carries closetId+closetKind + §8.1 fields:
+{ closetId: "adult-01", closetKind: "adult", category: "Pants", originalLabel: "Pants",
+  season: "all", colors: ["black","blue","beige"], tags: ["pants"], embeddingId: <itemId>,
+  datasetSource: "kaggle:agrigorev/clothing-dataset-full", imageUrl: "__shared__/closet/<itemId>.jpg" }
+# Firestore — shared_closets/* metadata (3 docs):
+adult-01: kind=adult  displayName="Adult Closet A" itemCount=30
+adult-02: kind=adult  displayName="Adult Closet B" itemCount=30
+child-01: kind=child  displayName="Kids Closet"    itemCount=30
+```
+
+Idempotency (second identical run): `created=0, skipped=90, errors=0`; ES `_count` stayed **90**.
+
+Re-run checks: `pytest -q tests/adapters/test_shared_closet_search.py` → **8 passed** (run in a local
+py3.12 venv with `fastapi-service/requirements.txt`, not via `docker-compose run`, since
+`credentials/vertex-ai-sa.json` is absent — the adapter tests are ES-free/mocked). `flutter analyze` →
+**No issues found**.
 
 
 ## Interfaces and Dependencies
