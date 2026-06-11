@@ -46,35 +46,58 @@ registry. See **Validation and Acceptance**.
 ## Progress
 
 
-- [ ] Phase 0 — Python ADK service scaffold; decommission the TS skeleton (M4-9 AGENT_MODEL config)
-  - [ ] New Python package layout under `adk-agent-service/` (`styling_app/`, `pyproject.toml`/`requirements.txt`, `config.py`).
-  - [ ] Replace `Dockerfile` (python:3.11-slim + `adk api_server`), `.env.example`, and the `docker-compose.yml` `adk-agent-service` service command.
-  - [ ] Delete the TypeScript skeleton (`src/*.ts`, `package.json`, `tsconfig.json`).
-  - [ ] Verify: `adk web` boots and lists `styling_app`; `make dev` brings the container up healthy.
-- [ ] Phase 1 — Tool Registry + four tools (M4-4, M4-5, M4-6, M4-7, M4-8)
-  - [ ] Tool Registry pattern (`tools/registry.py`): each tool an independent module registered by name.
-  - [ ] `analyze_clothing_image` (M4-5) — Gemini structured-output analysis; reuse the M2-5 response schema.
-  - [ ] `search_closet` (M4-6) — embed the agent's description, hybrid (keyword-first + optional kNN) search over `clothing_items`, filtered by source; `SHARED_CLOSET` results carry the CC BY-SA 4.0 attribution (M3 parity).
-  - [ ] `style_synthesizer` (M4-7) — Nano Banana (`gemini-2.5-flash-image`) generation with collage fallback; store result, return URL.
-  - [ ] `ask_preference` (M4-8) — Web pre-session-form variant: echo/normalize the `UserPreference` from context (LINE interactive deferred to M6).
-  - [ ] Verify: each tool is unit-tested with mocked Gemini/ES clients.
-- [ ] Phase 2 — Agents + delegation (M4-1, M4-2, M4-3)
-  - [ ] `ClosetAgent` (M4-2) — tools `[analyze_clothing_image, search_closet]`.
-  - [ ] `StylingAgent` (M4-3) — tools `[ask_preference, style_synthesizer]`.
-  - [ ] `StylingOrchestratorAgent` (M4-1) — `sub_agents=[ClosetAgent, StylingAgent]`; exported as `root_agent`.
-  - [ ] A2A-ready discipline (ADL-019): explicit context hand-off, no shared in-memory state, per-sub-agent toolsets.
-- [ ] Phase 3 — Validation & acceptance
-  - [ ] End-to-end on the ADK Web UI against the M3-seeded shared closet (`SHARED_CLOSET`, no upload needed); optionally also `CLOSET` with M2-uploaded items. Capture the event stream.
-  - [ ] `pytest` green; record the run in Artifacts and flip M4-1…M4-9 to ✅ in `feature-matrix-phase01.md`.
+- [x] Phase 0 — Python ADK service scaffold; decommission the TS skeleton (M4-9 AGENT_MODEL config)
+  - [x] New Python package layout under `adk-agent-service/` (`styling_app/`, `requirements.txt`, `config.py`).
+  - [x] Replace `Dockerfile` (python:3.11-slim + `adk api_server`), `.env.example`, and the `docker-compose.yml` `adk-agent-service` service command.
+  - [x] Delete the TypeScript skeleton (`src/*.ts`, `package.json`, `tsconfig.json`).
+  - [x] Verify: `adk web` boots and lists `styling_app` (only `styling_app`); the container builds and runs `adk api_server` healthy (`/list-apps` 200).
+- [x] Phase 1 — Tool Registry + four tools (M4-4, M4-5, M4-6, M4-7, M4-8)
+  - [x] Tool Registry pattern (`tools/registry.py`): each tool an independent module registered by name.
+  - [x] `analyze_clothing_image` (M4-5) — Gemini structured-output analysis; reuses the M2-5 response schema verbatim.
+  - [x] `search_closet` (M4-6) — embed the agent's description (fail-soft), hybrid (keyword-first + additive kNN) search over `clothing_items`, filtered by source; `SHARED_CLOSET` results carry the CC BY-SA 4.0 attribution (M3 parity). Keyword clause re-shaped for keyword-typed fields — see Surprises.
+  - [x] `style_synthesizer` (M4-7) — Nano Banana (`gemini-2.5-flash-image`) generation with collage fallback; stores result in R2/MinIO, returns URL.
+  - [x] `ask_preference` (M4-8) — Web pre-session-form variant: echo/normalize the `UserPreference` from context (LINE interactive deferred to M6).
+  - [x] Verify: registry + all four tools unit-tested with mocked Gemini/ES/storage clients (17 tests).
+- [x] Phase 2 — Agents + delegation (M4-1, M4-2, M4-3)
+  - [x] `ClosetAgent` (M4-2) — tools `[analyze_clothing_image, search_closet]`.
+  - [x] `StylingAgent` (M4-3) — tools `[ask_preference, style_synthesizer]`.
+  - [x] `StylingOrchestratorAgent` (M4-1) — `sub_agents=[ClosetAgent, StylingAgent]`; exported as `root_agent`.
+  - [x] A2A-ready discipline (ADL-019): explicit context hand-off, no shared in-memory state, per-sub-agent toolsets pulled from the registry by name.
+- [x] Phase 3 — Validation & acceptance (2026-06-11)
+  - [x] End-to-end against the M3-seeded shared closet (`SHARED_CLOSET`, no upload needed): delegation → 3× `search_closet` (attributed `__shared__` items, signed URLs) → `style_synthesizer` (collage fallback; stored, reachable). Event stream captured (`docs/local/m4_run_events*.json`). `CLOSET` source not exercised live (optional path; same code, only the `user_id` filter differs — covered by unit tests).
+  - [x] `pytest -q` green (17 passed); run recorded in Artifacts; M4-1…M4-9 flipped to ✅ in `feature-matrix-phase01.md`; M4 nodes recolored in `architecture-overview.md`.
 
 
 ## Surprises & Discoveries
 
 
-- (To be filled during execution.) Record any divergence between the M1-4 PoC event shape and what the
-  multi-agent orchestrator emits, any Vertex-vs-API-key model availability quirks (M1-4 found
-  `gemini-2.0-flash` is absent on Vertex AI for this project — use `gemini-2.5-flash` there), and any
-  cross-modal kNN quality problems in `search_closet` (the deep-dive flags this as an open risk).
+- **`match` queries are inert against the `clothing_items` keyword fields.** The M2-9 mapping types
+  `tags`/`category`/`colors`/`season` as `keyword`, and the M3 seed capitalizes categories (`"Pants"`),
+  so the planned M3-3-shaped `match` clauses (`{"match": {"tags": description}}`) returned **zero hits**
+  for any multi-word description and for lowercase category filters. Fix: the adapter tokenizes the
+  description (`[a-z0-9]+` on the lowercased string) and builds **case-insensitive `term` clauses** over
+  `tags`/`category`/`colors`/`season`; the `category`/`colors` filter params are case-insensitive `term`s
+  too. Found live (first acceptance run returned `[]`); the M3-3 adapter worked only because its callers
+  pass exact single-word lowercase queries that happen to equal the seeded tags.
+- **Abstract search descriptions find nothing in the seeded data.** The agent's first attempt searched
+  for "casual spring outfit" — no garment noun, zero hits. `ClosetAgent`'s instruction now requires one
+  `search_closet` call per garment type with concrete nouns ("casual shirt", "blue pants"), and the tool
+  docstring says the same. This is prompt-shape, not architecture.
+- **Free-tier Gemini API quota dominated acceptance, beyond the Vertex quirk M1-4 recorded.** With the
+  local `GEMINI_API_KEY`: `gemini-2.0-flash` free-tier quota is **0** (the req §7.1 default no longer
+  runs free), `gemini-2.5-flash` allows ~20 req/day (exhausted mid-acceptance), and
+  `gemini-2.5-flash-image` has no free quota at all. Acceptance ran with `AGENT_MODEL=gemini-2.5-flash-lite`
+  (M4-9 override, no code change) and `style_synthesizer` exercised the **collage fallback** path
+  (ADL-005) — the Nano Banana call itself is implemented and ports the proven M1-2 PoC shape, but locally
+  unverifiable without a billed key or Vertex. flash-lite is noticeably weaker at delegation (asked a
+  clarifying question; needed an explicit nudge to transfer/call tools) — fine for tool verification,
+  but M5 demos should use `gemini-2.5-flash` on a billed key or Vertex.
+- **`adk web`/`api_server` treat every subfolder of the cwd as an agent app**, so a top-level `tests/`
+  directory showed up in the agent dropdown. Tests moved to `styling_app/tests/` (pytest unaffected).
+- **Event shape matches M1-4.** The captured stream is the same single-`Event` shape (`content.parts[*]`
+  with `functionCall`/`functionResponse`/`text`, batched tokens). Multi-agent delegation appears as a
+  built-in `transfer_to_agent` function call/response pair, then subsequent events carry the sub-agent's
+  name in `author` — a detail the M5 `agentEvents` relay will want to preserve.
 
 
 ## Decision Log
@@ -124,8 +147,37 @@ registry. See **Validation and Acceptance**.
 ## Outcomes & Retrospective
 
 
-(To be completed at milestone boundaries and at M4 completion. Summarize what runs on the ADK Web UI, which
-tools are live vs. fallback, the captured event-stream shape, and any handoffs into M5.)
+**M4 complete (2026-06-11).** `adk-agent-service` is now a Python ADK app (`styling_app/`, `google-adk`
+2.1.0); the TS skeleton is deleted. `adk web` and `adk api_server` list exactly `styling_app`; the
+docker-compose service builds (python:3.11-slim, 713MB) and runs `adk api_server` healthy. The service has a
+local `.dockerignore` so `.env`, virtualenvs, caches, and ADK runtime state are excluded from Docker build
+context.
+
+**What runs:** a live `SHARED_CLOSET` coordination conversation against the M3 seed —
+orchestrator → `transfer_to_agent(ClosetAgent)` → three `search_closet` calls (shirt/pants/shoes, each
+with concrete-noun descriptions) returning seeded `__shared__` items with `attribution="Clothing Dataset
+(CC BY-SA 4.0)"` and signed MinIO image URLs → `transfer_to_agent(StylingAgent)` → `style_synthesizer`
+storing `demo-user/coordinates/{uuid}.jpg` (reachable, HTTP 200, 1140×720 JPEG of the two chosen
+garments) → final answer with the coordinate URL. For container runs, ADK-owned signed MinIO/R2 URLs are
+resolved back to storage object keys before fetching bytes, so `style_synthesizer` does not depend on
+container-local `localhost:9000` reachability.
+
+**Live vs. fallback:** `search_closet` and `ask_preference` fully live; `analyze_clothing_image` live in
+unit tests (same Gemini call shape as the E2E-verified M2-5 adapter) but not exercised in the acceptance
+conversation; `style_synthesizer` live through the **collage fallback** — the Nano Banana generation call
+is implemented (M1-2 port) but the local free-tier key has no `gemini-2.5-flash-image` quota.
+kNN is additive and inert for `SHARED_CLOSET` (no local embeddings, as planned).
+
+**Event stream:** same shape as M1-4 (`sample_events.jsonl`) — single `Event` class, batched tokens,
+`functionCall`/`functionResponse` parts; delegation surfaces as `transfer_to_agent` calls plus per-event
+`author`. Captures in `docs/local/m4_run_events*.json`.
+
+**Handoffs into M5:** (1) drive these agents via `Runner` behind `POST /internal/run-session` (ADL-020)
+and relay the captured event shape — including `author` and `transfer_to_agent` — into Firestore
+`agentEvents` (ADL-011/021); (2) use a billed key or Vertex (`AGENT_MODEL=gemini-2.5-flash`) for demos —
+free-tier flash-lite delegates poorly; (3) verify the Nano Banana generation path once quota exists;
+(4) closet-level (`closetId`) filtering and the `CLOSET`-source live demo remain M5 add-ons;
+(5) extracting a shared `gen-fashion-core` package stays the M5 refactor (Decision Log).
 
 
 ## Context and Orientation
@@ -462,12 +514,35 @@ Closet-level (`closetId`) filtering is an M5 add-on. `RAKUTEN` is Phase 1b.
 ## Artifacts and Notes
 
 
-(Populate during execution.)
+All captured 2026-06-11, local `make dev` infra + `.venv` `adk api_server` (the REST engine behind
+`adk web`; the Web UI itself verified serving `/dev-ui/` 200 and listing `styling_app`).
 
-- `adk web` transcript of a full `CLOSET` coordination turn (delegation + tool calls + final answer).
-- Captured event objects for one turn, compared to the M1-4 `sample_events.jsonl` shape.
-- `pytest -q` summary line.
-- The final `clothing_items` `curl` output proving `search_closet` returned indexed items.
+- **Acceptance transcript (`SHARED_CLOSET`, condensed; full JSON in `docs/local/m4_run_events*.json`,
+  collage in `docs/local/coord.jpg`):**
+
+      user: Suggest an outfit from the shared closet. user_id=demo-user source=SHARED_CLOSET ...
+      styling_app   CALL transfer_to_agent {"agent_name": "ClosetAgent"}
+      ClosetAgent   CALL search_closet {"description":"casual shirt","source":"SHARED_CLOSET","user_id":"demo-user","category":"shirt","colors":["blue"]}
+      ClosetAgent   RESP search_closet [{"item_id":"c4c2f794-…","source":"SHARED_CLOSET","image_url":"http://localhost:9000/gen-fashion-images/__shared__/closet/c4c2f794-….jpg?X-Amz-…","attribution":"Clothing Dataset (CC BY-SA 4.0)"}, …]
+      ClosetAgent   CALL search_closet {"description":"casual pants", …}   → seeded __shared__ Pants items
+      ClosetAgent   CALL search_closet {"description":"sneakers", "colors":["white"], …} → []  (no white shoes in seed)
+      ClosetAgent   CALL transfer_to_agent {"agent_name": "StylingAgent"}
+      StylingAgent  CALL style_synthesizer {"user_id":"demo-user","item_image_urls":[shirt_url, pants_url],"style_description":"casual spring outfit"}
+      StylingAgent  RESP style_synthesizer {"coordinate_image_url":"http://localhost:9000/gen-fashion-images/demo-user/coordinates/c40b924e….jpg?X-Amz-…","model_used":"collage-fallback"}
+      StylingAgent  TEXT "Here is a casual spring outfit, put together with a shirt and pants: http://…"
+
+  The coordinate URL fetched HTTP 200, 281,033 bytes, JPEG 1140×720 — a collage of the two seeded
+  garments (ADL-005 path; see Surprises for the quota reason).
+- **Event shape vs. M1-4:** identical single-`Event` JSON (`author`, `content.parts[*]` with
+  `functionCall`/`functionResponse`/`text`, batched tokens); delegation adds `transfer_to_agent`
+  call/response pairs. 11 events for the first full delegated turn.
+- **`pytest -q`:** `17 passed, 1 warning in 1.31s` (registry 4, tools 10, agent topology 3; Gemini/ES/
+  storage mocked, including own-presigned-URL storage fetch regression).
+- **`clothing_items` proof:** `curl …/_count {"term":{"user_id":"__shared__"}}` → `{"count":90}`; the
+  acceptance `search_closet` results are drawn from those docs (item_ids match seeded UUIDs).
+- **Container:** `docker-compose build adk-agent-service` → `Built`; `docker-compose up -d` → container
+  Up, `GET :3000/list-apps` → `["styling_app"]`.
+- **Model used for acceptance:** `AGENT_MODEL=gemini-2.5-flash-lite` (M4-9 env override; see Surprises).
 
 
 ## Interfaces and Dependencies
@@ -478,7 +553,7 @@ Closet-level (`closetId`) filtering is an M5 add-on. `RAKUTEN` is Phase 1b.
 - **`google-genai`** — Gemini client for `analyze_clothing_image` (structured output), `search_closet`
   (text embedding via `gemini-embedding-2`), and `style_synthesizer` (Nano Banana `gemini-2.5-flash-image`).
   Reuses the call shapes proven in `gemini_analysis.py` and `poc/image_generation/run_poc.py`.
-- **`elasticsearch==8.11.0`** (async client) — queries the `clothing_items` index created/populated by M2-5/M2-9.
+- **`elasticsearch==8.11.0`** (sync client) — queries the `clothing_items` index created/populated by M2-5/M2-9.
   Same version as `fastapi-service` to avoid wire-protocol drift.
 - **`boto3`** — S3-compatible client for R2/MinIO, to fetch garment bytes and store generated coordinates,
   reusing the M2 `R2_*` credentials and bucket.
@@ -510,6 +585,18 @@ between them). Recommended working order is **M3 → M4**: M3 is smaller/lower-r
 `SHARED_CLOSET` data that turns M4's acceptance into the hero "try without uploading" demo (vs. only the
 developer's hand-uploaded `CLOSET`). Per the user's "one ExecPlan at a time" preference, M4 may be treated as
 **queued behind M3** — both plan files exist, but only M3 need be actively worked first.
+
+2026-06-11 (completion) — **M4 executed and accepted.** All phases done in one pass: Python ADK rebuild
+(ADL-022, TS deleted), registry + four tools + thin adapters, three-agent topology, live `SHARED_CLOSET`
+acceptance against the M3 seed, `pytest` 17 passed, container healthy. Deviations from the plan text,
+all recorded in Surprises/Decision Log: tests live in `styling_app/tests/` (ADK app-discovery), the ES
+keyword clause is tokenized case-insensitive `term`s (keyword-typed fields), acceptance used
+`AGENT_MODEL=gemini-2.5-flash-lite` (free-tier quota) and the collage fallback (no image-gen quota).
+Post-review hardening added `.dockerignore` and storage-key re-fetch for ADK-owned signed URLs in container
+runs.
+Synced in the same change: `feature-matrix-phase01.md` M4-1…M4-9 → ✅ (+ header note), and
+`architecture-overview.md` (§0 milestone summary, §1 container colors + 読み取りポイント, §3 agents → Done,
+§5 caption/participant, §7 roadmap M4 → Done). M5 is now the active critical path.
 
 2026-06-10 (M3 completion sync) — **M3 is complete for the local subset** (live seed run & verified:
 90 items, 3 demo closets `adult-01`/`adult-02`/`child-01`, idempotent; only the full vector seed on GCE ES
