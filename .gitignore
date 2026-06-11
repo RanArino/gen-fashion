@@ -79,3 +79,6 @@ flutter-web-app/lib/firebase_options.dart
 # scripts
 scripts/seed_shared_closet/.dataset_cache/
 scripts/seed_shared_closet/.venv/
+# adk-agent-service local venv
+adk-agent-service/.venv/
+adk-agent-service/**/.adk/
