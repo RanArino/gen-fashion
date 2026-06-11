@@ -1,6 +1,7 @@
 # Architecture Overview — gen-fashion (Phase 1)
 
 > **生成日:** 2026-06-08
+> **最終同期:** 2026-06-12 — M5 ExecPlan 作成済み（`docs/plans/20260612-m5-coordination-flow-accordion-ui.md`）。feature matrix 上は M5-1…M5-11 が 🟡 In progress だが、この図はコード実在状態を示すため、実装が入るまでは M5 ノードを 🟧 Stub のまま維持する。
 > **ベース:** [req-phase01.md](req-phase01.md)（仕様の source of truth）・[feature-matrix-phase01.md](feature-matrix-phase01.md)（実装状況）
 > **目的:** アーキテクチャ／システム構成を可視化し、**既に実装済みのコード**と**これから実装予定のコード**の境界を明確に強調する。
 
@@ -40,10 +41,10 @@ flowchart LR
 | **M2** | 認証 & クローゼット管理（Web） | 1a | 🟩 **Done**（E2E 検証済み） |
 | **M3** | 共有デモクローゼット | 1a | 🟩 **Done（local）**（seed script / SharedClosetSearchAdapter / attribution UI 実装済み。3クローゼットの live seed 済み＝90件・30/30/30・冪等性検証済み 2026-06-10。フル vector seed（GCE ES）のみ deployment 待ち） |
 | **M4** | ADK エージェント中核 | 1a | 🟩 **Done（local）**（2026-06-11: Python ADK 再構築完了（ADL-022・TS 骨組み削除）。orchestrator + 2 sub-agents + 4 tools が `adk api_server`/Web UI でローカル稼働、M3 シード済み `SHARED_CLOSET` に対する委譲 → `search_closet`（attribution 付き）→ `style_synthesizer`（collage fallback）E2E 確認、pytest 17 passed。Nano Banana 生成パスは free-tier quota の都合で fallback のみ実証） |
-| **M5** | コーディネートフロー & Accordion UI | 1a | 🟧 **Stub**（`styling/` use case・`session_routes` 全て 501） |
+| **M5** | コーディネートフロー & Accordion UI | 1a | 🟡 **ExecPlan in flight** / 🟧 **code Stub**（`docs/plans/20260612-m5-coordination-flow-accordion-ui.md` 作成済み。`styling/` use case・`session_routes` は実装まで 501 / `NotImplementedError` のまま） |
 | **M6** | LINE チャネル統合 | 1b | ⬜ **Not started**（ファイル無し） |
 
-**現在地:** Phase 1a は M4 まで完了。エージェント中核（orchestrator / sub-agents / tools）はローカル ADK Web UI で動作する。残るは **M5（FastAPI セッション配線 + agentEvents リレー + SSE + Accordion/A2UI 結果 UI）**で、これがコア体験 E2E のクリティカルパス。
+**現在地:** Phase 1a は M4 まで完了。エージェント中核（orchestrator / sub-agents / tools）はローカル ADK Web UI で動作する。**M5（FastAPI セッション配線 + agentEvents リレー + SSE + Accordion/A2UI 結果 UI）は ExecPlan 作成済みで着手状態**だが、コード実体はまだ Stub で、これがコア体験 E2E のクリティカルパス。
 
 ---
 
