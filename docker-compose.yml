@@ -70,12 +70,15 @@ services:
     environment:
       - FIRESTORE_EMULATOR_HOST=firestore-emulator:8080
       - FIREBASE_AUTH_EMULATOR_HOST=firebase-auth-emulator:9099
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-gen-fashion-local}
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-gen-fashion-local}
       - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
       - GOOGLE_APPLICATION_CREDENTIALS=/credentials/vertex-ai-sa.json
       - MAX_CLOSET_IMAGES_PER_USER=20
-      - GOOGLE_GENAI_USE_VERTEXAI=true
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY:-}
+      - GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI:-false}
       - IMAGE_ANALYSIS_MODEL=gemini-2.5-flash
       - R2_ENDPOINT_URL=http://minio:9000
       - R2_PUBLIC_ENDPOINT_URL=http://localhost:9000
@@ -83,7 +86,7 @@ services:
       - R2_SECRET_ACCESS_KEY=minioadmin
       - R2_BUCKET_NAME=gen-fashion-images
       - TASK_QUEUE_MODE=local
-      - ADK_INTERNAL_BASE_URL=http://fastapi-service:8000
+      - ADK_INTERNAL_BASE_URL=http://adk-agent-service:3000
       - INTERNAL_TASK_SECRET=${INTERNAL_TASK_SECRET:-local-dev-internal-secret}
       - AGENT_MODEL=gemini-2.0-flash
     depends_on:
@@ -110,7 +113,9 @@ services:
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-gen-fashion-local}
       - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
       - GOOGLE_APPLICATION_CREDENTIALS=/credentials/vertex-ai-sa.json
-      - GOOGLE_GENAI_USE_VERTEXAI=true
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY:-}
+      - GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI:-false}
       # M1-4: gemini-2.0-flash is unavailable on Vertex AI for this project.
       - AGENT_MODEL=${AGENT_MODEL:-gemini-2.5-flash}
       - ELASTICSEARCH_URL=http://elasticsearch:9200
@@ -119,14 +124,19 @@ services:
       - R2_ACCESS_KEY_ID=minioadmin
       - R2_SECRET_ACCESS_KEY=minioadmin
       - R2_BUCKET_NAME=gen-fashion-images
+      - FIRESTORE_EMULATOR_HOST=firestore-emulator:8080
+      - FIRESTORE_DATABASE_ID=(default)
+      - INTERNAL_TASK_SECRET=${INTERNAL_TASK_SECRET:-local-dev-internal-secret}
     depends_on:
       elasticsearch:
+        condition: service_healthy
+      firestore-emulator:
         condition: service_healthy
       minio:
         condition: service_healthy
     volumes:
       - ./adk-agent-service:/app
       - ${GOOGLE_APPLICATION_CREDENTIALS_HOST:-./credentials/vertex-ai-sa.json}:/credentials/vertex-ai-sa.json:ro
-    command: sh -c "adk api_server --host 0.0.0.0 --port 3000"
+    command: ["python", "-m", "uvicorn", "styling_app.server:app", "--host", "0.0.0.0", "--port", "3000", "--reload"]
 
 volumes: {}
