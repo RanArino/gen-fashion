@@ -11,9 +11,10 @@ import 'upload_service.dart';
 const int _kMaxItems = 20;
 
 class ClosetScreen extends StatefulWidget {
-  const ClosetScreen({super.key, required this.uid});
+  const ClosetScreen({super.key, required this.uid, this.embedded = false});
 
   final String uid;
+  final bool embedded;
 
   @override
   State<ClosetScreen> createState() => _ClosetScreenState();
@@ -92,6 +93,28 @@ class _ClosetScreenState extends State<ClosetScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final content = Column(
+      children: [
+        Expanded(child: _buildBody()),
+        const AttributionFooter(),
+      ],
+    );
+    if (widget.embedded) {
+      return Stack(
+        children: [
+          content,
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton.extended(
+              onPressed: _busy ? null : _onUploadPressed,
+              icon: const Icon(Icons.add_a_photo),
+              label: _busy ? const Text('Uploading…') : const Text('Add item'),
+            ),
+          ),
+        ],
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Closet'),
