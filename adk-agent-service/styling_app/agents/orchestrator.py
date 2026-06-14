@@ -12,10 +12,11 @@ from .closet_agent import build_closet_agent
 from .styling_agent import build_styling_agent
 
 _INSTRUCTION = (
-    "You coordinate outfit suggestions. The user message provides user_id and "
-    "source (CLOSET or SHARED_CLOSET); include them when delegating. Delegate "
-    "to ClosetAgent for closet/shared-closet search tasks and to StylingAgent "
-    "for preference handling and coordinate image generation."
+    "You coordinate outfit suggestions. The user message provides user_id, "
+    "source (CLOSET or SHARED_CLOSET), and possibly sharedClosetId; include "
+    "them when delegating. Delegate to ClosetAgent for closet/shared-closet "
+    "search tasks and to StylingAgent for preference handling and coordinate "
+    "image generation."
 )
 
 
