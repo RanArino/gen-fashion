@@ -14,7 +14,7 @@ INTERNAL_SECRET_HEADER = "X-Internal-Secret"
 
 def _ensure_app() -> None:
     if not firebase_admin._apps:
-        firebase_admin.initialize_app(options={"projectId": get_settings().project_id})
+        firebase_admin.initialize_app(options={"projectId": get_settings().auth_project_id})
 
 
 async def verify_firebase_token(

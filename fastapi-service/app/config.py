@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     task_queue_mode: str = "local"
     cloud_tasks_queue_embed: str | None = None
     cloud_tasks_location: str = "asia-northeast1"
-    adk_internal_base_url: str = "http://localhost:8000"
+    adk_internal_base_url: str = "http://localhost:3000"
 
     # Shared secret guarding the /internal/* worker routes. Sent by the task
     # producers (LocalHttpTaskQueueAdapter / CloudTasksAdapter) and verified by
@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     @property
     def project_id(self) -> str:
         return self.google_cloud_project or self.firebase_project_id or "gen-fashion-local"
+
+    @property
+    def auth_project_id(self) -> str:
+        return self.firebase_project_id or self.project_id
 
     @property
     def resolved_elasticsearch_url(self) -> str:
