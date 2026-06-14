@@ -3,8 +3,8 @@
 The agent supplies a natural-language description of complementary items; the
 tool embeds it (fail-soft) and runs the keyword-first hybrid query. Returns
 CandidateItem-shaped dicts. SHARED_CLOSET results carry the CC BY-SA 4.0
-attribution (M3-3 parity, req §16.3). RAKUTEN is Phase 1b — not wired here.
-Closet-level (closetId) filtering is an M5 add-on (M3 Decision Log).
+attribution (M3-3 parity, req §16.3) and can be filtered by the selected
+demo closet. RAKUTEN is Phase 1b — not wired here.
 """
 
 from ..adapters import elasticsearch, gemini, image_storage
@@ -12,12 +12,25 @@ from .registry import registry
 
 SHARED_USER_ID = "__shared__"
 SHARED_ATTRIBUTION = "Clothing Dataset (CC BY-SA 4.0)"
+_CATEGORY_ALIASES = {
+    "top": ["Top", "Shirt", "Blouse", "Polo", "T-Shirt", "Longsleeve", "Hoodie"],
+    "tops": ["Top", "Shirt", "Blouse", "Polo", "T-Shirt", "Longsleeve", "Hoodie"],
+    "bottom": ["Pants", "Shorts", "Skirt"],
+    "bottoms": ["Pants", "Shorts", "Skirt"],
+    "pants": ["Pants"],
+    "jeans": ["Pants"],
+    "shoes": ["Shoes"],
+    "hat": ["Hat"],
+    "outer": ["Blazer", "Outwear"],
+    "outerwear": ["Blazer", "Outwear"],
+}
 
 
 def search_closet(
     description: str,
     source: str,
     user_id: str,
+    shared_closet_id: str | None = None,
     category: str | None = None,
     colors: list[str] | None = None,
     limit: int = 10,
@@ -30,6 +43,7 @@ def search_closet(
             pants", "summer dress"), not abstract phrases like "cute outfit".
         source: "CLOSET" (the user's own items) or "SHARED_CLOSET" (demo data).
         user_id: ID of the requesting user.
+        shared_closet_id: Optional demo closet filter (e.g. "adult-01").
         category: Optional exact category filter (e.g. "pants").
         colors: Optional color filter.
         limit: Maximum number of items to return.
@@ -57,8 +71,9 @@ def search_closet(
         user_id=es_user_id,
         description=description,
         query_vector=query_vector,
-        category=category,
+        category=_normalize_category(category),
         colors=colors,
+        closet_id=shared_closet_id if source == "SHARED_CLOSET" else None,
         limit=limit,
     )
 
@@ -81,6 +96,12 @@ def search_closet(
             }
         )
     return results
+
+
+def _normalize_category(category: str | None) -> str | list[str] | None:
+    if not category:
+        return None
+    return _CATEGORY_ALIASES.get(category.lower(), category)
 
 
 registry.register("search_closet", search_closet)
