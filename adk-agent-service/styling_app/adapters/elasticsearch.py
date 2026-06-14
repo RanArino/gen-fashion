@@ -28,8 +28,9 @@ def hybrid_search(
     user_id: str,
     description: str,
     query_vector: list[float] | None = None,
-    category: str | None = None,
+    category: str | list[str] | None = None,
     colors: list[str] | None = None,
+    closet_id: str | None = None,
     limit: int = 10,
 ) -> list[dict]:
     """Return raw hits [{item_id, ...doc fields}] for the closet of `user_id`."""
@@ -40,8 +41,18 @@ def hybrid_search(
     # capitalizes categories ("Pants"), so the description is tokenized and
     # matched with case-insensitive term queries instead of `match`.
     bool_query: dict = {"filter": [user_filter]}
+    if closet_id:
+        bool_query["filter"].append({"term": {"closetId": closet_id}})
     if category:
-        bool_query["filter"].append(_ci_term("category", category))
+        categories = [category] if isinstance(category, str) else category
+        bool_query["filter"].append(
+            {
+                "bool": {
+                    "should": [_ci_term("category", value) for value in categories],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
     if colors:
         bool_query["filter"].append(
             {"bool": {"should": [_ci_term("colors", c) for c in colors],
