@@ -60,4 +60,63 @@ void main() {
       throwsA(isA<ApiException>()),
     );
   });
+
+  test('createSession and selectSource parse session responses', () async {
+    final seen = <String>[];
+    final mock = MockClient((req) async {
+      seen.add('${req.method} ${req.url.path}');
+      if (req.url.path == '/sessions') {
+        return http.Response(
+          jsonEncode({
+            'session_id': 'session-1',
+            'status': 'SOURCE_SELECTING',
+            'source': 'UNSET',
+          }),
+          200,
+        );
+      }
+      expect(req.headers['Content-Type'], contains('application/json'));
+      return http.Response(
+        jsonEncode({
+          'session_id': 'session-1',
+          'status': 'SEARCHING',
+          'source': 'SHARED_CLOSET',
+        }),
+        202,
+      );
+    });
+
+    final client = _client(mock);
+    final created = await client.createSession();
+    final selected = await client.selectSource(
+      sessionId: created.sessionId,
+      source: 'SHARED_CLOSET',
+      sharedClosetId: 'adult-01',
+      userPreference: {'style': 'clean'},
+    );
+
+    expect(seen, ['POST /sessions', 'POST /sessions/session-1/source']);
+    expect(created.status, 'SOURCE_SELECTING');
+    expect(selected.status, 'SEARCHING');
+    expect(selected.source, 'SHARED_CLOSET');
+  });
+
+  test('streamSessionEvents parses SSE messages', () async {
+    final mock = MockClient.streaming((req, bodyStream) async {
+      expect(req.url.path, '/sessions/session-1/stream');
+      return http.StreamedResponse(
+        Stream.value(utf8.encode(
+          'event: agent.event\n'
+          'data: {"seq":1,"agentName":"ClosetAgent"}\n\n',
+        )),
+        200,
+        headers: {'content-type': 'text/event-stream'},
+      );
+    });
+
+    final messages = await _client(mock).streamSessionEvents('session-1').toList();
+
+    expect(messages.single.event, 'agent.event');
+    expect(messages.single.data['agentName'], 'ClosetAgent');
+  });
 }
