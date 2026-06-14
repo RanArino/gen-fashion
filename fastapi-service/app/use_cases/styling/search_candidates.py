@@ -1,4 +1,5 @@
 from app.ports import ClothingSearchPort
+from app.domain.styling import ClothingSource
 
 
 class SearchCandidateItemsUseCase:
@@ -7,5 +8,11 @@ class SearchCandidateItemsUseCase:
     def __init__(self, clothing_search: ClothingSearchPort):
         self.clothing_search = clothing_search
 
-    async def execute(self, user_id: str, session_id: str, query: str) -> list:
-        raise NotImplementedError("Implement in M5-5: Search candidates")
+    async def execute(
+        self,
+        user_id: str,
+        session_id: str,
+        query: str,
+        source: ClothingSource = ClothingSource.SHARED_CLOSET,
+    ) -> list:
+        return await self.clothing_search.search_by_source(user_id, source, query)
