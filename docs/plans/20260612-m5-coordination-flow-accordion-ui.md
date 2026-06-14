@@ -21,12 +21,15 @@ The visible acceptance target is a browser demo against local infrastructure: si
 
 
 - [x] (2026-06-11 15:24Z) Created the M5 ExecPlan and selected requirements M5-1 through M5-11 as one implementation milestone.
-- [ ] Implement Phase 0 - contract alignment and tests for session state, Firestore document mapping, event normalization, and endpoint schemas.
-- [ ] Implement Phase 1 - FastAPI session persistence, session routes, source selection validation, and ADK run trigger adapter.
-- [ ] Implement Phase 2 - `adk-agent-service` internal run endpoint, ADK `Runner` execution, session state writes, and `agentEvents` relay.
-- [ ] Implement Phase 3 - FastAPI SSE stream from Firestore `agentEvents`.
-- [ ] Implement Phase 4 - Flutter coordination screen, source/preference controls, Accordion event UI, and final result UI.
-- [ ] Implement Phase 5 - local E2E verification and feature matrix completion updates.
+- [x] (2026-06-12 00:12Z) Implemented Phase 0 contract alignment and focused tests for session state, Firestore session mapping, ADK event normalization, and session route schemas.
+- [x] (2026-06-12 00:19Z) Implemented Phase 1 FastAPI session persistence, create/source routes, source validation, and direct ADK run trigger adapter. Verified `fastapi-service` full pytest: 55 passed, 1 skipped.
+- [x] (2026-06-12 00:27Z) Implemented Phase 2 `adk-agent-service` FastAPI wrapper, `/internal/run-session`, ADK `Runner.run_async()` execution bridge, Firestore session/event writer, and Docker/Compose wiring. Verified ADK pytest: 20 passed.
+- [x] (2026-06-12 00:37Z) Implemented Phase 3 FastAPI SSE stream from Firestore `agentEvents` with initial snapshot, event backfill/live polling, keepalive comments, and terminal close. Verified session route tests.
+- [x] (2026-06-12 00:45Z) Implemented Phase 4 Flutter coordination tab, source/preference controls, SSE client/parser, Accordion event UI, and final result panel. Verified `flutter analyze` and `flutter test`.
+- [x] (2026-06-14 01:20Z) Implemented Phase 5 - local E2E verification and feature matrix completion updates.
+- [x] (2026-06-14 00:25Z) Verified local Docker/API smoke with `scripts/m5_coordination_smoke.py`: Firebase Auth emulator sign-up, `POST /sessions`, `POST /sessions/{id}/source`, SSE stream, ADK event relay/fallback, and Firestore session result completed for `SHARED_CLOSET` session `1ce4c9f3-c2b3-4b20-9c4b-5494038d824d`.
+- [x] (2026-06-14 01:15Z) Verified rendered Flutter Web browser E2E with `scripts/m5_coordination_browser_e2e.py`: headless Chrome loaded the release Web bundle, auto-authenticated against the Auth emulator, started the `SHARED_CLOSET` coordination screen, observed `tool_call`/`tool_result` Accordion evidence for `search_closet` and `style_synthesizer`, and completed session `665b0a6f-531f-49e8-aa10-ae6e19b8a100` with `hasResult:true`. Screenshot: `/tmp/m5-browser-e2e.png`.
+- [x] (2026-06-14 02:35Z) Addressed M5 review findings: terminal SSE now performs a final event drain before completion, event polling uses a `seq > last_seq` cursor and a server-side timeout, failed ADK run triggers compensate sessions to `ERROR`, ADK `/internal/run-session` is guarded by `X-Internal-Secret`, selected shared closets flow into `search_closet` as a `closetId` ES filter, and ADK status writes follow `SEARCHING -> PROPOSING -> GENERATING -> COMPLETED/ERROR`.
 
 
 ## Surprises & Discoveries
@@ -38,6 +41,16 @@ The visible acceptance target is a browser demo against local infrastructure: si
   Evidence: `docker-compose.yml` sets `ADK_INTERNAL_BASE_URL=http://fastapi-service:8000`. M5 must change this to `http://adk-agent-service:3000` when adding the direct ADK trigger from ADL-020.
 - Observation: `adk-agent-service` currently runs `adk api_server`, which exposes ADK development endpoints but not the M5 `POST /internal/run-session` endpoint.
   Evidence: `adk-agent-service/Dockerfile` and `docker-compose.yml` command both run `adk api_server --host 0.0.0.0 --port 3000`. M5 needs a small FastAPI wrapper for the internal run endpoint while keeping `adk web` usable for local agent debugging.
+- Observation: FastAPI SSE currently uses a small polling loop over `agentEvents` instead of Firestore `on_snapshot`.
+  Evidence: `fastapi-service/app/handlers/session_routes.py` repeatedly calls `StylingRepositoryPort.list_events()` and checks session terminal state. This avoids adding an async/sync Firestore listener bridge in the first M5 slice; if E2E latency is inadequate, replace the polling adapter with an isolated `on_snapshot` bridge without changing Flutter's SSE contract.
+- Observation: Local Vertex/service-account runs need separate project IDs for Firebase Auth emulator and Google Cloud runtime.
+  Evidence: With `.env` setting `GOOGLE_CLOUD_PROJECT=animation-agent`, Firebase Admin initially rejected Auth emulator tokens with audience `gen-fashion-local`. FastAPI now uses `FIREBASE_PROJECT_ID`/`auth_project_id` for token verification while Firestore/Vertex continue using `GOOGLE_CLOUD_PROJECT`.
+- Observation: Seeded shared-closet categories are concrete labels, while the model may call `search_closet` with generic buckets.
+  Evidence: The first API smoke found tops but returned no bottoms for `category:"bottom"` because ES documents use `Pants`, `Shorts`, and `Skirt`. `search_closet` now normalizes top/bottom aliases and the ES adapter accepts category lists.
+- Observation: ADK model orchestration is not deterministic enough to be the only local completion path.
+  Evidence: One smoke run transferred back to the root agent without calling closet search; another kept emitting events without terminal completion. The ADK service now bounds `Runner.run_async()` and falls back to direct tool execution (`search_closet` + `style_synthesizer`) while still writing `agentEvents`.
+- Observation: `package:http` streaming on Flutter Web is not a true browser EventSource/fetch stream.
+  Evidence: The rendered E2E completes and renders the Accordion/result, but the Web transport can batch SSE chunks until connection close under XHR-backed clients. True per-event browser streaming should use a fetch stream bridge or EventSource-compatible auth strategy as a follow-up; the backend SSE contract now supports incremental delivery.
 
 
 ## Decision Log
@@ -63,7 +76,17 @@ The visible acceptance target is a browser demo against local infrastructure: si
 ## Outcomes & Retrospective
 
 
-Not yet implemented. When the milestone completes, update this section with the browser E2E result, test counts, known limitations around Nano Banana quota or fallback usage, and any event-contract changes discovered while integrating ADK `Runner.run_async()`.
+M5 completed on 2026-06-14. Local Docker/API smoke passed using `python3 scripts/m5_coordination_smoke.py --timeout-seconds 180`. The run completed authenticated `SHARED_CLOSET` session `1ce4c9f3-c2b3-4b20-9c4b-5494038d824d` through FastAPI session creation, source selection, ADK event relay, SSE streaming, deterministic fallback where needed, and Firestore `COMPLETED` result storage.
+
+Rendered Flutter Web browser E2E also passed using `python3 scripts/m5_coordination_browser_e2e.py --timeout-seconds 220` after building the Web bundle with local emulator/E2E flags. Headless Chrome completed session `665b0a6f-531f-49e8-aa10-ae6e19b8a100` with status `COMPLETED`, 26 rendered-app events, `tool_call` and `tool_result` event kinds, `search_closet` and `style_synthesizer` tool names, and `hasResult:true`. Screenshot: `/tmp/m5-browser-e2e.png`.
+
+Verification after the runtime fixes:
+
+- `fastapi-service`: `uv run --with pytest==7.4.0 --with pytest-asyncio==0.21.1 pytest -q` — 59 passed.
+- `adk-agent-service`: `.venv/bin/pytest styling_app/tests -q` — 25 passed.
+- `flutter-web-app`: `flutter analyze` — no issues; `flutter test` — 11 passed.
+
+`docs/feature-matrix-phase01.md` and `docs/architecture-overview.md` are updated to mark M5 ✅ / 🟩 Done. M6 remains not started.
 
 
 ## Context and Orientation
