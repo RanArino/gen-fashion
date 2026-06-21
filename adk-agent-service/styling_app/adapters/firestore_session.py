@@ -28,7 +28,7 @@ class FirestoreSessionRepository:
 
             settings = get_settings()
             client = firestore.AsyncClient(
-                project=settings.project_id,
+                project=settings.firestore_project_id,
                 database=settings.firestore_database_id,
             )
         self._client = client

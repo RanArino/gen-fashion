@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     agent_model: str = "gemini-2.0-flash"
 
     google_cloud_project: str | None = None
+    firebase_project_id: str | None = None
     google_cloud_location: str = "us-central1"
     gemini_api_key: str | None = None
     google_genai_api_key: str | None = None
@@ -46,6 +47,14 @@ class Settings(BaseSettings):
     @property
     def project_id(self) -> str:
         return self.google_cloud_project or "gen-fashion-local"
+
+    @property
+    def firestore_project_id(self) -> str:
+        # Firestore data lives in the Firebase project (same namespace the
+        # frontend + fastapi-service use), which differs from the Vertex AI /
+        # compute project (google_cloud_project) in local dev. In production
+        # all three are the same project, so this is a no-op there.
+        return self.firebase_project_id or self.project_id
 
     @property
     def resolved_gemini_api_key(self) -> str | None:

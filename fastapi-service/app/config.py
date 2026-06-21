@@ -58,6 +58,14 @@ class Settings(BaseSettings):
         return self.firebase_project_id or self.project_id
 
     @property
+    def firestore_project_id(self) -> str:
+        # Firestore data lives in the Firebase project (same namespace the
+        # frontend + auth use), which differs from the Vertex AI / compute
+        # project (google_cloud_project) in local dev. In production all three
+        # are the same project, so this is a no-op there.
+        return self.firebase_project_id or self.project_id
+
+    @property
     def resolved_elasticsearch_url(self) -> str:
         if self.elasticsearch_host and self.elasticsearch_url == "http://localhost:9200":
             host = self.elasticsearch_host
