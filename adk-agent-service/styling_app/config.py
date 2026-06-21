@@ -44,6 +44,13 @@ class Settings(BaseSettings):
 
     internal_task_secret: str | None = None
 
+    # Wall-clock budget for the ADK agent run before falling back to the
+    # deterministic coordination path. 45s was too tight on cold start; 90s
+    # gives the primary LLM path more room. MUST stay below the fastapi SSE
+    # bound (STREAM_MAX_SECONDS) minus the deterministic-fallback time, so the
+    # client always sees COMPLETED rather than a stream TIMEOUT.
+    adk_run_timeout_seconds: int = 90
+
     @property
     def project_id(self) -> str:
         return self.google_cloud_project or "gen-fashion-local"
