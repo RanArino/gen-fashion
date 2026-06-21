@@ -31,7 +31,11 @@ class FakeAsyncClient:
 
 @pytest.fixture(autouse=True)
 def local_base_url(monkeypatch):
+    # The worker route (/internal/tasks/process-upload) lives in fastapi-service,
+    # so the local queue builds its URL from FASTAPI_INTERNAL_BASE_URL. Pin it so
+    # the assertion is independent of the ambient container env.
     monkeypatch.setenv("ADK_INTERNAL_BASE_URL", "http://localhost:8000")
+    monkeypatch.setenv("FASTAPI_INTERNAL_BASE_URL", "http://localhost:8000")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -39,6 +43,8 @@ def local_base_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_local_task_queue_returns_task_id_when_handler_succeeds(monkeypatch):
+    monkeypatch.delenv("INTERNAL_TASK_SECRET", raising=False)
+    get_settings.cache_clear()
     FakeAsyncClient.response = FakeResponse()
     FakeAsyncClient.calls = []
     monkeypatch.setattr("app.adapters.local_task_queue.httpx.AsyncClient", FakeAsyncClient)

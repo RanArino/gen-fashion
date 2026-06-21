@@ -22,7 +22,8 @@ class LocalHttpTaskQueueAdapter(TaskQueuePort):
 
     async def _dispatch(self, task_id: str, handler_path: str, payload: Dict[str, Any]) -> None:
         settings = get_settings()
-        url = f"{settings.adk_internal_base_url.rstrip('/')}{handler_path}"
+        base_url = settings.fastapi_internal_base_url or settings.adk_internal_base_url
+        url = f"{base_url.rstrip('/')}{handler_path}"
         headers: Dict[str, str] = {}
         if settings.internal_task_secret:
             headers["X-Internal-Secret"] = settings.internal_task_secret

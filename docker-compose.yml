@@ -87,6 +87,9 @@ services:
       - R2_BUCKET_NAME=gen-fashion-images
       - TASK_QUEUE_MODE=local
       - ADK_INTERNAL_BASE_URL=http://adk-agent-service:3000
+      # The /internal/tasks/process-upload worker route lives in fastapi-service
+      # itself, so the local task queue must post back here (not to the ADK svc).
+      - FASTAPI_INTERNAL_BASE_URL=http://fastapi-service:8000
       - INTERNAL_TASK_SECRET=${INTERNAL_TASK_SECRET:-local-dev-internal-secret}
       - AGENT_MODEL=gemini-2.0-flash
     depends_on:

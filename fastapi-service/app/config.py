@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     cloud_tasks_queue_embed: str | None = None
     cloud_tasks_location: str = "asia-northeast1"
     adk_internal_base_url: str = "http://localhost:3000"
+    # Base URL of the fastapi-service itself, used to reach its own /internal/*
+    # worker routes (e.g. /internal/tasks/process-upload). Distinct from
+    # adk_internal_base_url (the ADK run-session target). Falls back to
+    # adk_internal_base_url when unset to preserve older single-URL behavior.
+    fastapi_internal_base_url: str | None = None
 
     # Shared secret guarding the /internal/* worker routes. Sent by the task
     # producers (LocalHttpTaskQueueAdapter / CloudTasksAdapter) and verified by
