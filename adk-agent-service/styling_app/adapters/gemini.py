@@ -67,6 +67,9 @@ def embed_text(text: str) -> list[float]:
     response = _client().models.embed_content(
         model=settings.embedding_model,
         contents=[text],
-        config={"output_dimensionality": settings.embedding_dimensions},
+        config={
+            "task_type": "RETRIEVAL_QUERY",
+            "output_dimensionality": settings.embedding_dimensions,
+        },
     )
     return list(response.embeddings[0].values)
