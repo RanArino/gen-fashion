@@ -1,7 +1,7 @@
 # Architecture Overview — gen-fashion (Phase 1)
 
 > **生成日:** 2026-06-08
-> **最終同期:** 2026-06-14 — M5 完了（`docs/plans/20260612-m5-coordination-flow-accordion-ui.md`）。FastAPI `/sessions`、ADK `/internal/run-session`、`agentEvents` 書き込み、SSE polling stream、Flutter Coordination/Accordion UI は実装済み。review hardening として final SSE drain、cursor event reads、ADK trigger failure compensation、ADK internal-secret guard、selected shared-closet filtering、ADK status sequencing を追加済み。local Docker/API smoke と rendered Flutter Web browser E2E は authenticated `SHARED_CLOSET` session → Accordion event evidence → `COMPLETED` result image まで通過。
+> **最終同期:** 2026-06-21 — **デプロイ前ローカル実機検証で実バグ3件を発見・修正**（`docs/plans/20260621-md-phase1a-local-verification-checklist.md`）。(1) 内部 worker base-URL 混在が `make dev` でも実害（アップロード→READY が常時 404）→ MD-8 の base-URL 分離ローカル分を先行着手（`FASTAPI_INTERNAL_BASE_URL`）。(2) Firestore がバックエンドの Vertex プロジェクト（`animation-agent`）にバインドされフロント/Auth（`gen-fashion-local`）と名前空間分離 → `firestore_project_id`（Firebase プロジェクト）へ修正。(3) `closetId` が動的 `text` 化で SHARED_CLOSET 検索 0 件 → M2-9 マッピングに keyword 宣言を追加し再シード。修正後、fastapi pytest 59 / adk pytest 28 / flutter clean、M5 コーデ smoke + ブラウザ E2E が `COMPLETED` + **実 Nano Banana 画像**（§8 #2–#4 参照）。同日是正: 埋め込みを `gemini-embedding-001`＋**テキスト埋め込み**（インデックスもクエリも同一空間）に修正し、`--with-embeddings` で 90×768次元 + kNN 意味検索を確認（MD-10 de-risk）。ADK タイムアウトを config 化（45→90）し SSE 上限を 150 に整合 → 主LLM経路で COMPLETED。Prior: 2026-06-15 — **MD（Phase 1a Production Deployment & Hardening）起票**（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-1…MD-14 🟡 In progress）。ローカル検証済みの Phase 1a スタックを Google Cloud へデプロイする計画: Compute Engine ES + Serverless VPC Access connector（ADL-023、M1-3 完了）、フル vector seed（`--with-embeddings`、M3-2）、Cloud Run ×2 + Secret Manager + OIDC（ADL-024、M2-5 ゲート）、Vertex AI 上の Nano Banana 実生成（M4-7/M5-6）、Firebase Hosting（ADL-025）。計画中に判明した配線課題: `ADK_INTERNAL_BASE_URL` が run-session と process-upload で混在（worker ルートは `fastapi-service` 実装だが adapter は ADK URL を参照）→ MD-8 で `FASTAPI_INTERNAL_BASE_URL` を分離。**M6（LINE, Phase 1b）には着手しない。** Prior: 2026-06-14 — M5 完了（`docs/plans/20260612-m5-coordination-flow-accordion-ui.md`）。FastAPI `/sessions`、ADK `/internal/run-session`、`agentEvents` 書き込み、SSE polling stream、Flutter Coordination/Accordion UI は実装済み。review hardening として final SSE drain、cursor event reads、ADK trigger failure compensation、ADK internal-secret guard、selected shared-closet filtering、ADK status sequencing を追加済み。local Docker/API smoke と rendered Flutter Web browser E2E は authenticated `SHARED_CLOSET` session → Accordion event evidence → `COMPLETED` result image まで通過。
 > **ベース:** [req-phase01.md](req-phase01.md)（仕様の source of truth）・[feature-matrix-phase01.md](feature-matrix-phase01.md)（実装状況）
 > **目的:** アーキテクチャ／システム構成を可視化し、**既に実装済みのコード**と**これから実装予定のコード**の境界を明確に強調する。
 
@@ -42,9 +42,10 @@ flowchart LR
 | **M3** | 共有デモクローゼット | 1a | 🟩 **Done（local）**（seed script / SharedClosetSearchAdapter / attribution UI 実装済み。3クローゼットの live seed 済み＝90件・30/30/30・冪等性検証済み 2026-06-10。フル vector seed（GCE ES）のみ deployment 待ち） |
 | **M4** | ADK エージェント中核 | 1a | 🟩 **Done（local）**（2026-06-11: Python ADK 再構築完了（ADL-022・TS 骨組み削除）。orchestrator + 2 sub-agents + 4 tools が `adk api_server`/Web UI でローカル稼働、M3 シード済み `SHARED_CLOSET` に対する委譲 → `search_closet`（attribution 付き）→ `style_synthesizer`（collage fallback）E2E 確認、pytest 17 passed。Nano Banana 生成パスは free-tier quota の都合で fallback のみ実証） |
 | **M5** | コーディネートフロー & Accordion UI | 1a | 🟩 **Done**（FastAPI session routes/repository/use cases、ADK run endpoint/event writer、SSE polling stream、Flutter Coordination/Accordion UI 実装済み。local API/SSE smoke と rendered browser E2E は `COMPLETED` まで検証済み） |
+| **MD** | Phase 1a Production Deployment & Hardening | 1a | 🟨 **WIP（起票）**（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-1…MD-14 🟡 In progress。GCE ES + VPC connector、フル vector seed、Cloud Run ×2、Secret Manager + OIDC、Vertex AI Nano Banana、Firebase Hosting。コードは env-driven のため変更は `fastapi-service` の最小4点（internal base URL 分離・両 internal hop の OIDC・worker ルートの OIDC 検証）のみ） |
 | **M6** | LINE チャネル統合 | 1b | ⬜ **Not started**（ファイル無し） |
 
-**現在地:** Phase 1a は M5 まで完了。エージェント中核（orchestrator / sub-agents / tools）はローカル ADK Web UI で動作し、Web GUI coordination flow は local API/SSE smoke と rendered browser E2E で通過済み。次の主要未着手領域は Phase 1b の LINE / LIFF / Rakuten。
+**現在地:** Phase 1a は M5 までローカル検証完了。次は **MD（本番デプロイ）** に着手中 — ローカルで動く2コンテナ + Flutter Web を Google Cloud（Cloud Run / Compute Engine ES / Secret Manager / Firebase Hosting）へ載せ、Nano Banana 実生成とフル vector seed を本番で成立させる。MD は Phase 1a の本番化であり、Phase 1b の LINE / LIFF / Rakuten（M6）とは独立で、M6 には着手しない。
 
 ---
 
@@ -125,7 +126,7 @@ flowchart TB
 - 🟩 **動く経路**: Flutter（認証＋クローゼット）→ fastapi `/closet` → R2 / Firestore / Cloud Tasks → `/internal` worker → Gemini 分析 + ES インデックス。これが M2 で E2E 検証済みの幹線。
 - 🟨 **共有クローゼット**: seed script / shared search adapter / attribution UI は実装済み。live seed/reseed と GCE ES への full vector seed は未完了。
 - 🟩 **エージェント中核（M4）**: `adk-agent-service` は Python ADK で実装済み・ローカル稼働（`adk web` / `adk api_server`、コンテナも healthy）。`search_closet` は ES の実データ（M3 シード含む）を返し、`style_synthesizer` は MinIO/R2 に結果画像を保存する。ADK が自前で発行した署名付き MinIO/R2 URL は内部 storage key として再取得できるため、Compose コンテナ内でも `localhost:9000` URL に依存しない。
-- 🟨 **Nano Banana 画像生成**: `style_synthesizer` の生成呼び出しは実装済みだが、ローカル（free-tier API key）では quota の都合で **collage fallback（ADL-005）のみ実証**。生成パスは課金キー / Vertex AI で確認する。
+- 🟩 **Nano Banana 画像生成**: `style_synthesizer` の生成呼び出しは実装済み。**2026-06-21 のローカル検証で Vertex AI（SA = プロジェクト `animation-agent`）の `gemini-2.5-flash-image` で実生成を確認**（コーデ画像 ~1.15 MB、`modelUsed=gemini-2.5-flash-image`、collage fallback ではない）。以前の「ローカルは free-tier quota の都合で collage のみ」という制約は解消。本番（MD-11）はモデル可用リージョン + 課金で再確認する。
 - 🟩 **M5 Done**: `/sessions/*`、ADK `/internal/run-session`、`agentEvents` 書き込み、SSE、Accordion UI は実装済み。review hardening で SSE terminal race、orphaned `SEARCHING`、unbounded stream、unprotected ADK internal route、shared-closet picker filtering、ADK/FastAPI status-sequence mismatch を修正済み。local API/SSE smoke と rendered browser E2E は authenticated `SHARED_CLOSET` session → `COMPLETED` result まで通過。
 - ⬜ **未着手**: LINE / LIFF / 楽天。
 - 🟨 ES はローカル Docker では動作。GCE VM + VPC + Cloud Run プライベート接続はデプロイ期に延期（M1-3）。
@@ -328,25 +329,30 @@ flowchart LR
   M2 --> M4
   M3 --> M5["M5 コーデフロー+Accordion"]
   M4 --> M5
-  M5 --> M6["M6 LINE統合"]
+  M5 --> MD["MD 本番デプロイ (Phase 1a)"]
+  M5 --> M6["M6 LINE統合 (Phase 1b)"]
 
   classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20;
   classDef wip fill:#fff3cd,stroke:#f9a825,color:#795548;
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
-  class M0,M2,M3,M4,M5 done; class M1 wip; class M6 todo;
+  class M0,M2,M3,M4,M5 done; class M1,MD wip; class M6 todo;
 ```
 
-**次の一手:** M6（LINE / LIFF / Rakuten）に着手する前に、M5 のデプロイ環境向け確認項目（Vertex/Nano Banana quota と Cloud Run 接続）を整理する。
+**次の一手:** **MD（Phase 1a 本番デプロイ）** を実行する — `docs/plans/20260615-md-phase1a-production-deployment.md` に沿って GCP foundation → data plane（GCE ES + VPC connector + フル vector seed）→ Cloud Run ×2 + OIDC → Nano Banana 実生成 + Firebase Hosting → 本番 E2E。MD は M6（LINE / LIFF / Rakuten, Phase 1b）とは独立で、M6 には着手しない。
 
 ---
 
 ## 8. 実装と要件の乖離メモ（可視化中に検出）
 
-図と実コードを突き合わせる過程で、req と実装の不一致を 2 点検出した。#1 は M4 ExecPlan 起票時に解消済み。#2 は引き続き申し送り。
+図と実コードを突き合わせる過程で、req と実装の不一致を検出した。#1 は M4 ExecPlan 起票時に解消済み。#2 は配線本番修正のローカル分が 2026-06-21 に着手済み（クラウド分は MD-8）。#3・#4 は 2026-06-21 のローカル実機検証で発見・修正した実バグ（詳細: `docs/plans/20260621-md-phase1a-local-verification-checklist.md`）。
 
 1. ~~**`adk-agent-service` の言語スタック**~~ — **解消済み（2026-06-09, ADL-022）**: **Python ADK に統一**する決定を `req-phase01.md` ADL-022 に記録。現状の TS 骨組み（`src/*.ts`）は M4 ExecPlan（`docs/plans/20260609-m4-adk-agents-core.md`）で破棄・置換する。根拠は req §2/§6/§7、M1-4 の Python `runner.run_async()` PoC、ADL-021 の共有 `FirestoreStyleSessionRepository`、および既存 Python アダプタの再利用。
 
-2. **`process-upload` worker の配置**: req §6.9 / §9.1 は当該 worker を `adk-agent-service` 配置と記述。実装は **`fastapi-service` の `/internal/tasks/process-upload`**（feature-matrix M2-5 も fastapi-service と明記）。動作はするが req のコンテナ責務記述と不一致のため、req 側の追記で整合させると良い。**未解消**。
+2. **`process-upload` worker の配置 + 内部 base URL の混在**: req §6.9 / §9.1 は当該 worker を `adk-agent-service` 配置と記述。実装は **`fastapi-service` の `/internal/tasks/process-upload`**（feature-matrix M2-5 も fastapi-service と明記）。**MD 起票時（2026-06-15）の追加発見:** `fastapi-service` の task adapter（`cloud_tasks_adapter.py` / `local_task_queue.py`）はこの worker URL を `ADK_INTERNAL_BASE_URL` から組み立てているが、同 var は run-session（ADK サービス向け、`adk_agent_run.py`）にも使われ **混在**している。ローカルでは worker タスクが ADK サービス（:3000、当該ルート無し）に向くため、本番ではミスルートする。**MD-8 で `FASTAPI_INTERNAL_BASE_URL` を分離して解消**（worker タスクは fastapi 自身の URL を、run-session は ADK URL を指す）。**2026-06-21 のローカル検証で、これは本番だけでなく `make dev` でも実害**（アップロード→READY が常時 404）と判明したため、**base-URL 分離のローカル分を先行着手**（`config.py` の `fastapi_internal_base_url` + `local_task_queue.py` + compose の `FASTAPI_INTERNAL_BASE_URL`）。OIDC / Cloud Tasks audience 等のクラウド分は引き続き MD-8。req のコンテナ責務記述との不一致自体は引き続き申し送り。
 
-> #2 は feature-matrix の status とは矛盾しない。本メモはドキュメント整合のための申し送り。
+3. **Firestore データプロジェクトの取り違え**（2026-06-21 発見・修正）: 両サービスの Firestore クライアントが Vertex 用 `GOOGLE_CLOUD_PROJECT`（ローカルは `animation-agent`）でバインドしており、フロント/Auth の `gen-fashion-local` とエミュレータ名前空間が分離 → UI がクローゼット/セッションを参照できなかった。`firestore_project_id`（= Firebase プロジェクト）を両 config に追加し 3 つの firestore アダプタへ適用、adk compose に `FIREBASE_PROJECT_ID` を追加。本番は全プロジェクト同一のため no-op。
+
+4. **`clothing_items` の `closetId` が動的 `text` マッピング**（2026-06-21 発見・修正）: `fastapi-service` の `ensure_index`（M2-9 正規マッピング）が `closetId`/`closetKind`/`imageUrl` を宣言しておらず、fastapi が seed より先にインデックスを作るため動的 `text` 化 → SHARED_CLOSET の `closetId` term フィルタが 0 件 → コーディネーションが `ERROR`。当該 3 フィールドを keyword で明示宣言（seed マッピングと整合）、reindex + 再シードで解消。
+
+> #2–#4 は feature-matrix の status と矛盾しない（実装行は引き続き ✅）。本メモはドキュメント整合と再発防止のための申し送りで、#2 のクラウド配線本番修正は MD-8 が担当する。
