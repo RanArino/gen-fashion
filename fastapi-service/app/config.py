@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     google_genai_api_key: str | None = None
     google_genai_use_vertexai: bool = False
     image_analysis_model: str = "gemini-2.5-flash"
-    embedding_model: str = "gemini-embedding-2"
+    embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = 768
 
     elasticsearch_url: str = "http://localhost:9200"
