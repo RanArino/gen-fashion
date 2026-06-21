@@ -434,17 +434,33 @@ def _firestore_set_closet_meta(db, closet_id: str, meta: dict) -> None:
 # Embedding helper (Vertex AI)
 # ---------------------------------------------------------------------------
 
-def _embed_image(image_bytes: bytes, project: str, location: str) -> list[float]:
+def _embed_text(text: str, project: str, location: str) -> list[float]:
+    # Embed the item's text attributes (not the image): the M5 search query is a
+    # text description, so index vectors must share the text embedding space.
+    # gemini-embedding-001 is text-only; ES `cosine` similarity needs no manual
+    # normalization. RETRIEVAL_DOCUMENT pairs with the query's RETRIEVAL_QUERY.
     import google.genai as genai
     import google.genai.types as gtypes
     client = genai.Client(vertexai=True, project=project, location=location)
-    part = gtypes.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
     response = client.models.embed_content(
-        model="gemini-embedding-2",
-        contents=[part],
-        config=gtypes.EmbedContentConfig(output_dimensionality=768),
+        model="gemini-embedding-001",
+        contents=[text],
+        config=gtypes.EmbedContentConfig(
+            task_type="RETRIEVAL_DOCUMENT",
+            output_dimensionality=768,
+        ),
     )
     return response.embeddings[0].values
+
+
+def _embedding_text(meta: dict) -> str:
+    parts = [
+        meta.get("category", ""),
+        " ".join(meta.get("colors", [])),
+        " ".join(meta.get("tags", [])),
+        meta.get("season", ""),
+    ]
+    return ". ".join(part for part in parts if part)
 
 
 # ---------------------------------------------------------------------------
@@ -508,15 +524,20 @@ def main() -> None:
     r2_secret_key = os.environ["R2_SECRET_ACCESS_KEY"]
     r2_bucket     = os.getenv("R2_BUCKET_NAME", "gen-fashion-images")
     firestore_emu = os.getenv("FIRESTORE_EMULATOR_HOST")
-    gcp_project   = os.getenv("GOOGLE_CLOUD_PROJECT", "gen-fashion-local")
-    gcp_location  = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    # Vertex AI (embeddings) needs a project with aiplatform access. Firestore
+    # data must land in the Firebase project (same emulator namespace the app +
+    # frontend use), which differs from the Vertex project in local dev. In
+    # production all three are the same project, so this collapses to one value.
+    gcp_project       = os.getenv("GOOGLE_CLOUD_PROJECT", "gen-fashion-local")
+    firestore_project = os.getenv("FIREBASE_PROJECT_ID") or gcp_project
+    gcp_location      = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
     es_index      = "clothing_items"
 
     # --- Clients ---
     es = _make_es_client(es_url, es_api_key)
     s3 = _make_s3(r2_endpoint, r2_access_key, r2_secret_key)
     _ensure_bucket(s3, r2_bucket)
-    db = _make_firestore(gcp_project, firestore_emu)
+    db = _make_firestore(firestore_project, firestore_emu)
 
     if args.purge:
         _purge(es, es_index, s3, r2_bucket, db)
@@ -566,7 +587,7 @@ def main() -> None:
         embedding = None
         if args.with_embeddings:
             try:
-                embedding = _embed_image(image_bytes, gcp_project, gcp_location)
+                embedding = _embed_text(_embedding_text(meta), gcp_project, gcp_location)
             except Exception as exc:
                 log.warning("[%d/%d] Embedding failed for %s: %s", i, total, item_id, exc)
                 # Degrade gracefully — still index without vector
