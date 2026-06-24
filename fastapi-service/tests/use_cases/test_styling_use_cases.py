@@ -12,7 +12,11 @@ from app.domain.styling import (
     UserPreference,
 )
 from app.ports import AgentRunRequest
-from app.use_cases.styling import CreateSessionUseCase, SelectClothingSourceUseCase
+from app.use_cases.styling import (
+    CreateSessionUseCase,
+    SelectCandidatesUseCase,
+    SelectClothingSourceUseCase,
+)
 
 
 class FakeStylingRepo:
@@ -199,3 +203,49 @@ async def test_select_source_rejects_non_owner_or_missing_session():
             FakeClosetRepo(),
             FakeAgentRun(),
         ).execute("user-123", str(uuid4()), ClothingSource.SHARED_CLOSET, UserPreference())
+
+
+@pytest.mark.asyncio
+async def test_select_candidates_persists_explicit_selection_and_triggers_generate():
+    repo = FakeStylingRepo()
+    session_id = uuid4()
+    session = StyleSession(
+        id=StyleSessionId(session_id),
+        user_id="user-123",
+        state=StyleSessionState.PROPOSING,
+        clothing_source=ClothingSource.SHARED_CLOSET,
+        shared_closet_id="adult-01",
+        user_preference=UserPreference(gender="female"),
+        proposed_candidates=[{"item_id": "item-1", "image_url": "http://item"}],
+    )
+    await repo.create(session)
+    agent_run = FakeAgentRun()
+
+    await SelectCandidatesUseCase(repo, agent_run).execute(
+        "user-123", str(session_id), ["item-1"]
+    )
+
+    assert session.selected_items == [{"item_id": "item-1", "image_url": "http://item"}]
+    assert agent_run.requests[0].phase == "generate"
+    assert agent_run.requests[0].user_preference["gender"] == "female"
+
+
+@pytest.mark.asyncio
+async def test_select_candidates_rejects_empty_or_unknown_selection():
+    repo = FakeStylingRepo()
+    session_id = uuid4()
+    await repo.create(
+        StyleSession(
+            id=StyleSessionId(session_id),
+            user_id="user-123",
+            state=StyleSessionState.PROPOSING,
+            clothing_source=ClothingSource.SHARED_CLOSET,
+            proposed_candidates=[{"item_id": "item-1"}],
+        )
+    )
+    use_case = SelectCandidatesUseCase(repo, FakeAgentRun())
+
+    with pytest.raises(ValueError, match="At least one"):
+        await use_case.execute("user-123", str(session_id), [])
+    with pytest.raises(ValueError, match="Unknown candidate"):
+        await use_case.execute("user-123", str(session_id), ["missing"])

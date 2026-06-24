@@ -9,6 +9,7 @@ from app.use_cases.closet import (
     GetUploadUrlUseCase,
     ProcessUploadedClothingItemUseCase,
     RegisterClothingItemUseCase,
+    UpdateClosetItemMetadataUseCase,
 )
 
 
@@ -68,7 +69,10 @@ class FakeEmbeddingSearch:
     async def search_similar(self, user_id, embedding_vector, limit=10):
         return []
 
-    async def index_item(self, item_id, user_id, *, is_shared, tags, category, colors, season, embedding):
+    async def index_item(
+        self, item_id, user_id, *, is_shared, tags, category, colors, season,
+        embedding, gender=None
+    ):
         self.indexed.append(
             {
                 "item_id": item_id,
@@ -79,6 +83,7 @@ class FakeEmbeddingSearch:
                 "colors": colors,
                 "season": season,
                 "embedding": embedding,
+                "gender": gender,
             }
         )
 
@@ -86,6 +91,20 @@ class FakeEmbeddingSearch:
         if self.fail_delete:
             raise RuntimeError("delete failed")
         self.deleted.append((item_id, user_id))
+
+    async def update_item_metadata(
+        self, item_id, *, tags, category, colors, season, gender
+    ):
+        self.indexed.append(
+            {
+                "item_id": item_id,
+                "tags": tags,
+                "category": category,
+                "colors": colors,
+                "season": season,
+                "gender": gender,
+            }
+        )
 
 
 class FakeTaskQueue:
@@ -203,6 +222,7 @@ async def test_process_uploaded_item_marks_ready_and_indexes():
     assert updated.colors == ["blue"]
     assert [tag.value for tag in updated.tags] == ["casual", "cotton"]
     assert search.indexed[0]["embedding"] == [0.1, 0.2, 0.3]
+    assert search.indexed[0]["gender"] == "common"
 
 
 @pytest.mark.asyncio
@@ -261,3 +281,23 @@ async def test_delete_missing_item_raises_not_found():
         await DeleteClosetItemUseCase(
             FakeClosetRepo(), FakeImageStorage(), FakeEmbeddingSearch()
         ).execute("user-123", str(uuid4()))
+
+
+@pytest.mark.asyncio
+async def test_update_metadata_persists_and_reindexes_gender():
+    repo = FakeClosetRepo()
+    search = FakeEmbeddingSearch()
+    item = closet_item()
+    item.mark_ready("shirt", ["blue"], "spring", "common", [])
+    await repo.create(item)
+
+    await UpdateClosetItemMetadataUseCase(repo, search).execute(
+        item.user_id,
+        str(item.id),
+        gender="female",
+        tags=["formal"],
+    )
+
+    assert item.gender == "female"
+    assert [tag.value for tag in item.tags] == ["formal"]
+    assert search.indexed[0]["gender"] == "female"
