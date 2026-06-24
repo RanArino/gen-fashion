@@ -71,7 +71,7 @@ _LABEL_MAP: dict[str, dict] = {
 
 # ---------------------------------------------------------------------------
 # Demo closets (M3 re-scope, req §16). Instead of one large shared closet, seed
-# a few realistic ~30-item wardrobes. Gender is not in the dataset, so segment
+# a few realistic wardrobes. Gender is not in the dataset, so segment
 # by the `kids` flag into adult/child. Items keep user_id="__shared__" and gain
 # closetId/closetKind so the M5 picker can filter; the M3-3 adapter (queries all
 # __shared__ items) is unaffected. Composition is automatic via category quotas.
@@ -82,8 +82,15 @@ _CLOSETS = [
     {"id": "child-01", "kind": "child", "displayName": "Kids Closet"},
 ]
 
-# category-group → items per closet (sums to ~30)
-_CLOSET_QUOTA = {"tops": 8, "outer": 4, "bottoms": 6, "dress": 4, "shoes": 5, "hat": 3}
+# Base category-group quotas preserve the original 50-item wardrobes. Additions
+# run only after every base wardrobe is built, so increasing frequently used
+# separates never reassigns an existing item between the two adult closets.
+_CLOSET_QUOTAS = {
+    "adult": {"tops": 12, "outer": 7, "bottoms": 10, "dress": 8, "shoes": 8, "hat": 5},
+    "child": {"tops": 15, "outer": 6, "bottoms": 12, "dress": 4, "shoes": 8, "hat": 5},
+}
+
+_CLOSET_ADDITIONS = {"tops": 10, "bottoms": 10}
 
 # group → dataset labels feeding it (round-robined within a group for variety)
 _CATEGORY_GROUPS = {
@@ -104,6 +111,10 @@ def _label_meta(label: str) -> dict:
         "colors": entry.get("colors", []),
         "tags": [entry.get("category", label).lower()],
     }
+
+
+def _label_gender(label: str) -> str:
+    return "female" if label.lower() in {"dress", "skirt", "blouse"} else "common"
 
 
 def _item_id(filename: str) -> str:
@@ -274,10 +285,11 @@ def _build_closets(images_dir: Path, label_csv: Path) -> list[dict]:
 
     cursor: dict[tuple[str, str], int] = {}  # (kind, label) -> next unused index
     samples: list[dict] = []
-    for closet in _CLOSETS:
+
+    def append_groups(closet: dict, quotas: dict[str, int]) -> int:
         kind = closet["kind"]
         before = len(samples)
-        for group, quota in _CLOSET_QUOTA.items():
+        for group, quota in quotas.items():
             group_labels = [l for l in _CATEGORY_GROUPS[group] if pool[kind].get(l)]
             picked = 0
             while picked < quota and group_labels:
@@ -298,7 +310,16 @@ def _build_closets(images_dir: Path, label_csv: Path) -> list[dict]:
                         progressed = True
                 if not progressed:
                     break  # group exhausted for this kind
-        log.info("Closet %s (%s): %d items", closet["id"], kind, len(samples) - before)
+        return len(samples) - before
+
+    for closet in _CLOSETS:
+        count = append_groups(closet, _CLOSET_QUOTAS[closet["kind"]])
+        log.info("Closet %s (%s) base: %d items", closet["id"], closet["kind"], count)
+
+    for closet in _CLOSETS:
+        count = append_groups(closet, _CLOSET_ADDITIONS)
+        log.info("Closet %s (%s) added separates: %d items", closet["id"], closet["kind"], count)
+
     log.info("Built %d closets, %d items total", len(_CLOSETS), len(samples))
     return samples
 
@@ -393,6 +414,7 @@ def _ensure_es_index(es, index: str, dims: int = 768) -> None:
                 "category":  {"type": "keyword"},
                 "colors":    {"type": "keyword"},
                 "season":    {"type": "keyword"},
+                "gender":    {"type": "keyword"},
                 "embedding": {
                     "type": "dense_vector",
                     "dims": dims,
@@ -470,11 +492,14 @@ def _embedding_text(meta: dict) -> str:
 def _purge(es, index: str, s3, bucket: str, db) -> None:
     log.info("Purging __shared__ data …")
     # ES: delete by query
-    result = es.delete_by_query(
-        index=index,
-        body={"query": {"term": {"user_id": "__shared__"}}},
-    )
-    log.info("ES deleted: %s", result.get("deleted", 0))
+    if es.indices.exists(index=index):
+        result = es.delete_by_query(
+            index=index,
+            body={"query": {"term": {"user_id": "__shared__"}}},
+        )
+        log.info("ES deleted: %s", result.get("deleted", 0))
+    else:
+        log.info("ES index %s does not exist; nothing to purge", index)
     # MinIO: list + delete objects under __shared__/closet/
     paginator = s3.get_paginator("list_objects_v2")
     keys = []
@@ -548,7 +573,7 @@ def main() -> None:
     # --- Dataset acquisition ---
     if args.source_dir:
         images_dir = args.source_dir.resolve()
-        label_csv = _find_label_csv(images_dir)
+        label_csv = _find_label_csv(images_dir, images_dir.parent)
     else:
         cache_dir = Path(__file__).parent / ".dataset_cache"
         images_dir = _download_kaggle(cache_dir)
@@ -566,6 +591,7 @@ def main() -> None:
         item_id = _item_id(sample["filename"])
         label   = sample["label"]
         meta    = _label_meta(label)
+        gender  = _label_gender(label)
 
         try:
             image_bytes = _normalize_jpeg(sample["path"])
@@ -604,6 +630,7 @@ def main() -> None:
             "category":   meta["category"],
             "colors":     meta["colors"],
             "season":     meta["season"],
+            "gender":     gender,
         }
         if embedding is not None:
             es_doc["embedding"] = embedding
@@ -618,6 +645,7 @@ def main() -> None:
             "tags":          meta["tags"],
             "season":        meta["season"],
             "colors":        meta["colors"],
+            "gender":        gender,
             "embeddingId":   item_id,
             "datasetSource": f"kaggle:{DATASET_SLUG}",
             "originalLabel": label,
