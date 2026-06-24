@@ -31,6 +31,7 @@ def hybrid_search(
     category: str | list[str] | None = None,
     colors: list[str] | None = None,
     closet_id: str | None = None,
+    gender: str | None = None,
     limit: int = 10,
 ) -> list[dict]:
     """Return raw hits [{item_id, ...doc fields}] for the closet of `user_id`."""
@@ -58,13 +59,17 @@ def hybrid_search(
             {"bool": {"should": [_ci_term("colors", c) for c in colors],
                       "minimum_should_match": 1}}
         )
+    if gender:
+        bool_query.setdefault("should", []).extend(
+            [_ci_term("gender", gender), _ci_term("gender", "common")]
+        )
     should = [
         _ci_term(field, token)
         for token in re.findall(r"[a-z0-9]+", description.lower())
         for field in ("tags", "category", "colors", "season")
     ]
     if should:
-        bool_query["should"] = should
+        bool_query.setdefault("should", []).extend(should)
         bool_query["minimum_should_match"] = 1
     query = {"bool": bool_query}
 
