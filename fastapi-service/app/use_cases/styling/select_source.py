@@ -75,7 +75,9 @@ class SelectClothingSourceUseCase:
                         "season": preference.season,
                         "style": preference.style,
                         "colorPreference": preference.color_preference,
+                        "gender": preference.gender,
                     },
+                    phase="propose",
                 )
             )
         except Exception as exc:
