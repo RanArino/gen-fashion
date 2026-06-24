@@ -2,6 +2,7 @@ import pytest
 from uuid import uuid4
 from app.domain.styling import (
     ClothingSource,
+    StyleResult,
     StyleSession,
     StyleSessionId,
     StyleSessionState,
@@ -79,6 +80,19 @@ def test_m5_statuses_support_error_generating_and_terminal_states():
         state=StyleSessionState.SEARCHING,
     )
     assert error_session.state.can_transition_to(StyleSessionState.ERROR)
+
+
+def test_complete_records_completion_time():
+    session = StyleSession(
+        id=StyleSessionId(uuid4()),
+        user_id="user-123",
+        state=StyleSessionState.GENERATING,
+    )
+
+    session.complete(StyleResult(coordinate_image_url="https://example.test/result.jpg"))
+
+    assert session.state == StyleSessionState.COMPLETED
+    assert session.completed_at is not None
 
 
 def test_style_session_invalid_transition():

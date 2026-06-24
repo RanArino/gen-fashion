@@ -33,6 +33,7 @@ def test_firestore_document_mapping_round_trips_domain_shape():
         category="shirt",
         colors=["blue"],
         season="spring",
+        gender="common",
         created_at=created_at,
         updated_at=created_at,
     )
@@ -45,11 +46,13 @@ def test_firestore_document_mapping_round_trips_domain_shape():
     assert document["status"] == "READY"
     assert document["embeddingId"] == str(item_id)
     assert document["tags"] == ["casual"]
+    assert document["gender"] == "common"
     assert restored.id.value == item_id
     assert isinstance(restored.id.value, UUID)
     assert restored.status == ClothingItemStatus.READY
     assert restored.category == "shirt"
     assert restored.colors == ["blue"]
+    assert restored.gender == "common"
 
 
 def test_firestore_processing_document_omits_embedding_id():
