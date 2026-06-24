@@ -38,6 +38,7 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
                     "category": {"type": "keyword"},
                     "colors": {"type": "keyword"},
                     "season": {"type": "keyword"},
+                    "gender": {"type": "keyword"},
                     "embedding": {
                         "type": "dense_vector",
                         "dims": self._dims,
@@ -77,6 +78,7 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
         colors: List[str],
         season: Optional[str],
         embedding: Optional[List[float]],
+        gender: Optional[str] = None,
     ) -> None:
         document = {
             "item_id": item_id,
@@ -86,6 +88,7 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
             "category": category,
             "colors": colors,
             "season": season,
+            "gender": gender,
         }
         if embedding is not None:
             document["embedding"] = embedding
@@ -96,3 +99,25 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
             await self._client.delete(index=self._index, id=item_id)
         except NotFoundError:
             return
+
+    async def update_item_metadata(
+        self,
+        item_id: str,
+        *,
+        tags: List[str],
+        category: Optional[str],
+        colors: List[str],
+        season: Optional[str],
+        gender: Optional[str],
+    ) -> None:
+        await self._client.update(
+            index=self._index,
+            id=item_id,
+            doc={
+                "tags": tags,
+                "category": category,
+                "colors": colors,
+                "season": season,
+                "gender": gender,
+            },
+        )

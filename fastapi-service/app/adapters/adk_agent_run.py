@@ -18,6 +18,8 @@ class HttpAgentRunAdapter(AgentRunPort):
             "source": request.source,
             "userPreference": request.user_preference,
             "sharedClosetId": request.shared_closet_id,
+            "phase": request.phase,
+            "selectedItems": request.selected_items,
         }
         headers = {}
         if settings.internal_task_secret:

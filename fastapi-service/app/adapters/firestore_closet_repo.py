@@ -42,6 +42,7 @@ class FirestoreClosetRepository(ClosetRepositoryPort):
             "category": item.category,
             "colors": item.colors,
             "season": item.season,
+            "gender": item.gender,
             "tags": FirestoreClosetRepository._tag_values(item.tags),
             "embeddingId": str(item.id) if item.status == ClothingItemStatus.READY else None,
             "createdAt": item.created_at,
@@ -80,6 +81,7 @@ class FirestoreClosetRepository(ClosetRepositoryPort):
             category=data.get("category"),
             colors=data.get("colors", []),
             season=data.get("season"),
+            gender=data.get("gender"),
             created_at=FirestoreClosetRepository._parse_datetime(data.get("createdAt")),
             updated_at=FirestoreClosetRepository._parse_datetime(data.get("updatedAt")),
         )
