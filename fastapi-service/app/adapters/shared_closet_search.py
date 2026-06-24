@@ -5,12 +5,14 @@ from elasticsearch import AsyncElasticsearch
 from app.adapters.r2_image_storage import R2ImageStorage
 from app.config import get_settings
 from app.domain.styling import CandidateItem, ClothingSource
-from app.ports import ClothingSearchPort, ImageStoragePort
+from google.cloud import firestore
+
+from app.ports import ClothingSearchPort, ImageStoragePort, SharedClosetGalleryPort
 
 _ATTRIBUTION = "Clothing Dataset (CC BY-SA 4.0)"
 
 
-class SharedClosetSearchAdapter(ClothingSearchPort):
+class SharedClosetSearchAdapter(ClothingSearchPort, SharedClosetGalleryPort):
     """Search adapter for the pre-seeded shared closet (M3-3).
 
     Queries the clothing_items ES index filtered to user_id:"__shared__",
@@ -25,6 +27,47 @@ class SharedClosetSearchAdapter(ClothingSearchPort):
         self._client = AsyncElasticsearch(**kwargs)
         self._index = settings.clothing_items_index
         self._image_storage = image_storage or R2ImageStorage()
+        self._firestore = firestore.AsyncClient(
+            project=settings.firestore_project_id,
+            database=settings.firestore_database_id,
+        )
+
+    async def list_closets(self) -> list[dict]:
+        closets = []
+        async for snapshot in self._firestore.collection("shared_closets").stream():
+            closets.append({"closetId": snapshot.id, **(snapshot.to_dict() or {})})
+        return sorted(closets, key=lambda closet: closet["closetId"])
+
+    async def list_items(self, closet_id: str) -> list[dict]:
+        response = await self._client.search(
+            index=self._index,
+            size=100,
+            query={
+                "bool": {
+                    "filter": [
+                        {"term": {"user_id": "__shared__"}},
+                        {"term": {"closetId": closet_id}},
+                    ]
+                }
+            },
+        )
+        items = []
+        for hit in response["hits"]["hits"]:
+            source = hit.get("_source", {})
+            image_path = source.get("imageUrl") or f"__shared__/closet/{hit['_id']}.jpg"
+            items.append(
+                {
+                    "itemId": hit["_id"],
+                    "imageUrl": await self._image_storage.get_download_url(image_path),
+                    "category": source.get("category"),
+                    "colors": source.get("colors", []),
+                    "season": source.get("season"),
+                    "tags": source.get("tags", []),
+                    "gender": source.get("gender", "common"),
+                    "attribution": _ATTRIBUTION,
+                }
+            )
+        return items
 
     async def search_by_source(
         self, user_id: str, source: ClothingSource, query: str, limit: int = 10
