@@ -29,6 +29,7 @@ class UserPreference(ValueObject):
     season: Optional[str] = None
     style: Optional[str] = None
     color_preference: Optional[str] = None
+    gender: Optional[str] = None
 
 
 @dataclass(frozen=True)

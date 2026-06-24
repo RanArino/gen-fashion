@@ -27,6 +27,7 @@ class ClothingItem(AggregateRoot):
     category: Optional[str] = None
     colors: List[str] = None
     season: Optional[str] = None
+    gender: Optional[str] = None
     created_at: datetime = None
     updated_at: datetime = None
 
@@ -59,6 +60,7 @@ class ClothingItem(AggregateRoot):
         category: Optional[str],
         colors: List[str],
         season: Optional[str],
+        gender: Optional[str],
         tags: List[ClothingTag],
         embedding: Optional[ImageEmbedding] = None,
     ) -> None:
@@ -67,8 +69,33 @@ class ClothingItem(AggregateRoot):
         object.__setattr__(self, 'category', category)
         object.__setattr__(self, 'colors', colors)
         object.__setattr__(self, 'season', season)
+        object.__setattr__(self, 'gender', gender)
         object.__setattr__(self, 'tags', tags)
         object.__setattr__(self, 'embedding', embedding)
+        self._mark_updated()
+
+    def set_metadata(
+        self,
+        *,
+        gender: Optional[str] = None,
+        category: Optional[str] = None,
+        colors: Optional[List[str]] = None,
+        season: Optional[str] = None,
+        tags: Optional[List[ClothingTag]] = None,
+    ) -> None:
+        """Update user-correctable searchable metadata."""
+        if gender is not None:
+            if gender not in {"male", "female", "common"}:
+                raise ValueError("gender must be male, female, or common")
+            object.__setattr__(self, 'gender', gender)
+        if category is not None:
+            object.__setattr__(self, 'category', category)
+        if colors is not None:
+            object.__setattr__(self, 'colors', colors)
+        if season is not None:
+            object.__setattr__(self, 'season', season)
+        if tags is not None:
+            object.__setattr__(self, 'tags', tags)
         self._mark_updated()
 
     def mark_error(self) -> None:
