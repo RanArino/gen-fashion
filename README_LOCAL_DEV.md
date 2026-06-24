@@ -136,7 +136,17 @@ cd flutter-web-app && flutter analyze && flutter test
 make clean
 ```
 
-This stops all containers and removes volumes.
+This exports the Firestore emulator into the `gen-fashion_firestore-data`
+volume and stops the containers without deleting local data. A later
+`make dev` imports that snapshot automatically; shared closets do not need to
+be seeded again.
+
+To intentionally remove containers and volumes, including the persisted
+Firestore snapshot, run:
+
+```bash
+make reset
+```
 
 ### Rebuilding Images
 
@@ -193,7 +203,7 @@ kill -9 <PID>
 # Check logs
 docker-compose logs -f fastapi-service
 
-# Force rebuild
+# Rebuild while preserving local Firestore data
 make clean && make build && make dev
 ```
 
