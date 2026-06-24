@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from styling_app.events import extract_style_result, normalize_adk_event
+from styling_app.events import (
+    extract_search_candidates,
+    extract_style_result,
+    normalize_adk_event,
+)
 
 
 @dataclass
@@ -67,3 +71,48 @@ def test_normalizes_function_call_response_and_final_answer():
     }
     assert text_events[0]["eventKind"] == "final_answer"
     assert text_events[0]["text"] == "Done"
+
+
+def test_extracts_search_candidates_from_normalized_tool_result():
+    result_events = normalize_adk_event(
+        Event(
+            "ClosetAgent",
+            Content(
+                [
+                    Part(
+                        function_response=FunctionResponse(
+                            "search_closet",
+                            {"result": [{"item_id": "item-1", "image_url": "http://item"}]},
+                        )
+                    )
+                ]
+            ),
+        ),
+        1,
+    )
+
+    assert extract_search_candidates(result_events[0]) == [
+        {"item_id": "item-1", "image_url": "http://item"}
+    ]
+
+
+def test_native_transfer_call_is_kept_once_without_action_duplicate():
+    event = Event(
+        "styling_app",
+        Content(
+            [
+                Part(
+                    function_call=FunctionCall(
+                        "transfer_to_agent", {"agent_name": "ClosetAgent"}
+                    )
+                )
+            ]
+        ),
+    )
+    event.actions = type("Actions", (), {"transfer_to_agent": "ClosetAgent"})()
+
+    normalized = normalize_adk_event(event, 1)
+
+    assert len(normalized) == 1
+    assert normalized[0]["toolName"] == "transfer_to_agent"
+    assert normalized[0]["toolArgs"] == {"agent_name": "ClosetAgent"}

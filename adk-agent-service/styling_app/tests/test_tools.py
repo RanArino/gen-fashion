@@ -64,6 +64,9 @@ def test_search_closet_shared_attribution(monkeypatch):
             "image_url": "http://signed/__shared__/closet/abc.jpg",
             "category": "pants",
             "tags": ["denim"],
+            "colors": [],
+            "season": None,
+            "gender": "common",
             "attribution": "Clothing Dataset (CC BY-SA 4.0)",
         }
     ]
@@ -165,6 +168,26 @@ def test_style_synthesizer_collage_fallback(monkeypatch):
     assert result["model_used"] == "collage-fallback"
 
 
+def test_style_synthesizer_prompt_includes_child_and_gender(monkeypatch):
+    captured = {}
+
+    def generate(images, description):
+        captured["description"] = description
+        return b"generated"
+
+    _patch_synth(monkeypatch, generate)
+    result = style_synthesizer(
+        "user-1",
+        ["u1.jpg"],
+        "casual spring",
+        gender="female",
+        wearer_age="child",
+    )
+
+    assert "child female wearer" in captured["description"]
+    assert result["generation_prompt"] == captured["description"]
+
+
 # ── ask_preference (M4-8) ──────────────────────────────────────────────────────
 
 
@@ -174,6 +197,7 @@ def test_ask_preference_normalizes():
         "season": None,
         "style": None,
         "color_preference": None,
+        "gender": None,
     }
 
 
@@ -183,6 +207,7 @@ def test_ask_preference_echoes_full_preference():
         "season": "summer",
         "style": "casual",
         "color_preference": "earth tones",
+        "gender": "female",
     }
     assert ask_preference(**prefs) == prefs
 
