@@ -15,6 +15,10 @@ from app.ports import (
 logger = logging.getLogger(__name__)
 
 
+def _gender_for_category(category: str | None) -> str:
+    return "female" if (category or "").lower() in {"dress", "skirt", "blouse"} else "common"
+
+
 def _embedding_text(analysis) -> str:
     """Build the text embedded for vector search from the analysis result.
 
@@ -75,10 +79,12 @@ class ProcessUploadedClothingItemUseCase:
         if item is None:
             return
         tags = [ClothingTag(name="tag", value=value) for value in analysis.tags]
+        gender = _gender_for_category(analysis.category)
         item.mark_ready(
             category=analysis.category,
             colors=analysis.colors,
             season=analysis.season,
+            gender=gender,
             tags=tags,
             embedding=embedding,
         )
@@ -91,5 +97,6 @@ class ProcessUploadedClothingItemUseCase:
             category=analysis.category,
             colors=analysis.colors,
             season=analysis.season,
+            gender=gender,
             embedding=embedding_vector,
         )
