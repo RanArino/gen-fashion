@@ -25,6 +25,7 @@ class EmbeddingSearchPort(ABC):
         colors: List[str],
         season: Optional[str],
         embedding: Optional[List[float]],
+        gender: Optional[str] = None,
     ) -> None:
         """Index a clothing item document and optional embedding."""
         raise NotImplementedError("Implement in M2-9: Elasticsearch adapter")
@@ -33,3 +34,17 @@ class EmbeddingSearchPort(ABC):
     async def delete_item(self, item_id: str, user_id: str) -> None:
         """Delete an item from the embedding index."""
         raise NotImplementedError("Implement in M2-9: Elasticsearch adapter")
+
+    @abstractmethod
+    async def update_item_metadata(
+        self,
+        item_id: str,
+        *,
+        tags: List[str],
+        category: Optional[str],
+        colors: List[str],
+        season: Optional[str],
+        gender: Optional[str],
+    ) -> None:
+        """Partially update searchable metadata without replacing the vector."""
+        raise NotImplementedError

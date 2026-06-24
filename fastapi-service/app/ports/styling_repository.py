@@ -22,6 +22,11 @@ class StylingRepositoryPort(ABC):
         raise NotImplementedError("Implement in M5-2: Firestore adapter")
 
     @abstractmethod
+    async def list_completed(self, user_id: str, limit: int = 20) -> list[StyleSession]:
+        """List the user's completed styling sessions, newest first."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def list_events(
         self, user_id: str, session_id: StyleSessionId, after_seq: int = 0
     ) -> list[dict[str, Any]]:

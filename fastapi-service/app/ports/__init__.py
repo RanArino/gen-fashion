@@ -7,6 +7,7 @@ from app.ports.task_queue import TaskQueuePort
 from app.ports.image_generation import ImageGenerationPort
 from app.ports.gemini_analysis import ClothingAnalysisResult, GeminiAnalysisPort
 from app.ports.agent_run import AgentRunPort, AgentRunRequest
+from app.ports.shared_closet_gallery import SharedClosetGalleryPort
 
 __all__ = [
     "ClosetRepositoryPort",
@@ -20,4 +21,5 @@ __all__ = [
     "GeminiAnalysisPort",
     "AgentRunPort",
     "AgentRunRequest",
+    "SharedClosetGalleryPort",
 ]
