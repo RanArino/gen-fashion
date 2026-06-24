@@ -21,6 +21,7 @@ from app.ports import (
     ImageGenerationPort,
     GeminiAnalysisPort,
     AgentRunPort,
+    SharedClosetGalleryPort,
 )
 from app.use_cases.closet import (
     DeleteClosetItemUseCase,
@@ -28,8 +29,14 @@ from app.use_cases.closet import (
     GetUploadUrlUseCase,
     ProcessUploadedClothingItemUseCase,
     RegisterClothingItemUseCase,
+    UpdateClosetItemMetadataUseCase,
 )
-from app.use_cases.styling import CreateSessionUseCase, SelectClothingSourceUseCase
+from app.use_cases.styling import (
+    CreateSessionUseCase,
+    SelectCandidatesUseCase,
+    SelectClothingSourceUseCase,
+    SharedClosetGalleryUseCase,
+)
 
 
 def get_closet_repository() -> ClosetRepositoryPort:
@@ -45,6 +52,10 @@ def get_embedding_search() -> EmbeddingSearchPort:
 
 
 def get_clothing_search() -> ClothingSearchPort:
+    return SharedClosetSearchAdapter()
+
+
+def get_shared_closet_gallery() -> SharedClosetGalleryPort:
     return SharedClosetSearchAdapter()
 
 
@@ -91,6 +102,10 @@ def get_delete_closet_item_use_case() -> DeleteClosetItemUseCase:
     )
 
 
+def get_update_item_metadata_use_case() -> UpdateClosetItemMetadataUseCase:
+    return UpdateClosetItemMetadataUseCase(get_closet_repository(), get_embedding_search())
+
+
 def get_process_uploaded_item_use_case() -> ProcessUploadedClothingItemUseCase:
     return ProcessUploadedClothingItemUseCase(
         get_closet_repository(),
@@ -110,3 +125,11 @@ def get_select_source_use_case() -> SelectClothingSourceUseCase:
         get_closet_repository(),
         get_agent_run(),
     )
+
+
+def get_select_candidates_use_case() -> SelectCandidatesUseCase:
+    return SelectCandidatesUseCase(get_styling_repository(), get_agent_run())
+
+
+def get_shared_closet_gallery_use_case() -> SharedClosetGalleryUseCase:
+    return SharedClosetGalleryUseCase(get_shared_closet_gallery())
