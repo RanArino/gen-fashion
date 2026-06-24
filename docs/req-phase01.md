@@ -106,7 +106,7 @@
 | `StyleSession` | Aggregate Root | LINE セッションを表現。ステートマシン（画像受信→分析→選択→提案→生成→完了） |
 | `StyleSessionId` | Value Object | UUID |
 | `CoordinateProposal` | Entity | 提案されたコーディネートアイテムのリスト |
-| `UserPreference` | Value Object | ユーザーの好み情報（テキスト入力から収集） |
+| `UserPreference` | Value Object | ユーザーの好み情報（テキスト入力から収集）。`gender`（`male` / `female` / `common`）を含む（§18.1、ADL-026） |
 | `StyleResult` | Value Object | 生成されたコーディネート画像の URL + 構成アイテムのリスト |
 | `ClothingSource` | Value Object (Enum) | `CLOSET` / `SHARED_CLOSET` / `RAKUTEN` |
 
@@ -116,6 +116,8 @@
 - `ClothingSource.CLOSET` を選択した場合、ユーザーのクローゼットにデータが存在しなければ提示できない。
 - `ClothingSource.SHARED_CLOSET` は常に選択可能（共有データが存在することを前提とする）。
 - コーディネート生成は必ずユーザーが服を選択してから実行する（同意なき自動生成禁止）。
+- **候補選択は明示的な一時停止状態:** Web GUI でも上記「同意なき自動生成禁止」を満たすため、検索後にセッションは候補提示状態（`PROPOSING`）で**一時停止**し、ユーザーが候補を選択・承認するまで `GENERATING` に遷移しない（§18.2、ADL-027）。
+- **生成画像は着用者の性別・年代に一致する:** `child` クローゼット選択時は子供のコーディネート画像を生成する（大人を生成してはならない）。`UserPreference.gender` と対象クローゼットの `closetKind`（adult / child）を検索・スタイリング・画像生成へ伝播する（§18.1、ADL-026）。
 - **セッションの完了:** 1セッションにつき最終的に生成・提示できるコーディネート画像は1つまでとする。画像が生成・送信された時点でセッションは `COMPLETED` 状態となる。
 - **セッションの再開と新規開始:** `COMPLETED` 状態、または一定時間（例: 3時間）経過してタイムアウトしたセッションの後に新しい画像がアップロードされた場合は、既存セッションを引き継がず、新規セッションを作成する。
 - ユーザー 1 名あたりの `ClothingItem` 上限は `MAX_CLOSET_IMAGES_PER_USER`（デフォルト: 20）。
@@ -193,13 +195,15 @@ class CandidateItem(BaseModel):
 ### 6.4 AskUserPreferenceUseCase
 
 - **Input:** `sessionId`, `analysisResult`
-- **Output:** `UserPreference { style, colors, occasion, budget }`
+- **Output:** `UserPreference { style, colors, occasion, budget, gender }`（`gender`: `male` / `female` / `common`、§18.1）
 - **Agent Tool:** `ask_preference`（LINE インタラクティブメッセージで選択肢を提示）
 - **Web GUI（Phase 1a）の方式:** Accordion のマルチターン対話ではなく、**エージェント実行の起動前に Flutter で好み入力フォームを表示**し、収集した `UserPreference` を `runner.run_async()` の初期コンテキストとして渡す（Web では `ask_preference` のインタラクティブツール・マルチターン ADK セッションは使わない）。LINE（Phase 1b）は従来どおり `ask_preference` のインタラクティブメッセージを使用する。
 
 ### 6.5 GenerateCoordinateUseCase
 
 - **Input:** `sessionId`, `selectedItems: List<CandidateItem>`
+- **Precondition:** `selectedItems` はユーザーが `PROPOSING` 状態で選択・承認した候補。空のまま呼び出してはならない（§4.3 / §18.2、ADL-027）。
+- **着用者属性:** `UserPreference.gender` と対象クローゼットの `closetKind`（adult / child）を画像生成プロンプトに渡し、生成画像を着用者に一致させる（§18.1、ADL-026）。
 - **Output:** `StyleResult { coordinateImageUrl, items }`
 - **Agent Tool:** `style_synthesizer`
 - **モデル制約:** コーディネート画像生成（複数服画像をインプットとした合成・仮想着用）は **Imagen 4** または **Nano Banana 2** でのみ実現可能。Gemini 2.0 Flash は画像分析専用とし、画像生成には使用しない。
@@ -347,6 +351,7 @@ users/{userId}/closet/{itemId}        # ユーザー個人クローゼット
   - tags: string[]          # status="READY" 以降のみ有効
   - season: string          # status="READY" 以降のみ有効
   - colors: string[]        # status="READY" 以降のみ有効
+  - gender: string          # "male" | "female" | "common"。分析時にカテゴリヒューリスティックで自動付与し、ギャラリーでユーザーが編集可（§18.1/§18.3、ADL-026/ADL-028）
   - embeddingId: string     # Elasticsearch document ID。status="READY" 以降のみ有効
   - createdAt: timestamp
 
@@ -354,6 +359,7 @@ shared_closet/{itemId}                # デモクローゼットのアイテム�
   - imageUrl: string (R2 URL)
   - closetId: string     # 所属デモクローゼット（"adult-01" | "adult-02" | "child-01"）
   - closetKind: string   # "adult" | "child"
+  - gender: string       # "male" | "female" | "common"（シード時にカテゴリヒューリスティックで付与、全ユーザー共通・読み取り専用、§18.1/§16、ADL-026）
   - category: string
   - tags: string[]
   - season: string
@@ -366,7 +372,7 @@ shared_closet/{itemId}                # デモクローゼットのアイテム�
 shared_closets/{closetId}             # デモクローゼットのメタデータ（M5 の選択 UI 用）
   - kind: string         # "adult" | "child"
   - displayName: string  # 表示名（例: "Adult Closet A"）
-  - itemCount: int       # 含まれるアイテム数（約30）
+  - itemCount: int       # 含まれるアイテム数（70）
   - datasetSource: string
   - createdAt: timestamp
 
@@ -376,8 +382,8 @@ sessions/{sessionId}
   - status: enum (IMAGE_RECEIVED | ANALYZING | SOURCE_SELECTING | SEARCHING | PROPOSING | GENERATING | COMPLETED | ERROR)
   - source: enum (CLOSET | SHARED_CLOSET | RAKUTEN | UNSET)
   - analysisResult: map
-  - userPreference: map
-  - selectedItems: array
+  - userPreference: map               # gender（male/female/common）を含む（§18.1）
+  - selectedItems: array              # ユーザーが PROPOSING 状態で選択・承認した候補（§18.2、ADL-027）。空のまま GENERATING へ遷移してはならない
   - styleResult: map
   - createdAt: timestamp
   - updatedAt: timestamp
@@ -410,6 +416,7 @@ sessions/{sessionId}/agentEvents/{eventId}   # ADK エージェント実行イ�
       "is_shared": { "type": "boolean" },
       "closetId": { "type": "keyword" },   // デモクローゼット識別子（共有アイテムのみ）
       "closetKind": { "type": "keyword" }, // "adult" | "child"
+      "gender": { "type": "keyword" },     // "male" | "female" | "common"（§18.1、ADL-026）
       "tags": { "type": "keyword" },
       "category": { "type": "keyword" },
       "colors": { "type": "keyword" },
@@ -699,6 +706,10 @@ async def resolve_user(line_user_id: str) -> str | None:
 - クローゼット管理画面（画像アップロード、上限: `MAX_CLOSET_IMAGES_PER_USER` = 20）。
 - **エージェント思考の可視化:** 複数エージェントが議論・推論する様子を Accordion UI でリアルタイム表示する（ADK Event Stream を WebSocket or SSE で Flutter に配信）。
 - **結果 UI のレンダリング方針（ADL-018）:** ユーザー向けの結果 UI（コーディネート候補カード・好み入力・最終コーディネート画像）は、エージェントが出力する **A2UI ペイロード**を Flutter 公式の `genui` で描画する方針とする（採否は Flutter Web スパイクで確定）。**思考トレース（Accordion）と結果 UI（A2UI）は別ストリームとして概念分離する。**
+- **クローゼットギャラリー（自分＋共有、§18.3 / ADL-028）:** 各クローゼット（共有 `adult-01` / `adult-02` / `child-01` を含む）の中身をメタデータ（category / colors / season / tags / gender）付きで閲覧できるギャラリーを提供する。自分のクローゼットのアイテムは `gender` ほか検索用メタデータをユーザーが編集できる（共有は読み取り専用）。
+- **性別・年代の指定（§18.1 / ADL-026）:** コーディネート起動前の好み入力フォームで `gender`（male / female / common）を選べる。これと対象クローゼットの `closetKind`（adult / child）が検索・生成画像に反映される。
+- **候補選択（§18.2 / ADL-027）:** 検索後に候補カード（上位数件 ＋ 推薦）を提示し、ユーザーが選択・承認するまで画像生成しない（同意なき自動生成禁止、§4.3）。
+- **実行履歴ギャラリー（§18.5 / ADL-029、将来拡張）:** 過去の実行（選択アイテム ＋ 生成画像 ＋ 日時）を時系列ギャラリーで再確認できる。
 
 ---
 
@@ -970,6 +981,38 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **Trade-off:** R2 CORS と Firebase Auth authorized domains にホスティングオリジンを追加する運用が必要。
 - **Date/Author:** 2026-06-15 / Ran（デプロイ ExecPlan 起票時に提案）
 
+### ADL-026: 性別・年代ディメンションの導入（共有はヒューリスティック付与、個人はギャラリー編集可）
+
+- **Decision:** `UserPreference` に `gender`（`male` / `female` / `common`）を追加し、検索・スタイリング・画像生成へ性別と `closetKind`（adult / child）を伝播する。共有クローゼットの `gender` は Kaggle データセットに無いため `run_seed.py` のカテゴリ別ヒューリスティックでシード時に付与する。個人クローゼットは分析時にヒューリスティックで自動付与し、ユーザーはギャラリーで編集できる（ADL-028）。
+- **Alternatives:** (a) シード時の Gemini 画像再分析で性別推定（精度↑・トークンコスト・実装増）、(b) 全アイテム unisex 固定でユーザー選択のみで駆動（誤ラベルゼロだが検索の絞り込みが弱い）。
+- **Rationale:** ヒューリスティックは追加 API コストゼロ・決定的で冪等。誤りはユーザーがギャラリーで補正でき（個人クローゼットのみ）、共有は読み取り専用のため全体最適。`child-01` が大人画像を生成する既存欠陥（feature-matrix ME-3）の是正に必須。
+- **Trade-off:** ヒューリスティックは粗く、共有アイテムの性別は近似。ユーザー編集は自分のクローゼットのみ（共有はグローバル読み取り専用）。
+- **Date/Author:** 2026-06-21 / Ran（ME プレデプロイ監査）
+
+### ADL-027: Web GUI の候補選択は `PROPOSING` の明示的一時停止（同意なき自動生成禁止の実装）
+
+- **Decision:** 検索完了後セッションを `PROPOSING` で一時停止し、候補承認エンドポイント（例: `POST /sessions/{id}/select`）で `selectedItems` を確定してから `GENERATING` に遷移する。空選択での生成は禁止。
+- **Alternatives:** 現状の自動生成（`StylingAgent` が `style_synthesizer` を即時呼び出し）。req §3 / §15 Phase 1a #6 違反のため不採用。
+- **Rationale:** req §3「同意なき自動生成禁止」と §15 Phase 1a #6「候補提示 → 選択 → 画像生成」を満たす。候補データは `search_closet` の結果に既に含まれる。
+- **Trade-off:** マルチターンの一時停止/再開を SSE と状態機械で扱う必要がある（タイムアウトは ADL-009 に従う）。
+- **Date/Author:** 2026-06-21 / Ran（ME プレデプロイ監査）
+
+### ADL-028: クローゼットメタデータはユーザー編集可能（個人クローゼットのみ）、共有は読み取り専用
+
+- **Decision:** 個人クローゼットアイテムの `gender` ほか検索用メタデータをギャラリーで編集可能にし、Firestore と Elasticsearch をミラー更新する。共有クローゼットは読み取り専用（§16.5）。
+- **Alternatives:** 分析結果を固定（編集不可）。ヒューリスティック付与（ADL-026）の誤りを補正できないため不採用。
+- **Rationale:** キーワード検索の精度をユーザーが改善でき、自動付与を補完する。
+- **Trade-off:** メタデータ編集 API と Firestore / ES の整合（ベストエフォート同期、M2 の削除パスと同様）。
+- **Date/Author:** 2026-06-21 / Ran（ME プレデプロイ監査）
+
+### ADL-029: Agent 実行履歴は時系列ギャラリー、天気・重複回避は将来拡張
+
+- **Decision:** 完了セッション（選択アイテム ＋ 生成画像 ＋ 日時）を一覧する API（`FirestoreStyleSessionRepository` に list を追加）と時系列ギャラリーを提供する。天気シグナルと直近着用の重複回避は設計に残すが Phase 1a の必須範囲外。
+- **Alternatives:** 履歴を持たない（現状）。ユーザーが過去のコーデを確認できないため UX 不足。
+- **Rationale:** セッションは既に Firestore に永続化済み。一覧と履歴 UI の追加で実現でき、将来の重複回避の土台になる。
+- **Trade-off:** 履歴の保持方針が必要（`agentEvents` の 24h TTL とは別に、履歴は結果のみ長期保持する設計）。
+- **Date/Author:** 2026-06-21 / Ran（ME プレデプロイ監査）
+
 ---
 
 ## 14. Out of Scope (Phase 1)
@@ -995,8 +1038,8 @@ async def resolve_user(line_user_id: str) -> str | None:
 | 3 | Flutter Accordion UI — SSE を受信してリアルタイム表示 | エージェントの思考ステップが折りたたみ可能な UI でリアルタイム表示される |
 | 4 | Firebase Auth によるログイン（Google Sign-In のみ） | 未認証ユーザーはアクセス不可 |
 | 5 | クローゼット画像アップロード（Web GUI 経由、R2 保存） | 画像が R2 に保存され Firestore にメタデータが記録される |
-| 6 | コーディネート提案フロー End-to-End（Web GUI） | 画像アップロード → エージェント思考表示 → 候補提示 → 選択 → 画像生成 |
-| 7 | 共有デモクローゼットのシーディング（`scripts/seed_shared_closet/run_seed.py`） | `shared_closet` がシードされ、`SHARED_CLOSET` ソースで検索・コーディネート提案が動作する。**注（2026-06-15）:** M3 re-scope（ADL-010 / feature-matrix M3-2）により「1つの巨大クローゼット 2,000+件」は **現実的規模の3デモクローゼット（各約30着＝計約90着）に置換済み**。本項の "2,000件以上" は旧基準。**完了条件は件数ではなく「`--with-embeddings` で 768 次元ベクトルが投入され、本番 ES でハイブリッド/kNN 検索が動作すること」**（MD-10 で実施） |
+| 6 | コーディネート提案フロー End-to-End（Web GUI） | 画像アップロード → エージェント思考表示 → 候補提示 → 選択 → 画像生成。**注（2026-06-21）:** 「選択」は必須の明示的承認ステップであり、`PROPOSING` 状態で一時停止してユーザーが候補を選ぶまで生成しない（§18.2 / ADL-027）。思考トレース（Accordion）と候補カード（結果UI）は別表示とする（§18.4 / ADL-018）。生成画像は着用者の性別・年代に一致させる（§18.1 / ADL-026） |
+| 7 | 共有デモクローゼットのシーディング（`scripts/seed_shared_closet/run_seed.py`） | `shared_closet` がシードされ、`SHARED_CLOSET` ソースで検索・コーディネート提案が動作する。**注（2026-06-24）:** M3 re-scope（ADL-010 / feature-matrix M3-2）により「1つの巨大クローゼット 2,000+件」は **現実的規模の3デモクローゼット（各70着＝計210着）に置換済み**。本項の "2,000件以上" は旧基準。**完了条件は件数ではなく「`--with-embeddings` で 768 次元ベクトルが投入され、本番 ES でハイブリッド/kNN 検索が動作すること」**（MD-10 で実施） |
 
 ### Phase 1b — LINE チャネル統合（Phase 1a 完了後）
 
@@ -1015,7 +1058,7 @@ async def resolve_user(line_user_id: str) -> str | None:
 
 全ユーザーが即座にアプリを体験できるよう、パブリックドメインのデータセットを使ったデモ用クローゼットを提供する。ユーザーは自分の服をアップロードしなくても、`SHARED_CLOSET` を選択することでコーディネート提案を試すことができる。
 
-1着のクローゼットに100着以上あるのは非現実的なため、**1つの巨大な共有クローゼットではなく、現実的な規模（各約30着）のデモ用クローゼットを複数用意する**。データセットに性別カラムが無いため、`kids` フラグで **Adult / Child** に区分し、**Adult×2 + Child×1 の計3クローゼット**を作成する（`adult-01` / `adult-02` / `child-01`）。各アイテムは `user_id: "__shared__"` を維持しつつ `closetId` / `closetKind` を持ち、M5 のクローゼット選択 UI が `closetId` で絞り込む。M3-3 `SharedClosetSearchAdapter` は全 `__shared__` アイテムを返す現行実装のままで影響を受けない（クローゼット選択は M5 で追加）。
+1つの巨大な共有クローゼットではなく、**現実的な規模（各70着）のデモ用クローゼットを複数用意する**。年代は `kids` フラグで **Adult / Child** に区分し、**Adult×2 + Child×1 の計3クローゼット**を作成する（`adult-01` / `adult-02` / `child-01`）。**性別（`male` / `female` / `common`）はデータセットに無いため、シード時にカテゴリ別ヒューリスティックで `gender` を付与する（§18.1 / ADL-026）。ユーザーは自分のクローゼットのアイテムについてはギャラリーで性別・メタデータをキーワード検索向けに編集できる（共有は読み取り専用、§18.3 / ADL-028）。**各アイテムは `user_id: "__shared__"` を維持しつつ `closetId` / `closetKind` を持ち、M5 のクローゼット選択 UI が `closetId` で絞り込む。M3-3 `SharedClosetSearchAdapter` は全 `__shared__` アイテムを返す現行実装のままで影響を受けない（クローゼット選択は M5 で追加）。
 
 ### 16.2 データソース
 
@@ -1025,8 +1068,8 @@ async def resolve_user(line_user_id: str) -> str | None:
 | **ライセンス** | CC BY-SA 4.0（商用利用可、帰属表示・同一条件配布が必要） |
 | **使用する画像** | `images_original/`（原寸・高画質）を使用。`images_compressed/`（低解像度）は不使用。採用枚数が少数のため圧縮版は不要で、デモ表示は高画質を優先する |
 | **採用カテゴリ** | コーデで見た目の差が出る衣服のみ採用。**下着・インナー系（`Undershirt`, `Body`）と低品質ラベル（`Other` / `Others` / `Not sure` / `Skip` / 空）は除外**。`Hat` / `Shoes` などの小物は採用（採用例: Blazer, Blouse, Dress, Hoodie, Longsleeve, Outwear, Pants, Polo, Shirt, Shorts, Skirt, T-Shirt, Top ＋ Hat / Shoes） |
-| **クローゼット構成** | Adult×2 + Child×1 の計3クローゼット。各クローゼットは**カテゴリ配分（quota）による自動構成**で約30着（トップス8 / アウター4 / ボトムス6 / ワンピ・スカート4 / 靴5 / 帽子3）。同区分のクローゼット同士はアイテム重複なし（決定的サンプリングで冪等） |
-| **採用枚数** | 3クローゼット × 各約30着 ＝ **合計約90着**（ハッカソンデモ規模で十分。1クローゼット100着以上は非現実的）。Adult 在庫4,500+ / Child 在庫350+ で充足 |
+| **クローゼット構成** | Adult×2 + Child×1 の計3クローゼット。既存50着のカテゴリ配分を先に確定し、その後にトップス10 / ボトムス10を追加して各70着とする。最終配分はAdultがトップス22 / アウター7 / ボトムス20 / ワンピ・スカート8 / 靴8 / 帽子5、Childがトップス25 / アウター6 / ボトムス22 / ワンピ・スカート4 / 靴8 / 帽子5。同区分のクローゼット同士はアイテム重複なし（決定的サンプリングで冪等） |
+| **採用枚数** | 3クローゼット × 各70着 ＝ **合計210着**。既存150着を保持し、トップス/ボトムスのみ60着追加 |
 | **品質フィルタ** | データセット同梱の `images.csv`（列 `image` / `label` ほか）のラベルを採用（旧仕様で想定した `image_labels_merged.csv` は実在せず、実体は `images.csv`） |
 
 ### 16.3 帰属表示（Attribution）要件
@@ -1046,13 +1089,13 @@ CC BY-SA 4.0 に基づき、以下を実装する：
 | **処理フロー** | Kaggle API でダウンロード → カテゴリ別サンプリング → R2 アップロード → Gemini で Embedding 生成 → Elasticsearch インデクシング → Firestore への `shared_closet` ドキュメント書き込み |
 | **冪等性** | 再実行しても重複しない（`item_id` を元画像ファイル名のハッシュから生成） |
 | **依存関係** | `pip install -r requirements.txt`、Kaggle API トークン（`~/.kaggle/kaggle.json`）、`GOOGLE_CLOUD_PROJECT` 環境変数 |
-| **クローゼット生成** | `_CLOSETS`（adult-01 / adult-02 / child-01）と `_CLOSET_QUOTA`（カテゴリ配分）で各約30着を自動構成。`kids` フラグで adult/child プールに分割し、同区分は重複なく決定的に抽出。アイテムに `closetId` / `closetKind` を付与し、`shared_closets/{closetId}` にメタデータ（kind / displayName / itemCount）を書き込む |
+| **クローゼット生成** | `_CLOSETS`（adult-01 / adult-02 / child-01）と区分別 `_CLOSET_QUOTAS` で既存50着を先に構成し、全クローゼット確定後に `_CLOSET_ADDITIONS`（tops 10 / bottoms 10）を追加する。`kids` フラグで adult/child プールに分割し、同区分は重複なく決定的に抽出。アイテムに `closetId` / `closetKind` を付与し、`shared_closets/{closetId}` にメタデータ（kind / displayName / itemCount）を書き込む |
 | **カテゴリ除外** | §16.2「採用カテゴリ」のとおり、下着・インナー系（`Undershirt`, `Body`）と低品質ラベル（`Other` 等）をスクリプトの除外リストで弾く |
 | **使用ディレクトリ** | 展開後の `images_original/` を読み込む。`images_compressed/` は使用しない |
 
 ### 16.5 ドメインルール
 
-- `shared_closet` への書き込みはシーディングスクリプトのみ（一般ユーザーは読み取り専用）。
+- `shared_closet` への書き込みはシーディングスクリプトのみ（一般ユーザーは読み取り専用）。共有アイテムの `gender` はシード時のヒューリスティック値で全ユーザー共通・読み取り専用。ユーザーによる性別・メタデータ編集（§18.3 / ADL-028）は**自分のクローゼット**アイテムにのみ適用する。
 - `shared_closet` アイテムは `MAX_CLOSET_IMAGES_PER_USER` の制限対象外。
 - ユーザーが自分のクローゼットを持っていない場合でも `SHARED_CLOSET` は常に選択可能とし、初回ユーザーの体験を保証する。
 - Phase 1a のコーディネート提案フローでは、ソース選択肢として `SHARED_CLOSET` / `CLOSET`（クローゼットデータがある場合のみ）/ `RAKUTEN` の順に提示する。
@@ -1066,3 +1109,46 @@ CC BY-SA 4.0 に基づき、以下を実装する：
 | コーディネート画像生成 | HIGH | Imagen 4 / Gemini 2.0 Flash で服画像を入力した際のコーディネート画像生成が実現可能か PoC |
 | Elasticsearch Compute Engine セットアップ | MEDIUM | Compute Engine e2-medium VM への Elasticsearch インストール・起動・Cloud Run プライベート接続の動作検証（セットアップ時間目安: 20 分） |
 | LINE Reply Token 有効期限 | MEDIUM（Phase 1b） | Cloud Tasks の遅延が 1 分を超えた場合の Push API へのフォールバック設計 |
+| 共有クローゼットの性別付与 | 解決済み（2026-06-21） | データセットに性別が無いため**カテゴリ別ヒューリスティック**でシード付与。ユーザーは自分のクローゼットでギャラリー編集可（§18.1 / ADL-026 / ADL-028） |
+| 実行履歴の天気・重複回避 | LOW（将来拡張） | 天気シグナル取り込みと直近着用との重複回避。Phase 1a 必須範囲外（§18.5 / ADL-029） |
+
+---
+
+## 18. Pre-Deployment Experience & Domain Hardening (ME)
+
+> MD（本番デプロイ）着手前に解消する 6 つのユーザー向け / ドメインギャップ。feature-matrix の **ME-1…ME-7** に対応。**ME-3（子供クローゼット → 大人画像の欠陥）と ME-6（必須の候補選択ステップ欠落）は要件違反であり、本番カットオーバーのゲート条件**。本節は §3〜§16 のベース仕様への差分を定義する（実装は MD 完了後に起票する別 ExecPlan）。
+
+### 18.1 性別・年代ディメンション（ME-2 / ME-3 / ME-4）
+
+- **モデル:** `UserPreference` に `gender`（`male` / `female` / `common`）を追加（§4.2）。年代は対象クローゼットの `closetKind`（adult / child）で表す。
+- **データ:** `clothing_items`（ES, §8.2）と `users/{userId}/closet/{itemId}` / `shared_closet/{itemId}`（Firestore, §8.1）に `gender` を追加。
+- **共有クローゼットの付与:** データセットに性別が無いため、`run_seed.py` がカテゴリ別ヒューリスティック（例: Dress / Skirt / Blouse → `female` 寄り、その他多数 → `common`）で `gender` を付与する（ADL-026）。
+- **個人クローゼットの付与と編集:** アップロード分析時にヒューリスティックで `gender` を自動付与し、ユーザーはクローゼットギャラリーで自分のアイテムの `gender` ほかキーワード検索用メタデータを編集できる（§18.3 / ADL-028）。
+- **伝播:** `SearchCandidateItemsUseCase`（§6.3）/ `search_closet` は `gender` と `closetKind` でフィルタ/バイアスし、`GenerateCoordinateUseCase`（§6.5）/ `style_synthesizer` は両者を画像生成プロンプトに渡す。**`child-01` 選択時は子供のコーディネート画像を生成する。**
+- **受け入れ:** `child-01` を選択して生成した画像が子供であること。male / female / common の選択が検索結果と生成画像に反映されること。
+
+### 18.2 必須の候補選択ステップ（ME-6、要件違反の是正）
+
+- **不変条件:** §4.3「同意なき自動生成禁止」/ §15 Phase 1a #6「候補提示 → 選択 → 画像生成」を満たす。
+- **状態:** 検索完了後、セッションは `PROPOSING` で**一時停止**し、ユーザーが候補を選択・承認するまで `GENERATING` に遷移しない（ADL-027）。現状は `StylingAgent` が `style_synthesizer` を自動呼び出ししており違反。
+- **API:** 候補承認用エンドポイント（例: `POST /sessions/{id}/select`）を追加し、`sessions.selectedItems` を確定する。空のまま生成に進んではならない。
+- **UI:** 検索/抽出された候補（`search_closet` の結果に既に含まれる）を**候補カード**（上位数件 ＋ 最上位の推薦）として表示し、ユーザーが選択する（§18.4 / ADL-018）。
+- **受け入れ:** ユーザーが選択するまで画像生成が開始されないこと。
+
+### 18.3 クローゼットギャラリー＋編集可能メタデータ（ME-1）
+
+- **自分のクローゼット:** 既存グリッド（`closet_screen.dart`）にメタデータ（category / colors / season / tags / gender）を表示し、**ユーザーがキーワード検索向けに編集できる**（編集は Firestore と ES をミラー、ADL-028）。
+- **共有クローゼット:** `adult-01` / `adult-02` / `child-01` の中身を**ギャラリーで閲覧**できるようにする（現状は ID のドロップダウンのみ）。`shared_closet` アイテムを `closetId` で列挙する読み取り専用エンドポイントを追加。共有アイテムは読み取り専用（§16.5）。
+- **受け入れ:** 各クローゼット（共有含む）の中身がメタデータ付きで閲覧でき、自分のアイテムは編集が検索に反映されること。
+
+### 18.4 Agent Trace の整理＋結果UIの分離（ME-5、ADL-018）
+
+- **思考トレース（Accordion）:** 低価値イベント（`transfer_to_agent` や生の args / result ダンプ）を最上位タイルとして出さない。エージェントターン単位でまとめ、要約を表示する。`events.py`（出力内容）と `AgentEventTile`（`coordination_screen.dart`）を調整。
+- **結果UI:** 候補カード・好み入力・最終画像は思考トレースと**別ストリーム / 別表示**として扱う（ADL-018、§18.2 の候補選択と統合）。
+- **受け入れ:** Accordion が読みやすい思考トレースになり、候補・結果は結果UIへ分離されること。
+
+### 18.5 Agent 実行履歴（ME-7、将来拡張）
+
+- **永続化と一覧:** 完了したセッション（選択アイテム ＋ 生成画像 ＋ 日時）を一覧する API（`FirestoreStyleSessionRepository` に list を追加）と**時系列の履歴ギャラリー**を提供する。
+- **将来拡張:** 天気シグナルの取り込みと、直近数日〜数週間に着用した服との**重複回避**（"なるべく" 重複しない提案）。本項の天気・重複回避は **Phase 1a の必須範囲外**（ME の中でも将来拡張、ADL-029）。
+- **受け入れ:** 過去の実行が時系列ギャラリーで再確認できること。
