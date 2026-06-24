@@ -1,16 +1,34 @@
 import asyncio
 import json
 import time
+from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.auth import verify_firebase_token
-from app.dependencies import get_create_session_use_case, get_select_source_use_case, get_styling_repository
-from app.domain.styling import ClothingSource, StyleSessionId, StyleSessionNotFound, UserPreference
-from app.use_cases.styling import AgentRunStartFailed, CreateSessionUseCase, SelectClothingSourceUseCase
+from app.dependencies import (
+    get_create_session_use_case,
+    get_select_candidates_use_case,
+    get_select_source_use_case,
+    get_styling_repository,
+)
+from app.domain.styling import (
+    ClothingSource,
+    StyleSession,
+    StyleSessionId,
+    StyleSessionNotFound,
+    UserPreference,
+)
+from app.ports import StylingRepositoryPort
+from app.use_cases.styling import (
+    AgentRunStartFailed,
+    CreateSessionUseCase,
+    SelectCandidatesUseCase,
+    SelectClothingSourceUseCase,
+)
 
 
 router = APIRouter()
@@ -26,6 +44,7 @@ class UserPreferenceRequest(BaseModel):
     season: str | None = None
     style: str | None = None
     color_preference: str | None = Field(default=None, alias="colorPreference")
+    gender: str | None = None
 
     def to_domain(self) -> UserPreference:
         return UserPreference(
@@ -33,6 +52,7 @@ class UserPreferenceRequest(BaseModel):
             season=self.season,
             style=self.style,
             color_preference=self.color_preference,
+            gender=self.gender,
         )
 
 
@@ -42,8 +62,71 @@ class SelectSourceRequest(BaseModel):
     shared_closet_id: str | None = Field(default=None, alias="sharedClosetId")
 
 
+class SelectCandidatesRequest(BaseModel):
+    selected_item_ids: list[str] = Field(alias="selectedItemIds")
+
+
+class SelectedItemResponse(BaseModel):
+    item_id: str
+    image_url: str
+    category: str | None = None
+    gender: str | None = None
+
+
+class StyleResultResponse(BaseModel):
+    coordinate_image_url: str
+
+
+class SessionHistoryItem(BaseModel):
+    session_id: str
+    status: str
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+    source: str | None = None
+    shared_closet_id: str | None = None
+    selected_items: list[SelectedItemResponse] = Field(default_factory=list)
+    style_result: StyleResultResponse | None = None
+
+
+def _session_to_history_item(session: StyleSession) -> SessionHistoryItem:
+    return SessionHistoryItem(
+        session_id=str(session.id),
+        status=session.state.value,
+        created_at=session.created_at,
+        completed_at=session.completed_at,
+        source=session.clothing_source.value,
+        shared_closet_id=session.shared_closet_id,
+        selected_items=[
+            SelectedItemResponse(
+                item_id=item.get("item_id", ""),
+                image_url=item.get("image_url", ""),
+                category=item.get("category"),
+                gender=item.get("gender"),
+            )
+            for item in session.selected_items
+        ],
+        style_result=(
+            StyleResultResponse(
+                coordinate_image_url=session.final_result.coordinate_image_url
+            )
+            if session.final_result is not None
+            else None
+        ),
+    )
+
+
 def _sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
+
+
+@router.get("", response_model=list[SessionHistoryItem])
+async def list_sessions(
+    limit: int = Query(default=20, ge=1, le=100),
+    user_id: str = Depends(verify_firebase_token),
+    styling_repo: StylingRepositoryPort = Depends(get_styling_repository),
+):
+    sessions = await styling_repo.list_completed(user_id, limit=limit)
+    return [_session_to_history_item(session) for session in sessions]
 
 
 @router.post("")
@@ -53,6 +136,30 @@ async def create_session(
 ):
     """Create a style session (M5-1)."""
     result = await use_case.execute(user_id)
+    return {
+        "session_id": result.session_id,
+        "status": result.status,
+        "source": result.source,
+    }
+
+
+@router.post("/{session_id}/select", status_code=202)
+async def select_candidates(
+    session_id: str,
+    request: SelectCandidatesRequest,
+    user_id: str = Depends(verify_firebase_token),
+    use_case: SelectCandidatesUseCase = Depends(get_select_candidates_use_case),
+):
+    try:
+        result = await use_case.execute(user_id, session_id, request.selected_item_ids)
+    except StyleSessionNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 409 if "Cannot select candidates" in message else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc
+    except AgentRunStartFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {
         "session_id": result.session_id,
         "status": result.status,
@@ -142,6 +249,18 @@ async def stream_session_events(
                     else "session.error"
                 )
                 yield _sse(event_name, {"sessionId": session_id, "status": refreshed.state.value})
+                return
+            if refreshed.state.value == "PROPOSING" and not refreshed.selected_items:
+                async for event_payload in drain_events():
+                    yield event_payload
+                yield _sse(
+                    "session.proposed",
+                    {
+                        "sessionId": session_id,
+                        "status": "PROPOSING",
+                        "candidates": refreshed.proposed_candidates,
+                    },
+                )
                 return
             if time.monotonic() - started_at >= STREAM_MAX_SECONDS:
                 yield _sse("session.error", {"sessionId": session_id, "status": "TIMEOUT"})
