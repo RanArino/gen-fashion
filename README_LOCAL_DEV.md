@@ -5,8 +5,7 @@ This guide walks you through setting up gen-fashion for local development using 
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- Python 3.11+ (for local FastAPI development without Docker)
-- Node 20+ (for local ADK development without Docker)
+- Python 3.11+ (for local FastAPI and ADK development without Docker)
 - Flutter SDK (stable, web enabled) — for the `flutter-web-app/` closet client
   - `flutter config --enable-web`
 - `firebase-tools` and a Java 11+ JRE — for the Firestore Security Rules unit
@@ -165,9 +164,13 @@ python -m uvicorn app.main:app --reload
 
 ```bash
 cd adk-agent-service
-npm install
-npm run build
-npm start
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # set GOOGLE_GENAI_API_KEY (or Vertex AI vars)
+
+adk web          # developer UI: pick the styling_app agent
+# or
+adk api_server --host 0.0.0.0 --port 3000   # what the container runs
 ```
 
 ## Troubleshooting
@@ -241,8 +244,8 @@ See `.env.example` for all available options. Key variables:
 - `ELASTICSEARCH_URL`: Elasticsearch URL
 - `GEMINI_API_KEY` / `GOOGLE_GENAI_API_KEY`: Gemini developer API key for local image analysis
 - `IMAGE_ANALYSIS_MODEL`: Gemini model for clothing image analysis; local dev defaults to `gemini-2.5-flash`
-- `R2_ENDPOINT_URL`: R2 or MinIO S3-compatible endpoint URL used by the API container
-- `R2_PUBLIC_ENDPOINT_URL`: public endpoint embedded in signed URLs for browser/curl uploads
+- `R2_ENDPOINT_URL`: R2 or MinIO S3-compatible endpoint URL used by service containers
+- `R2_PUBLIC_ENDPOINT_URL`: public endpoint embedded in signed URLs for browser/curl uploads; ADK resolves its own signed URLs back to storage keys for container-side image fetches
 - `TASK_QUEUE_MODE`: `local` for local HTTP worker calls, `cloud_tasks` for production queueing
 - `AGENT_MODEL`: LLM model (default: gemini-2.0-flash)
 - `MAX_CLOSET_IMAGES_PER_USER`: Max items per user (default: 20)

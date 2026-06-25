@@ -27,7 +27,7 @@ flowchart LR
   class A done; class B wip; class C stub; class D todo;
 ```
 
-> **🟧 Stub と ⬜ Not started はどちらも「これから実装予定」**である。違いは、M0 で骨組み（ポート IF・空のユースケース・空のエージェント）まで先行配置済みか否か。Phase 1a の残機能（M4/M5）は 🟧 Stub、Phase 1b（M6・LINE）は ⬜ 未着手。M3 は local で実装完了（フル vector seed のみ deployment 待ち）。
+> **🟧 Stub と ⬜ Not started はどちらも「これから実装予定」**である。違いは、M0 で骨組み（ポート IF・空のユースケース・空のエージェント）まで先行配置済みか否か。Phase 1a の残機能（M5）は 🟧 Stub、Phase 1b（M6・LINE）は ⬜ 未着手。M3 は local で実装完了（フル vector seed のみ deployment 待ち）。M4 は Python ADK で実装完了（ローカル ADK Web UI / api_server で稼働）。
 
 ---
 
@@ -39,11 +39,11 @@ flowchart LR
 | **M1** | PoC & インフラ検証（画像生成・ADK イベント・ES） | 1a | 🟩 Done（M1-3 ES の GCE デプロイ部分のみ 🟨 WIP） |
 | **M2** | 認証 & クローゼット管理（Web） | 1a | 🟩 **Done**（E2E 検証済み） |
 | **M3** | 共有デモクローゼット | 1a | 🟩 **Done（local）**（seed script / SharedClosetSearchAdapter / attribution UI 実装済み。3クローゼットの live seed 済み＝90件・30/30/30・冪等性検証済み 2026-06-10。フル vector seed（GCE ES）のみ deployment 待ち） |
-| **M4** | ADK エージェント中核 | 1a | 🟧 **Stub → 着手**（M4 ExecPlan 進行中・Python ADK へ移行 ADL-022。コード未着手のため色は Stub のまま） |
+| **M4** | ADK エージェント中核 | 1a | 🟩 **Done（local）**（2026-06-11: Python ADK 再構築完了（ADL-022・TS 骨組み削除）。orchestrator + 2 sub-agents + 4 tools が `adk api_server`/Web UI でローカル稼働、M3 シード済み `SHARED_CLOSET` に対する委譲 → `search_closet`（attribution 付き）→ `style_synthesizer`（collage fallback）E2E 確認、pytest 17 passed。Nano Banana 生成パスは free-tier quota の都合で fallback のみ実証） |
 | **M5** | コーディネートフロー & Accordion UI | 1a | 🟧 **Stub**（`styling/` use case・`session_routes` 全て 501） |
 | **M6** | LINE チャネル統合 | 1b | ⬜ **Not started**（ファイル無し） |
 
-**現在地:** Phase 1a の前半（基盤＋クローゼット管理）まで動作し、共有デモクローゼットのコード実装（seed script / shared search / attribution）は完了。live seed/reseed とコア体験である**エージェントオーケストレーション（M4/M5）**が次の主要実装対象。
+**現在地:** Phase 1a は M4 まで完了。エージェント中核（orchestrator / sub-agents / tools）はローカル ADK Web UI で動作する。残るは **M5（FastAPI セッション配線 + agentEvents リレー + SSE + Accordion/A2UI 結果 UI）**で、これがコア体験 E2E のクリティカルパス。
 
 ---
 
@@ -66,7 +66,7 @@ flowchart TB
       r_session["/sessions/* ルート (M5: create/source/stream)"]
       r_line["LINE Webhook ルート (M6)"]
     end
-    subgraph adk["adk-agent-service (Python ADK へ移行中・ADL-022) — 未稼働"]
+    subgraph adk["adk-agent-service (Python ADK・ADL-022) — ローカル稼働 (adk web / api_server)"]
       orch["StylingOrchestratorAgent + sub-agents (M4)"]
     end
   end
@@ -114,16 +114,18 @@ flowchart TB
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
 
-  class flutter_auth,r_closet,r_internal,fs,r2,ct,gem_an,fauth,shared_seed done;
-  class es wip;
-  class flutter_acc,r_session,adk,orch,gem_img,r_line stub;
+  class flutter_auth,r_closet,r_internal,fs,r2,ct,gem_an,fauth,shared_seed,adk,orch done;
+  class es,gem_img wip;
+  class flutter_acc,r_session,r_line stub;
   class lineapp,rakuten todo;
 ```
 
 **読み取りポイント:**
 - 🟩 **動く経路**: Flutter（認証＋クローゼット）→ fastapi `/closet` → R2 / Firestore / Cloud Tasks → `/internal` worker → Gemini 分析 + ES インデックス。これが M2 で E2E 検証済みの幹線。
 - 🟨 **共有クローゼット**: seed script / shared search adapter / attribution UI は実装済み。live seed/reseed と GCE ES への full vector seed は未完了。
-- 🟧 **骨組みのみ**: `adk-agent-service` 全体、`/sessions/*`、SSE、画像生成、Accordion UI。
+- 🟩 **エージェント中核（M4）**: `adk-agent-service` は Python ADK で実装済み・ローカル稼働（`adk web` / `adk api_server`、コンテナも healthy）。`search_closet` は ES の実データ（M3 シード含む）を返し、`style_synthesizer` は MinIO/R2 に結果画像を保存する。ADK が自前で発行した署名付き MinIO/R2 URL は内部 storage key として再取得できるため、Compose コンテナ内でも `localhost:9000` URL に依存しない。
+- 🟨 **Nano Banana 画像生成**: `style_synthesizer` の生成呼び出しは実装済みだが、ローカル（free-tier API key）では quota の都合で **collage fallback（ADL-005）のみ実証**。生成パスは課金キー / Vertex AI で確認する。
+- 🟧 **骨組みのみ**: `/sessions/*`、`agentEvents` リレー、SSE、Accordion UI（いずれも M5）。
 - ⬜ **未着手**: LINE / LIFF / 楽天。
 - 🟨 ES はローカル Docker では動作。GCE VM + VPC + Cloud Run プライベート接続はデプロイ期に延期（M1-3）。
 
@@ -199,9 +201,9 @@ flowchart LR
 
 ---
 
-## 3. ADK エージェント構成（M4 — 骨組み／Python ADK へ移行中）
+## 3. ADK エージェント構成（M4 — 🟩 実装済み・ローカル稼働）
 
-req §7.1 のエージェントトポロジ。現状 `adk-agent-service/src/` に TS の骨組みクラスが置かれている（全メソッド `throw Error("Implement in M4-x")`）が、M4 ExecPlan（`docs/plans/20260609-m4-adk-agents-core.md`）でこれを破棄し **Python ADK（`google-adk`）** に置換する（ADL-022）。下図のトポロジ自体は不変で、各エージェント／ツールを Python で実装する。
+req §7.1 のエージェントトポロジ。M4 ExecPlan（`docs/plans/20260609-m4-adk-agents-core.md`）で TS 骨組みを破棄し、**Python ADK（`google-adk` 2.1.0）** の `adk-agent-service/styling_app/` として実装完了（ADL-022、2026-06-11）。`adk web` / `adk api_server` が `styling_app` を `root_agent`（orchestrator）として公開し、各ツールは Tool Registry 経由でサブエージェントに配線される。委譲 → `search_closet`（M3 シード済み `__shared__` データ + CC BY-SA 4.0 attribution）→ `style_synthesizer`（collage fallback）を E2E 確認済み。
 
 ```mermaid
 flowchart TB
@@ -220,8 +222,8 @@ flowchart TB
   styling --> reg
   reg --> t1 & t2 & t3 & t4
 
-  classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
-  class orch,closet,styling,reg,t1,t2,t3,t4 stub;
+  classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20;
+  class orch,closet,styling,reg,t1,t2,t3,t4 done;
 ```
 
 ---
@@ -259,16 +261,16 @@ sequenceDiagram
 
 ---
 
-## 5. フロー図② — コーディネート提案（🟧 M4/M5: これから実装）
+## 5. フロー図② — コーディネート提案（🟩 M4 エージェント部分 実装済み ／ 🟧 M5 配線 これから実装）
 
-req §6.1–6.5 / ADL-011 / ADL-020 / ADL-021。**この図全体が実装予定**（点線＝未実装経路）。
+req §6.1–6.5 / ADL-011 / ADL-020 / ADL-021。**エージェント内部（委譲・search_closet・style_synthesizer）は M4 で実装済み**（ローカル ADK Web UI で動作）。fastapi `/sessions` 配線・`agentEvents` リレー・SSE・Accordion は M5（点線＝未実装経路）。
 
 ```mermaid
 sequenceDiagram
   autonumber
   participant F as Flutter (Accordion/A2UI) 🟧
   participant API as fastapi /sessions 🟧
-  participant ADK as adk-agent-service 🟧
+  participant ADK as adk-agent-service 🟩
   participant FS as Firestore 🟩
   participant ES as Elasticsearch 🟨
   participant IMG as Nano Banana 🟧
@@ -300,7 +302,7 @@ sequenceDiagram
   participant U as LINE User ⬜
   participant API as fastapi LINE Webhook ⬜
   participant Q as Cloud Tasks ⬜
-  participant ADK as adk-agent-service 🟧
+  participant ADK as adk-agent-service 🟩
   participant LINE as LINE Reply/Push ⬜
 
   U-->>API: 画像メッセージ送信
@@ -331,10 +333,10 @@ flowchart LR
   classDef wip fill:#fff3cd,stroke:#f9a825,color:#795548;
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
-  class M0,M2,M3 done; class M1 wip; class M4,M5 stub; class M6 todo;
+  class M0,M2,M3,M4 done; class M1 wip; class M5 stub; class M6 todo;
 ```
 
-**次の一手:** M3（共有クローゼット seeding）は local 完了済み（フル vector seed のみ deployment 待ち）。残るクリティカルパスは **M4（ADK エージェント）→ M5（コア体験の E2E）**。
+**次の一手:** M4（ADK エージェント中核）は local 完了済み（Nano Banana 生成パスのみ課金キー / Vertex での確認待ち）。残るクリティカルパスは **M5（コア体験の E2E: /sessions 配線 + agentEvents リレー + SSE + Accordion/A2UI）**。
 
 ---
 
