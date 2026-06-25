@@ -9,6 +9,7 @@ class ClothingAnalysisResult(BaseModel):
     tags: List[str] = Field(default_factory=list)
     season: Optional[str] = None
     style: Optional[str] = None
+    gender: Optional[str] = None
 
 
 class GeminiAnalysisPort(ABC):
