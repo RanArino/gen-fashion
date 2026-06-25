@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.auth import verify_firebase_token
 from app.dependencies import (
     get_delete_closet_item_use_case,
+    get_download_url_use_case,
     get_register_clothing_item_use_case,
     get_upload_url_use_case,
 )
@@ -75,6 +76,36 @@ def test_upload_url_maps_cap_to_429():
     response = client.get(f"/closet/upload-url?item_id={uuid4()}")
 
     assert response.status_code == 429
+    reset_overrides()
+
+
+class DownloadUseCase:
+    async def execute(self, user_id, item_id):
+        return f"http://storage/{user_id}/closet/{item_id}.jpg?sig=abc"
+
+
+def test_download_url_requires_bearer_token():
+    reset_overrides()
+    client = TestClient(app)
+
+    response = client.get(f"/closet/items/{uuid4()}/download-url")
+
+    assert response.status_code == 401
+
+
+def test_download_url_returns_signed_url_with_auth_override():
+    reset_overrides()
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_download_url_use_case] = lambda: DownloadUseCase()
+    client = TestClient(app)
+    item_id = str(uuid4())
+
+    response = client.get(f"/closet/items/{item_id}/download-url")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "download_url": f"http://storage/user-123/closet/{item_id}.jpg?sig=abc",
+    }
     reset_overrides()
 
 
