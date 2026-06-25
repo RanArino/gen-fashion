@@ -15,7 +15,10 @@ from app.use_cases.styling import AgentRunStartFailed, CreateSessionUseCase, Sel
 
 router = APIRouter()
 STREAM_POLL_SECONDS = 1
-STREAM_MAX_SECONDS = 120
+# Must exceed the ADK run timeout (adk-agent-service adk_run_timeout_seconds, 90s)
+# plus the deterministic-fallback time, so the client sees COMPLETED instead of a
+# premature stream TIMEOUT when the primary agent path runs long.
+STREAM_MAX_SECONDS = 150
 
 
 class UserPreferenceRequest(BaseModel):

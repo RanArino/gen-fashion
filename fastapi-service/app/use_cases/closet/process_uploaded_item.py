@@ -15,6 +15,22 @@ from app.ports import (
 logger = logging.getLogger(__name__)
 
 
+def _embedding_text(analysis) -> str:
+    """Build the text embedded for vector search from the analysis result.
+
+    The search query is a natural-language description, so the indexed vector
+    must come from text in the same embedding space (not the raw image).
+    """
+    parts = [
+        analysis.category or "",
+        " ".join(analysis.colors or []),
+        " ".join(analysis.tags or []),
+        analysis.season or "",
+        analysis.style or "",
+    ]
+    return ". ".join(part for part in parts if part)
+
+
 class ProcessUploadedClothingItemUseCase:
     """Use case for processing uploaded item (analysis + embedding) (M2-5)."""
 
@@ -46,7 +62,7 @@ class ProcessUploadedClothingItemUseCase:
         embedding_vector = None
         embedding = None
         try:
-            embedding_vector = await self.gemini.embed(image_bytes)
+            embedding_vector = await self.gemini.embed_text(_embedding_text(analysis))
             embedding = ImageEmbedding(
                 vector=embedding_vector,
                 model=get_settings().embedding_model,

@@ -14,7 +14,7 @@ class FirestoreClosetRepository(ClosetRepositoryPort):
     def __init__(self) -> None:
         settings = get_settings()
         self._client = firestore.AsyncClient(
-            project=settings.project_id,
+            project=settings.firestore_project_id,
             database=settings.firestore_database_id,
         )
 

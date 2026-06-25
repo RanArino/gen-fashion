@@ -87,6 +87,9 @@ services:
       - R2_BUCKET_NAME=gen-fashion-images
       - TASK_QUEUE_MODE=local
       - ADK_INTERNAL_BASE_URL=http://adk-agent-service:3000
+      # The /internal/tasks/process-upload worker route lives in fastapi-service
+      # itself, so the local task queue must post back here (not to the ADK svc).
+      - FASTAPI_INTERNAL_BASE_URL=http://fastapi-service:8000
       - INTERNAL_TASK_SECRET=${INTERNAL_TASK_SECRET:-local-dev-internal-secret}
       - AGENT_MODEL=gemini-2.0-flash
     depends_on:
@@ -111,6 +114,9 @@ services:
       - "3000:3000"
     environment:
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-gen-fashion-local}
+      # Firestore data uses the Firebase project (matches fastapi + frontend),
+      # which differs from the Vertex AI project (GOOGLE_CLOUD_PROJECT) locally.
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-gen-fashion-local}
       - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
       - GOOGLE_APPLICATION_CREDENTIALS=/credentials/vertex-ai-sa.json
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}

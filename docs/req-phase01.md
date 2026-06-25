@@ -945,6 +945,31 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **影響:** `architecture-overview.md` §8 の乖離メモ #1（TS/Python 未確定）は本 ADL で解消。M4 ExecPlan（`docs/plans/20260609-m4-adk-agents-core.md`）がこの決定に基づき実装する。
 - **Date/Author:** 2026-06-09 / Ran（M4 ExecPlan 起票時に提案）
 
+### ADL-023: Cloud Run → Compute Engine Elasticsearch のプライベート接続は Serverless VPC Access Connector
+
+- **Decision:** Cloud Run（`fastapi-service` / `adk-agent-service`）から Compute Engine の Elasticsearch VM への接続は **Serverless VPC Access connector**（`--vpc-egress=private-ranges-only`）経由で行う。ES VM は外部 IP を持たず（`--no-address`）、ファイアウォールで `tcp:9200` を connector の `/28` レンジからのみ許可する。
+- **Alternatives:** ADL-013 が挙げた VPC Peering / Cloud NAT。Cloud NAT は egress のみで Cloud Run → 私設 VM の ingress 経路にはならず、Peering は単一 VPC では過剰。
+- **Rationale:** 単一 VPC・単一 VM 構成では connector が最小構成で、ES を公開せずに Cloud Run から到達できる。ハッカソン終了後は connector ごと削除して廃止できる（ADL-013 の使い捨て方針と整合）。
+- **Trade-off:** connector のわずかな月額コストと `/28` レンジ枯渇に注意。ES URL には VM 名でなく内部 IP を使う。
+- **影響:** feature-matrix `M1-3` の "Cloud Run プライベート接続" を本決定で具体化。MD デプロイ ExecPlan（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-3/MD-4）が実装する。
+- **Date/Author:** 2026-06-15 / Ran（デプロイ ExecPlan 起票時に提案）
+
+### ADL-024: 本番の `/internal/*` ワーカールート保護は OIDC + 共有シークレット（`fastapi-service` の ingress=internal は不採用）
+
+- **Decision:** 本番では service-to-service 呼び出しを **Cloud Run OIDC ID トークン**で認証する。`adk-agent-service` は `--no-allow-unauthenticated` で公開せず、`fastapi-sa` のみ `roles/run.invoker` を持つ。`fastapi-service` はブラウザ向けに公開のまま（ingress=all）とし、`/internal/tasks/process-upload` ワーカールートは **OIDC ベアラ検証 + 既存の `X-Internal-Secret`（Secret Manager 値）**の二重で保護する。共有シークレットは defense-in-depth として残す。
+- **Rationale:** feature-matrix `M2-5` の旧注記「`fastapi-service` ingress=internal」は成立しない — 同サービスが SPA 向けの公開 `/closet/*`・`/sessions/*` も配信するため。公開を保ったままワーカールートのみを暗号学的に保護する手段が OIDC 検証。
+- **Implementation note:** `process-upload` の Cloud Task は **`fastapi-service` 自身の URL** を OIDC audience とする（ワーカールートが `fastapi-service` 実装にあるため。`adk-agent-service` ではない — `cloud_tasks_adapter.py` の旧 `# TODO(deploy)` が audience を ADK と書いていた点を訂正）。`ADK_INTERNAL_BASE_URL`（run-session 用）と `FASTAPI_INTERNAL_BASE_URL`（process-upload 用）を分離する。
+- **Trade-off:** ワーカールートを別の internal-only Cloud Run サービスへ分離すればより厳格だが、MVP では公開サービス内 OIDC 検証で十分。
+- **Date/Author:** 2026-06-15 / Ran（デプロイ ExecPlan 起票時に提案）
+
+### ADL-025: Flutter Web のホスティングは Firebase Hosting
+
+- **Decision:** Phase 1a の Flutter Web クライアントは **Firebase Hosting**（`<project>.web.app`）でホストする。Firebase 設定値はビルド時に `--dart-define` で注入し（`flutter-web-app/lib/config.dart` が全値を `--dart-define` から読む）、`USE_EMULATORS=false` でビルドする。
+- **Alternatives:** Vercel（req §8.4 の CORS 例に `your-flutter-web-domain.vercel.app` が登場するのみで、ホスティング先は未確定だった）。
+- **Rationale:** アプリは既に Firebase Auth + Firestore に依存しており、Firebase Hosting は安定した HTTPS オリジンと自動的な authorized domain を提供する。生成物 `firebase_options.dart` は意図的に git-ignore 済みで、本番値は `--dart-define` で渡す方針と整合。
+- **Trade-off:** R2 CORS と Firebase Auth authorized domains にホスティングオリジンを追加する運用が必要。
+- **Date/Author:** 2026-06-15 / Ran（デプロイ ExecPlan 起票時に提案）
+
 ---
 
 ## 14. Out of Scope (Phase 1)
@@ -971,7 +996,7 @@ async def resolve_user(line_user_id: str) -> str | None:
 | 4 | Firebase Auth によるログイン（Google Sign-In のみ） | 未認証ユーザーはアクセス不可 |
 | 5 | クローゼット画像アップロード（Web GUI 経由、R2 保存） | 画像が R2 に保存され Firestore にメタデータが記録される |
 | 6 | コーディネート提案フロー End-to-End（Web GUI） | 画像アップロード → エージェント思考表示 → 候補提示 → 選択 → 画像生成 |
-| 7 | 共有デモクローゼットのシーディング（`scripts/seed_shared_closet/run_seed.py`） | `shared_closet` に 2,000 件以上のアイテムが投入され、`SHARED_CLOSET` ソースで検索・コーディネート提案が動作する |
+| 7 | 共有デモクローゼットのシーディング（`scripts/seed_shared_closet/run_seed.py`） | `shared_closet` がシードされ、`SHARED_CLOSET` ソースで検索・コーディネート提案が動作する。**注（2026-06-15）:** M3 re-scope（ADL-010 / feature-matrix M3-2）により「1つの巨大クローゼット 2,000+件」は **現実的規模の3デモクローゼット（各約30着＝計約90着）に置換済み**。本項の "2,000件以上" は旧基準。**完了条件は件数ではなく「`--with-embeddings` で 768 次元ベクトルが投入され、本番 ES でハイブリッド/kNN 検索が動作すること」**（MD-10 で実施） |
 
 ### Phase 1b — LINE チャネル統合（Phase 1a 完了後）
 

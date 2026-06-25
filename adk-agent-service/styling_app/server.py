@@ -18,7 +18,6 @@ from .tools.style_synthesizer import style_synthesizer
 
 
 APP_NAME = "styling_app"
-ADK_RUN_TIMEOUT_SECONDS = 45
 
 app = FastAPI(title="gen-fashion ADK Agent Service", version="0.1.0")
 
@@ -126,7 +125,7 @@ async def execute_run_session(
 
         final_style_result = None
         try:
-            async with asyncio.timeout(ADK_RUN_TIMEOUT_SECONDS):
+            async with asyncio.timeout(get_settings().adk_run_timeout_seconds):
                 async for event in runner.run_async(
                     user_id=request.user_id,
                     session_id=request.session_id,

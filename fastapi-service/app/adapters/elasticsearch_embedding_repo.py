@@ -28,6 +28,12 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
                     "item_id": {"type": "keyword"},
                     "user_id": {"type": "keyword"},
                     "is_shared": {"type": "boolean"},
+                    # Shared-closet (M3 seed) fields: kept as keyword so exact
+                    # term filters work (e.g. closetId="adult-01"). Without this
+                    # they fall to dynamic text mapping and term filters miss.
+                    "closetId": {"type": "keyword"},
+                    "closetKind": {"type": "keyword"},
+                    "imageUrl": {"type": "keyword"},
                     "tags": {"type": "keyword"},
                     "category": {"type": "keyword"},
                     "colors": {"type": "keyword"},

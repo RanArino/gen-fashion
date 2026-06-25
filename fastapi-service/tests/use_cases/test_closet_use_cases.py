@@ -116,7 +116,7 @@ class FakeGemini:
             style="minimal",
         )
 
-    async def embed(self, image_bytes):
+    async def embed_text(self, text):
         if self.fail_embedding:
             raise RuntimeError("embedding failed")
         return [0.1, 0.2, 0.3]

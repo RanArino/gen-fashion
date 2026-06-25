@@ -49,12 +49,14 @@ class GeminiAnalysisAdapter(GeminiAnalysisPort):
             return ClothingAnalysisResult.model_validate(response.parsed)
         return ClothingAnalysisResult.model_validate_json(response.text or "{}")
 
-    async def embed(self, image_bytes: bytes) -> list[float]:
-        image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
+    async def embed_text(self, text: str) -> list[float]:
         response = self._client.models.embed_content(
             model=self._settings.embedding_model,
-            contents=[image_part],
-            config={"output_dimensionality": self._settings.embedding_dimensions},
+            contents=[text],
+            config={
+                "task_type": "RETRIEVAL_DOCUMENT",
+                "output_dimensionality": self._settings.embedding_dimensions,
+            },
         )
         embedding = response.embeddings[0].values
         return list(embedding)
