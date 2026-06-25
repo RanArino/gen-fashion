@@ -32,11 +32,16 @@ class Settings(BaseSettings):
     elasticsearch_api_key: str | None = None
     clothing_items_index: str = "clothing_items"
 
+    firestore_database_id: str = "(default)"
+    firestore_emulator_host: str | None = None
+
     r2_endpoint_url: str | None = None
     r2_public_endpoint_url: str | None = None
     r2_access_key_id: str | None = None
     r2_secret_access_key: str | None = None
     r2_bucket_name: str = "gen-fashion-images"
+
+    internal_task_secret: str | None = None
 
     @property
     def project_id(self) -> str:

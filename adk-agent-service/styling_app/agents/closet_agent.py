@@ -7,8 +7,9 @@ from ..tools.registry import registry
 
 _INSTRUCTION = (
     "Search the user's closet or the shared closet for outfit items. "
-    "The user message provides user_id and source (CLOSET or SHARED_CLOSET); "
-    "always pass them to search_closet. Given clothing analysis results or an "
+    "The user message provides user_id, source (CLOSET or SHARED_CLOSET), and "
+    "possibly sharedClosetId; always pass them to search_closet. Given clothing "
+    "analysis results or an "
     "outfit request, generate a short description of each complementary item "
     "to find, then call search_closet once per garment type. Descriptions "
     "must use concrete garment nouns and attributes (e.g. 'casual shirt', "

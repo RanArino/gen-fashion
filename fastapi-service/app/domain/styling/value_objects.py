@@ -1,12 +1,13 @@
 from uuid import UUID
 from enum import Enum
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Any, Optional, List
 from app.domain.shared.base_models import ValueObject
 
 
 class ClothingSource(str, Enum):
     """Source of clothing candidates."""
+    UNSET = "UNSET"
     CLOSET = "CLOSET"
     SHARED_CLOSET = "SHARED_CLOSET"
     RAKUTEN = "RAKUTEN"
@@ -37,6 +38,10 @@ class CandidateItem(ValueObject):
     source: ClothingSource
     image_url: str
     tags: List[str]
+    name: Optional[str] = None
+    price: Optional[float] = None
+    category: Optional[str] = None
+    external_url: Optional[str] = None
     attribution: Optional[str] = None
 
 
@@ -51,5 +56,6 @@ class CoordinateProposal(ValueObject):
 class StyleResult(ValueObject):
     """Final styling result with generated image."""
     coordinate_image_url: str
-    proposal: CoordinateProposal
-    model_used: str
+    proposal: Optional[CoordinateProposal] = None
+    model_used: Optional[str] = None
+    raw_payload: Optional[dict[str, Any]] = None

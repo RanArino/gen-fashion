@@ -69,6 +69,21 @@ def test_search_closet_shared_attribution(monkeypatch):
     ]
 
 
+def test_search_closet_filters_selected_shared_closet(monkeypatch):
+    hits = [{"item_id": "abc", "category": "pants", "tags": ["denim"]}]
+    captured = _patch_search(monkeypatch, hits)
+
+    search_closet(
+        "blue denim pants",
+        "SHARED_CLOSET",
+        "user-1",
+        shared_closet_id="adult-01",
+    )
+
+    assert captured["user_id"] == "__shared__"
+    assert captured["closet_id"] == "adult-01"
+
+
 def test_search_closet_personal_closet(monkeypatch):
     hits = [{"item_id": "i1", "category": "shirt", "tags": []}]
     captured = _patch_search(monkeypatch, hits)
@@ -79,6 +94,15 @@ def test_search_closet_personal_closet(monkeypatch):
     assert captured["category"] == "shirt"
     assert results[0]["attribution"] is None
     assert results[0]["image_url"] == "http://signed/user-1/closet/i1.jpg"
+
+
+def test_search_closet_normalizes_bottom_category(monkeypatch):
+    hits = [{"item_id": "i1", "category": "Pants", "tags": ["pants"]}]
+    captured = _patch_search(monkeypatch, hits)
+
+    search_closet("blue pants", "SHARED_CLOSET", "user-1", category="bottom")
+
+    assert captured["category"] == ["Pants", "Shorts", "Skirt"]
 
 
 def test_search_closet_embedding_failure_is_fail_soft(monkeypatch):

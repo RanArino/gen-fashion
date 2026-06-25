@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 from app.domain.styling import StyleSession, StyleSessionId
 
 
@@ -20,6 +20,13 @@ class StylingRepositoryPort(ABC):
     async def update(self, session: StyleSession) -> None:
         """Update a styling session (state transitions, results)."""
         raise NotImplementedError("Implement in M5-2: Firestore adapter")
+
+    @abstractmethod
+    async def list_events(
+        self, user_id: str, session_id: StyleSessionId, after_seq: int = 0
+    ) -> list[dict[str, Any]]:
+        """List normalized agent events for a session in seq order."""
+        raise NotImplementedError("Implement in M5-9: Firestore event stream")
 
     @abstractmethod
     async def delete(self, user_id: str, session_id: StyleSessionId) -> None:

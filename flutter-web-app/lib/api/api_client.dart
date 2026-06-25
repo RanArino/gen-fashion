@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import 'streaming_http_client.dart'
+    if (dart.library.html) 'streaming_http_client_web.dart';
 
 class ClosetFullException implements Exception {
   const ClosetFullException();
@@ -28,7 +30,7 @@ class ApiClient {
     http.Client? httpClient,
     String? baseUrl,
     Future<String?> Function()? tokenProvider,
-  })  : _http = httpClient ?? http.Client(),
+  })  : _http = httpClient ?? createStreamingClient(),
         _baseUrl = baseUrl ?? AppConfig.apiBaseUrl,
         _tokenProvider = tokenProvider ?? _firebaseIdToken;
 
@@ -50,6 +52,13 @@ class ApiClient {
       throw StateError('No ID token available');
     }
     return {'Authorization': 'Bearer $token'};
+  }
+
+  Future<Map<String, String>> _jsonHeaders() async {
+    return {
+      ...await _authHeaders(),
+      'Content-Type': 'application/json',
+    };
   }
 
   /// `GET /closet/upload-url?item_id=...`.
@@ -97,4 +106,99 @@ class ApiClient {
     if (res.statusCode == 204 || res.statusCode == 404) return;
     throw ApiException(res.statusCode, res.body);
   }
+
+  Future<StyleSessionResponse> createSession() async {
+    final uri = Uri.parse('$_baseUrl/sessions');
+    final res = await _http.post(uri, headers: await _authHeaders());
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw ApiException(res.statusCode, res.body);
+    }
+    return StyleSessionResponse.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<StyleSessionResponse> selectSource({
+    required String sessionId,
+    required String source,
+    required Map<String, String> userPreference,
+    String? sharedClosetId,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/sessions/$sessionId/source');
+    final res = await _http.post(
+      uri,
+      headers: await _jsonHeaders(),
+      body: jsonEncode({
+        'source': source,
+        'sharedClosetId': sharedClosetId,
+        'userPreference': userPreference,
+      }),
+    );
+    if (res.statusCode != 200 && res.statusCode != 202) {
+      throw ApiException(res.statusCode, res.body);
+    }
+    return StyleSessionResponse.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Stream<SseMessage> streamSessionEvents(String sessionId) async* {
+    final uri = Uri.parse('$_baseUrl/sessions/$sessionId/stream');
+    final request = http.Request('GET', uri);
+    request.headers.addAll(await _authHeaders());
+    final response = await _http.send(request);
+    if (response.statusCode != 200) {
+      final body = await response.stream.bytesToString();
+      throw ApiException(response.statusCode, body);
+    }
+
+    String? eventName;
+    final dataLines = <String>[];
+    await for (final line in response.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())) {
+      if (line.isEmpty) {
+        if (eventName != null && dataLines.isNotEmpty) {
+          final name = eventName;
+          yield SseMessage(
+            event: name,
+            data: jsonDecode(dataLines.join('\n')) as Map<String, dynamic>,
+          );
+        }
+        eventName = null;
+        dataLines.clear();
+      } else if (line.startsWith('event:')) {
+        eventName = line.substring(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.add(line.substring(5).trim());
+      }
+    }
+  }
+}
+
+class StyleSessionResponse {
+  const StyleSessionResponse({
+    required this.sessionId,
+    required this.status,
+    required this.source,
+  });
+
+  final String sessionId;
+  final String status;
+  final String source;
+
+  factory StyleSessionResponse.fromJson(Map<String, dynamic> json) {
+    return StyleSessionResponse(
+      sessionId: json['session_id'] as String,
+      status: json['status'] as String,
+      source: json['source'] as String,
+    );
+  }
+}
+
+class SseMessage {
+  const SseMessage({required this.event, required this.data});
+
+  final String event;
+  final Map<String, dynamic> data;
 }

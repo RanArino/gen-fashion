@@ -1,7 +1,7 @@
 from uuid import UUID
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from app.domain.shared.base_models import AggregateRoot
 from app.domain.styling.state_machine import StyleSessionState
 from app.domain.styling.value_objects import (
@@ -24,12 +24,16 @@ class StyleSession(AggregateRoot):
     user_id: str
     state: StyleSessionState
     uploaded_image_url: Optional[str] = None
-    clothing_source: Optional[ClothingSource] = None
+    clothing_source: ClothingSource = ClothingSource.UNSET
+    shared_closet_id: Optional[str] = None
+    analysis_result: Optional[dict[str, Any]] = None
+    selected_items: list[dict[str, Any]] = None
     user_preference: Optional[UserPreference] = None
     proposed_coordinate: Optional[CoordinateProposal] = None
     final_result: Optional[StyleResult] = None
     created_at: datetime = None
     updated_at: datetime = None
+    expires_at: Optional[datetime] = None
 
     def __post_init__(self):
         """Validate invariants."""
@@ -39,13 +43,23 @@ class StyleSession(AggregateRoot):
             object.__setattr__(self, 'created_at', datetime.utcnow())
         if self.updated_at is None:
             object.__setattr__(self, 'updated_at', datetime.utcnow())
+        if self.selected_items is None:
+            object.__setattr__(self, 'selected_items', [])
 
-    def select_source(self, source: ClothingSource) -> None:
-        """Transition to SOURCE_SELECTING and select a clothing source."""
-        if not self.state.can_transition_to(StyleSessionState.SOURCE_SELECTING):
-            raise ValueError(f"Cannot transition from {self.state} to SOURCE_SELECTING")
+    def select_source(
+        self,
+        source: ClothingSource,
+        preference: Optional[UserPreference] = None,
+        shared_closet_id: Optional[str] = None,
+    ) -> None:
+        """Store source selection and advance the Web flow to SEARCHING."""
+        if self.state != StyleSessionState.SOURCE_SELECTING:
+            raise ValueError(f"Cannot select source from {self.state}")
         object.__setattr__(self, 'clothing_source', source)
-        self._transition_to(StyleSessionState.SOURCE_SELECTING)
+        object.__setattr__(self, 'shared_closet_id', shared_closet_id)
+        if preference is not None:
+            object.__setattr__(self, 'user_preference', preference)
+        self._transition_to(StyleSessionState.SEARCHING)
 
     def upload_image(self, image_url: str) -> None:
         """Store the uploaded image for analysis."""
@@ -70,6 +84,16 @@ class StyleSession(AggregateRoot):
         object.__setattr__(self, 'user_preference', preference)
         self._mark_updated()
 
+    def set_analysis_result(self, result: dict[str, Any]) -> None:
+        """Store image analysis output."""
+        object.__setattr__(self, 'analysis_result', result)
+        self._mark_updated()
+
+    def set_selected_items(self, items: list[dict[str, Any]]) -> None:
+        """Store selected candidate items."""
+        object.__setattr__(self, 'selected_items', items)
+        self._mark_updated()
+
     def propose(self, proposal: CoordinateProposal) -> None:
         """Transition to PROPOSING with a coordinate proposal."""
         if not self.state.can_transition_to(StyleSessionState.PROPOSING):
@@ -88,6 +112,12 @@ class StyleSession(AggregateRoot):
         """Transition to TIMEOUT state."""
         object.__setattr__(self, 'state', StyleSessionState.TIMEOUT)
         self._mark_updated()
+
+    def mark_error(self) -> None:
+        """Transition to ERROR state."""
+        if not self.state.can_transition_to(StyleSessionState.ERROR):
+            raise ValueError(f"Cannot transition from {self.state} to ERROR")
+        self._transition_to(StyleSessionState.ERROR)
 
     def _transition_to(self, next_state: StyleSessionState) -> None:
         """Safely transition to next state."""

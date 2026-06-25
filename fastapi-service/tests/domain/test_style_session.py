@@ -1,6 +1,12 @@
 import pytest
 from uuid import uuid4
-from app.domain.styling import StyleSession, StyleSessionId, StyleSessionState
+from app.domain.styling import (
+    ClothingSource,
+    StyleSession,
+    StyleSessionId,
+    StyleSessionState,
+    UserPreference,
+)
 
 
 def test_create_style_session():
@@ -35,6 +41,44 @@ def test_style_session_state_transitions():
     assert session.state.can_transition_to(StyleSessionState.ANALYZING)
     session._transition_to(StyleSessionState.ANALYZING)
     assert session.state == StyleSessionState.ANALYZING
+
+
+def test_web_session_can_select_source_and_enter_searching():
+    session = StyleSession(
+        id=StyleSessionId(uuid4()),
+        user_id="user-123",
+        state=StyleSessionState.SOURCE_SELECTING,
+    )
+
+    session.select_source(
+        ClothingSource.SHARED_CLOSET,
+        UserPreference(occasion="weekend", style="clean"),
+        "adult-01",
+    )
+
+    assert session.state == StyleSessionState.SEARCHING
+    assert session.clothing_source == ClothingSource.SHARED_CLOSET
+    assert session.shared_closet_id == "adult-01"
+    assert session.user_preference.style == "clean"
+
+
+def test_m5_statuses_support_error_generating_and_terminal_states():
+    session = StyleSession(
+        id=StyleSessionId(uuid4()),
+        user_id="user-123",
+        state=StyleSessionState.PROPOSING,
+    )
+
+    assert session.state.can_transition_to(StyleSessionState.GENERATING)
+    session._transition_to(StyleSessionState.GENERATING)
+    assert session.state.can_transition_to(StyleSessionState.COMPLETED)
+
+    error_session = StyleSession(
+        id=StyleSessionId(uuid4()),
+        user_id="user-123",
+        state=StyleSessionState.SEARCHING,
+    )
+    assert error_session.state.can_transition_to(StyleSessionState.ERROR)
 
 
 def test_style_session_invalid_transition():

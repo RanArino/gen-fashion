@@ -1,6 +1,7 @@
 from app.adapters import (
     FirestoreClosetRepository,
     FirestoreStylingRepository,
+    HttpAgentRunAdapter,
     ElasticsearchEmbeddingRepository,
     R2ImageStorage,
     CloudTasksAdapter,
@@ -19,6 +20,7 @@ from app.ports import (
     TaskQueuePort,
     ImageGenerationPort,
     GeminiAnalysisPort,
+    AgentRunPort,
 )
 from app.use_cases.closet import (
     DeleteClosetItemUseCase,
@@ -27,6 +29,7 @@ from app.use_cases.closet import (
     ProcessUploadedClothingItemUseCase,
     RegisterClothingItemUseCase,
 )
+from app.use_cases.styling import CreateSessionUseCase, SelectClothingSourceUseCase
 
 
 def get_closet_repository() -> ClosetRepositoryPort:
@@ -54,6 +57,10 @@ def get_task_queue() -> TaskQueuePort:
     if settings.task_queue_mode == "cloud_tasks" and settings.google_cloud_project:
         return CloudTasksAdapter()
     return LocalHttpTaskQueueAdapter()
+
+
+def get_agent_run() -> AgentRunPort:
+    return HttpAgentRunAdapter()
 
 
 def get_image_generation() -> ImageGenerationPort:
@@ -90,4 +97,16 @@ def get_process_uploaded_item_use_case() -> ProcessUploadedClothingItemUseCase:
         get_embedding_search(),
         get_image_storage(),
         get_gemini_analysis(),
+    )
+
+
+def get_create_session_use_case() -> CreateSessionUseCase:
+    return CreateSessionUseCase(get_styling_repository())
+
+
+def get_select_source_use_case() -> SelectClothingSourceUseCase:
+    return SelectClothingSourceUseCase(
+        get_styling_repository(),
+        get_closet_repository(),
+        get_agent_run(),
     )

@@ -12,6 +12,14 @@ class AppConfig {
     'USE_EMULATORS',
     defaultValue: true,
   );
+  static const bool e2eAutoSignIn = bool.fromEnvironment(
+    'E2E_AUTO_SIGN_IN',
+    defaultValue: false,
+  );
+  static const bool e2eAutoRun = bool.fromEnvironment(
+    'E2E_AUTO_RUN',
+    defaultValue: false,
+  );
   static const String firebaseProjectId = String.fromEnvironment(
     'FIREBASE_PROJECT_ID',
     defaultValue: 'gen-fashion-local',
