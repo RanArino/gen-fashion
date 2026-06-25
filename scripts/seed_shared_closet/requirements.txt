@@ -1,0 +1,7 @@
+kaggle==1.6.17
+boto3==1.35.99
+elasticsearch==8.11.0
+google-genai==1.16.0
+google-cloud-firestore==2.20.1
+Pillow==11.2.1
+python-dotenv==1.0.1

@@ -27,7 +27,7 @@ flowchart LR
   class A done; class B wip; class C stub; class D todo;
 ```
 
-> **🟧 Stub と ⬜ Not started はどちらも「これから実装予定」**である。違いは、M0 で骨組み（ポート IF・空のユースケース・空のエージェント）まで先行配置済みか否か。Phase 1a の機能（M3/M4/M5）は 🟧 Stub、Phase 1b（M6・LINE）は ⬜ 未着手。
+> **🟧 Stub と ⬜ Not started はどちらも「これから実装予定」**である。違いは、M0 で骨組み（ポート IF・空のユースケース・空のエージェント）まで先行配置済みか否か。Phase 1a の残機能（M4/M5）は 🟧 Stub、Phase 1b（M6・LINE）は ⬜ 未着手。M3 は local で実装完了（フル vector seed のみ deployment 待ち）。
 
 ---
 
@@ -38,12 +38,12 @@ flowchart LR
 | **M0** | プロジェクト基盤・ローカル開発環境 | 1a | 🟩 **Done** |
 | **M1** | PoC & インフラ検証（画像生成・ADK イベント・ES） | 1a | 🟩 Done（M1-3 ES の GCE デプロイ部分のみ 🟨 WIP） |
 | **M2** | 認証 & クローゼット管理（Web） | 1a | 🟩 **Done**（E2E 検証済み） |
-| **M3** | 共有デモクローゼット | 1a | 🟧 **Stub**（`SharedClosetSearchAdapter` 骨組みのみ、seeding 未） |
-| **M4** | ADK エージェント中核 | 1a | 🟧 **Stub**（`adk-agent-service/src/` 全て骨組み） |
+| **M3** | 共有デモクローゼット | 1a | 🟩 **Done（local）**（seed script / SharedClosetSearchAdapter / attribution UI 実装済み。3クローゼットの live seed 済み＝90件・30/30/30・冪等性検証済み 2026-06-10。フル vector seed（GCE ES）のみ deployment 待ち） |
+| **M4** | ADK エージェント中核 | 1a | 🟧 **Stub → 着手**（M4 ExecPlan 進行中・Python ADK へ移行 ADL-022。コード未着手のため色は Stub のまま） |
 | **M5** | コーディネートフロー & Accordion UI | 1a | 🟧 **Stub**（`styling/` use case・`session_routes` 全て 501） |
 | **M6** | LINE チャネル統合 | 1b | ⬜ **Not started**（ファイル無し） |
 
-**現在地:** Phase 1a の前半（基盤＋クローゼット管理）まで動作。コア体験である**エージェントオーケストレーション（M4/M5）は骨組みのみ**で、ここからが主要実装対象。
+**現在地:** Phase 1a の前半（基盤＋クローゼット管理）まで動作し、共有デモクローゼットのコード実装（seed script / shared search / attribution）は完了。live seed/reseed とコア体験である**エージェントオーケストレーション（M4/M5）**が次の主要実装対象。
 
 ---
 
@@ -66,7 +66,7 @@ flowchart TB
       r_session["/sessions/* ルート (M5: create/source/stream)"]
       r_line["LINE Webhook ルート (M6)"]
     end
-    subgraph adk["adk-agent-service (現状: TS 骨組み) — 未稼働"]
+    subgraph adk["adk-agent-service (Python ADK へ移行中・ADL-022) — 未稼働"]
       orch["StylingOrchestratorAgent + sub-agents (M4)"]
     end
   end
@@ -80,6 +80,7 @@ flowchart TB
     gem_img["Nano Banana (コーデ画像生成)"]
     rakuten["楽天 Ichiba API (M6)"]
     fauth["Firebase Authentication"]
+    shared_seed["scripts/seed_shared_closet/run_seed.py<br/>(live seed 済み: 3クローゼット90件; フル vector seed は deployment 待ち)"]
   end
 
   flutter_auth -->|"Firebase ID Token"| fastapi
@@ -96,6 +97,9 @@ flowchart TB
   r_internal --> gem_an
   r_internal --> es
   r_internal --> fs
+  shared_seed -.-> r2
+  shared_seed -.-> es
+  shared_seed -.-> fs
 
   r_session -.-> adk
   r_line -.-> ct
@@ -110,7 +114,7 @@ flowchart TB
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
 
-  class flutter_auth,r_closet,r_internal,fs,r2,ct,gem_an,fauth done;
+  class flutter_auth,r_closet,r_internal,fs,r2,ct,gem_an,fauth,shared_seed done;
   class es wip;
   class flutter_acc,r_session,adk,orch,gem_img,r_line stub;
   class lineapp,rakuten todo;
@@ -118,6 +122,7 @@ flowchart TB
 
 **読み取りポイント:**
 - 🟩 **動く経路**: Flutter（認証＋クローゼット）→ fastapi `/closet` → R2 / Firestore / Cloud Tasks → `/internal` worker → Gemini 分析 + ES インデックス。これが M2 で E2E 検証済みの幹線。
+- 🟨 **共有クローゼット**: seed script / shared search adapter / attribution UI は実装済み。live seed/reseed と GCE ES への full vector seed は未完了。
 - 🟧 **骨組みのみ**: `adk-agent-service` 全体、`/sessions/*`、SSE、画像生成、Accordion UI。
 - ⬜ **未着手**: LINE / LIFF / 楽天。
 - 🟨 ES はローカル Docker では動作。GCE VM + VPC + Cloud Run プライベート接続はデプロイ期に延期（M1-3）。
@@ -185,18 +190,18 @@ flowchart LR
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
 
   class h_closet,h_internal,u1,u2,u3,u4,u5,p1,p3,p4,p5 done;
-  class p2 wip;
-  class h_session,s1,s2,s3,s4,s5,p6,p7,p8 stub;
+  class p2,p7 wip;
+  class h_session,s1,s2,s3,s4,s5,p6,p8 stub;
   class h_line,p9 todo;
 ```
 
-> `ClothingSearchPort`(p7) は `SharedClosetSearchAdapter` の骨組みのみ存在（🟧）。`ClosetSearchAdapter` / `RakutenItemAdapter` は未作成（⬜）。`EmbeddingSearchPort`(p2) はキーワード検索まで実装済みだがベクトル/ハイブリッド検索の本番運用は ES デプロイ（M1-3）待ちで 🟨。
+> `ClothingSearchPort`(p7) は `SharedClosetSearchAdapter` が実装済み（署名付き共有画像 URL + attribution 返却）だが、`ClosetSearchAdapter` / `RakutenItemAdapter` は未作成（⬜）のため全体としては 🟨。`EmbeddingSearchPort`(p2) はキーワード検索まで実装済みだがベクトル/ハイブリッド検索の本番運用は ES デプロイ（M1-3）待ちで 🟨。
 
 ---
 
-## 3. ADK エージェント構成（M4 — 全て骨組み）
+## 3. ADK エージェント構成（M4 — 骨組み／Python ADK へ移行中）
 
-req §7.1 のエージェントトポロジ。`adk-agent-service/src/` に TS の骨組みクラスが置かれているが、全メソッドが `throw Error("Implement in M4-x")`。
+req §7.1 のエージェントトポロジ。現状 `adk-agent-service/src/` に TS の骨組みクラスが置かれている（全メソッド `throw Error("Implement in M4-x")`）が、M4 ExecPlan（`docs/plans/20260609-m4-adk-agents-core.md`）でこれを破棄し **Python ADK（`google-adk`）** に置換する（ADL-022）。下図のトポロジ自体は不変で、各エージェント／ツールを Python で実装する。
 
 ```mermaid
 flowchart TB
@@ -326,19 +331,19 @@ flowchart LR
   classDef wip fill:#fff3cd,stroke:#f9a825,color:#795548;
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
-  class M0,M2 done; class M1 wip; class M3,M4,M5 stub; class M6 todo;
+  class M0,M2,M3 done; class M1 wip; class M4,M5 stub; class M6 todo;
 ```
 
-**次の一手:** M3（共有クローゼット seeding）と M4（ADK エージェント）が M5（コア体験の E2E）の前提。クリティカルパスは **M4 → M5**。
+**次の一手:** M3（共有クローゼット seeding）は local 完了済み（フル vector seed のみ deployment 待ち）。残るクリティカルパスは **M4（ADK エージェント）→ M5（コア体験の E2E）**。
 
 ---
 
 ## 8. 実装と要件の乖離メモ（可視化中に検出）
 
-図と実コードを突き合わせる過程で、req と実装の不一致を 2 点検出した。実装着手前に解消方針の確認が望ましい。
+図と実コードを突き合わせる過程で、req と実装の不一致を 2 点検出した。#1 は M4 ExecPlan 起票時に解消済み。#2 は引き続き申し送り。
 
-1. **`adk-agent-service` の言語スタック**: 現状の骨組みは **TypeScript/Node**（`src/*.ts`）。一方 req §2/§6/§7 と M1-4 の ADK イベント PoC（`runner.run_async()`）は **Python ADK** 前提。M4 着手時に「Python に統一」か「TS ADK を採用」かの確定が必要。
+1. ~~**`adk-agent-service` の言語スタック**~~ — **解消済み（2026-06-09, ADL-022）**: **Python ADK に統一**する決定を `req-phase01.md` ADL-022 に記録。現状の TS 骨組み（`src/*.ts`）は M4 ExecPlan（`docs/plans/20260609-m4-adk-agents-core.md`）で破棄・置換する。根拠は req §2/§6/§7、M1-4 の Python `runner.run_async()` PoC、ADL-021 の共有 `FirestoreStyleSessionRepository`、および既存 Python アダプタの再利用。
 
-2. **`process-upload` worker の配置**: req §6.9 / §9.1 は当該 worker を `adk-agent-service` 配置と記述。実装は **`fastapi-service` の `/internal/tasks/process-upload`**（feature-matrix M2-5 も fastapi-service と明記）。動作はするが req のコンテナ責務記述と不一致のため、req 側の追記で整合させると良い。
+2. **`process-upload` worker の配置**: req §6.9 / §9.1 は当該 worker を `adk-agent-service` 配置と記述。実装は **`fastapi-service` の `/internal/tasks/process-upload`**（feature-matrix M2-5 も fastapi-service と明記）。動作はするが req のコンテナ責務記述と不一致のため、req 側の追記で整合させると良い。**未解消**。
 
-> いずれも feature-matrix の status とは矛盾しない（M4/M5 は ❌ のまま）。本メモはドキュメント整合のための申し送り。
+> #2 は feature-matrix の status とは矛盾しない。本メモはドキュメント整合のための申し送り。

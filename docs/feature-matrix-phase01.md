@@ -1,6 +1,6 @@
 # Phase 1 Feature Matrix — gen-fashion
 
-> **Last updated:** 2026-06-07 — M2 frontend ExecPlan complete. M2-1/M2-11/M2-12 → ✅: rules unit test 7/7, Flutter analyze/test 6/6, backend pytest 34 passed, and the full sign-in → upload → PROCESSING → READY → delete browser E2E observed against `make dev`.
+> **Last updated:** 2026-06-10 — M3-2 multi-closet **live seed run & verified** against local infra (ES+MinIO+Firestore emulator): `created=90`, ES per-`closetId` 30/30/30 (adult-01/adult-02/child-01), MinIO 90 objects, Firestore `shared_closet/*` + 3 `shared_closets/*` metadata docs, no underwear/junk, idempotent re-run `created=0`; adapter pytest 8 passed + `flutter analyze` clean. **M3-2 → ✅ (local subset)**; full 2 000+ vector seed on GCE ES still deployment-deferred (M1-3). All M3 rows now ✅. Prior: 2026-06-09 — M3 code implementation complete. M3-1/M3-3/M3-4 → ✅; M3-2 → 🟡 (partial). `SharedClosetSearchAdapter` unit-tested, `flutter analyze` clean. M4 ([20260609-m4-adk-agents-core.md](plans/20260609-m4-adk-agents-core.md)): M4-1…M4-9 → 🟡, `adk-agent-service` rebuilt in Python ADK (ADL-022). Prior: 2026-06-09 — M3 + M4 ExecPlans created. M3 & M4 are unblocked siblings feeding M5; recommended order **M3 → M4**. Prior: 2026-06-07 — M2 frontend ExecPlan complete (M2-1/M2-11/M2-12 → ✅: rules 7/7, Flutter analyze/test 6/6, backend pytest 34 passed, full sign-in → upload → PROCESSING → READY → delete browser E2E against `make dev`).
 > **Source of truth:** [req-phase01.md](req-phase01.md) — this matrix tracks **implementation status** of the requirements defined there. Every feature row links back to the relevant section / Use Case of `req-phase01.md`.
 > **Scope:** Phase 1 MVP (Hackathon). Phase 1a (Web GUI) is implemented first; Phase 1b (LINE) follows.
 
@@ -116,12 +116,14 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 
 **Scope:** Provide a pre-seeded, read-only shared closet so first-time users can try coordination without uploading. Reference: `req-phase01.md` §16, ADL-010.
 
+> **ExecPlan (2026-06-09):** [20260609-m3-shared-demo-closet.md](plans/20260609-m3-shared-demo-closet.md) covers all four M3 requirements. Built against **local infra now** (keyword-first, runnable subset); per the **M1-3** re-scope the full 2,000+ vector seed on the GCE-hosted Elasticsearch is a **deployment-phase re-run** of the same script (`--with-embeddings`, `MAX_ITEMS_PER_CATEGORY=150`). M3-1/M3-3/M3-4 → ✅; **M3-2 → ✅ (local subset; live seed run & verified 2026-06-10 — 90 items, 30/30/30 per closet, idempotent)** — full-scale vector seed on GCE ES still deployment-deferred. M3 and M4 are **unblocked siblings** feeding M5 (no dependency between them); recommended working order **M3 → M4** since M3 is smaller/lower-risk and enriches the M4 demo with the `SHARED_CLOSET` source. **2026-06-09 re-scope:** M3-2 now seeds **3 demo closets** (Adult×2 + Child×1, ~30 each) from the high-res `images_original/` using `images.csv` labels — `req-phase01.md` §16.1/§16.2/§16.4 and §8.1/§8.2 updated (closetId/closetKind + `shared_closets` metadata); closet-selection UI is an M5 add-on (M3-3 adapter unchanged).
+
 | ID | Feature | Status | Description | Req ref |
 |---|---|---|---|---|
-| M3-1 | `run_seed.py` seeding script | ❌ Not yet implemented | `scripts/seed_shared_closet/run_seed.py` — Kaggle download → sample → R2 upload → embed → ES index → Firestore write. Idempotent. | §16.4, §15 Phase 1a #7 |
-| M3-2 | `shared_closet` data populated | ❌ Not yet implemented | 2,000+ items seeded across Firestore + ES (`user_id: "__shared__"`) + R2. | §16, ADL-010, §15 Phase 1a #7 |
-| M3-3 | `SharedClosetSearchAdapter` | ❌ Not yet implemented | `ClothingSearchPort` impl filtering ES by `user_id: "__shared__"`. | §5.2, §6.3, ADL-010 |
-| M3-4 | Attribution display (CC BY-SA 4.0) | ❌ Not yet implemented | Web GUI footer/modal attribution; `CandidateItem.attribution` set for shared items. | §16.3 |
+| M3-1 | `run_seed.py` seeding script | ✅ Done | `scripts/seed_shared_closet/run_seed.py` — Kaggle download → sample → R2 upload → embed → ES index → Firestore write. Idempotent (`item_id = uuid5(filename)`); `--purge`, `--source-dir`, `--with-embeddings` flags; self-contained per §16.4. | §16.4, §15 Phase 1a #7 |
+| M3-2 | `shared_closet` data populated | ✅ Implemented (local subset) | **Re-scoped (2026-06-09):** seeds **3 realistic demo closets** (Adult×2 + Child×1, 30 items each = 90) instead of one large closet; segmented by the dataset `kids` flag (no gender column), auto-composed by category quota. Items keep `user_id:"__shared__"` + new `closetId`/`closetKind`; `shared_closets/{closetId}` metadata added. **Live seed run & verified 2026-06-10** against local infra: `created=90`, ES per-`closetId` 30/30/30, MinIO 90 objects under `__shared__/closet/`, Firestore `shared_closet/*` + 3 `shared_closets/*` metadata docs; no underwear/junk; idempotent re-run `created=0`. Closet-selection UI deferred to M5. **Full vector seed (`--with-embeddings`) on GCE ES still deployment-deferred (M1-3).** | §16, §8.1/§8.2, ADL-010 |
+| M3-3 | `SharedClosetSearchAdapter` | ✅ Done | `ClothingSearchPort` impl filtering ES by `user_id: "__shared__"`; keyword-first search requires a keyword match for non-empty queries; returns signed shared image URLs; sets `attribution = "Clothing Dataset (CC BY-SA 4.0)"`. Own ES client (M2-9 repo untouched). | §5.2, §6.3, ADL-010 |
+| M3-4 | Attribution display (CC BY-SA 4.0) | ✅ Done | `CandidateItem.attribution` set in adapter; `flutter-web-app/lib/shared/attribution.dart` — `AttributionFooter` widget + `showSharedClosetAboutDialog` wired into closet screen. `flutter analyze` clean. Per-candidate-card display is M5 handoff. | §16.3 |
 
 **Exit criteria:** Seeding script runs idempotently; `SHARED_CLOSET` source returns candidate items with attribution.
 
@@ -131,17 +133,19 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 
 **Scope:** Implement the agent topology and tools; runnable locally on ADK Web UI. Reference: `req-phase01.md` §6.1–6.5, §7.
 
+> **ExecPlan (2026-06-09):** [20260609-m4-adk-agents-core.md](plans/20260609-m4-adk-agents-core.md) covers the **whole M4 milestone** — the nine requirements M4-1…M4-9 — and is the critical path to M5. All nine rows → 🟡 **In progress** (plan in flight). The plan's load-bearing decision: **`adk-agent-service` is rebuilt in Python ADK**, replacing the current TypeScript skeleton (recorded as **ADL-022** in `req-phase01.md`; forced by req §2, the Python M1-4 PoC `runner.run_async()`, ADL-021's shared `FirestoreStyleSessionRepository`, and reuse of the existing Python Gemini/ES/image-gen adapters). M4 stops at "runs on the ADK Web UI and each tool is callable end-to-end"; the FastAPI session routes, the Firestore `agentEvents` relay (ADL-011/ADL-021), SSE, and the Flutter Accordion/A2UI result UI are **M5**. A2UI agent-side output (ADL-018) is deferred to M5's result UI.
+
 | ID | Feature | Status | Description | Req ref |
 |---|---|---|---|---|
-| M4-1 | `StylingOrchestratorAgent` | ❌ Not yet implemented | Root agent delegating to sub-agents (ADK sub-agent delegation). | §7.1 |
-| M4-2 | `ClosetAgent` | ❌ Not yet implemented | Closet search & management sub-agent. | §7.1 |
-| M4-3 | `StylingAgent` | ❌ Not yet implemented | Coordination generation & proposal sub-agent. | §7.1 |
-| M4-4 | Tool Registry pattern | ❌ Not yet implemented | Each tool an independent module registered via a registry. | §7.2 |
-| M4-5 | `analyze_clothing_image` tool | ❌ Not yet implemented | Gemini 2.0 Flash structured-output image analysis. Backs `AnalyzeClothingImageUseCase`. | §6.1, §7.2 |
-| M4-6 | `search_closet` tool | ❌ Not yet implemented | Cross-modal hybrid search over ES (closet + shared closet). | §6.3, §7.2, §8.3 |
-| M4-7 | `style_synthesizer` tool | ❌ Not yet implemented | Final coordinate image generation via model chosen in M1-2; collage fallback. | §6.5, §7.2 |
-| M4-8 | `ask_preference` tool | ❌ Not yet implemented | Collects `UserPreference`. (LINE interactive variant deferred to M6; Web uses text input.) | §6.4, §7.2 |
-| M4-9 | `AGENT_MODEL` override | ❌ Not yet implemented | All agents default to `gemini-2.0-flash`, overridable via `AGENT_MODEL` env var. | §7.1, §12.2 |
+| M4-1 | `StylingOrchestratorAgent` | 🟡 In progress | Root agent delegating to sub-agents (ADK sub-agent delegation). Built in Python ADK as the `styling_app` `root_agent` (ADL-022). | §7.1 |
+| M4-2 | `ClosetAgent` | 🟡 In progress | Closet search & management sub-agent. Tools `[analyze_clothing_image, search_closet]`. | §7.1 |
+| M4-3 | `StylingAgent` | 🟡 In progress | Coordination generation & proposal sub-agent. Tools `[ask_preference, style_synthesizer]`. | §7.1 |
+| M4-4 | Tool Registry pattern | 🟡 In progress | Each tool an independent module registered via a registry (`tools/registry.py`). | §7.2 |
+| M4-5 | `analyze_clothing_image` tool | 🟡 In progress | Gemini structured-output image analysis; reuses the M2-5 response schema. Backs `AnalyzeClothingImageUseCase`. | §6.1, §7.2 |
+| M4-6 | `search_closet` tool | 🟡 In progress | Cross-modal hybrid search over ES (closet + shared closet). Keyword-first + additive fail-soft kNN (M1-3). | §6.3, §7.2, §8.3 |
+| M4-7 | `style_synthesizer` tool | 🟡 In progress | Final coordinate image generation via Nano Banana (`gemini-2.5-flash-image`, M1-2); collage fallback (ADL-005). | §6.5, §7.2 |
+| M4-8 | `ask_preference` tool | 🟡 In progress | Normalizes/echoes the pre-session-form `UserPreference` (Web, §6.4). LINE interactive variant deferred to M6. | §6.4, §7.2 |
+| M4-9 | `AGENT_MODEL` override | 🟡 In progress | All agents default to `gemini-2.0-flash`, overridable via `AGENT_MODEL` env var. | §7.1, §12.2 |
 
 **Exit criteria:** Orchestrator + sub-agents run on local ADK Web UI; each tool callable end-to-end (§15 Phase 1a #1).
 
