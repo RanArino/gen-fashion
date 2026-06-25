@@ -1,6 +1,6 @@
 # Phase 1 Feature Matrix — gen-fashion
 
-> **Last updated:** 2026-05-17
+> **Last updated:** 2026-06-04
 > **Source of truth:** [req-phase01.md](req-phase01.md) — this matrix tracks **implementation status** of the requirements defined there. Every feature row links back to the relevant section / Use Case of `req-phase01.md`.
 > **Scope:** Phase 1 MVP (Hackathon). Phase 1a (Web GUI) is implemented first; Phase 1b (LINE) follows.
 
@@ -72,12 +72,12 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 
 | ID | Feature | Status | Description | Req ref |
 |---|---|---|---|---|
-| M1-1 | Image generation PoC script | ❌ Not yet implemented | `poc/image_generation/run_poc.py` — runs Imagen 4 + Nano Banana 2 on same input, saves both results. Self-contained (`pip install -r requirements.txt`). | §6.5, ADL-005 |
-| M1-2 | Image gen model decision | ❌ Not yet implemented | Decide Imagen 4 vs Nano Banana 2 (quality/cost/speed); document outcome. Fallback = collage. | §6.5, ADL-005, §17 |
-| M1-3 | Elasticsearch on Compute Engine PoC | ❌ Not yet implemented | Install/start ES on `e2-medium` VM; verify Cloud Run private connectivity; confirm JP analyzer not needed. | §9.2, ADL-013, §17 |
-| M1-4 | ADK Event Stream granularity PoC | ❌ Not yet implemented | Inspect event granularity/format from `runner.run_async()` to confirm ADL-011 relay design. | ADL-011, §17 |
+| M1-1 | Image generation PoC script | ✅ Implemented | `poc/image_generation/run_poc.py` — feeds garment photos to Nano Banana (Gemini image model) for virtual try-on; collage fallback. Self-contained (`pip install -r requirements.txt`). | §6.5, ADL-005 |
+| M1-2 | Image gen model decision | ✅ Implemented | **Decision: Nano Banana (`gemini-2.5-flash-image`); Imagen dropped** (subject-customization can't do multi-garment try-on). `gemini-3-pro-image-preview` is the quality-upgrade option. See ExecPlan Decision Log. | §6.5, ADL-005, §17 |
+| M1-3 | Elasticsearch on Compute Engine PoC | 🟡 In progress | **Re-scoped 2026-06-04 (ExecPlan Decision Log).** M1 scope is local-only: confirm the JP-analyzer requirement against the Docker ES (`localhost:9200`) and record the deferral decision. GCE VM + VPC connector + Cloud Run connectivity + vector hybrid + shared-closet seeding are **deferred to the deployment phase** (~1–2 wk before submission). M2 proceeds against local ES behind `EmbeddingSearchPort` (keyword/Firestore adapter first). ADL-013 unchanged; only sequencing. | §9.2, ADL-013, §17 |
+| M1-4 | ADK Event Stream granularity PoC | ✅ Implemented | `runner.run_async()` yields 3 `Event` objects per tool-call turn (ToolCall/ToolResult/FinalAnswer); batched (no streaming); `model_dump()` requires normalization before Firestore storage (`thought_signature`: bytes→base64; `long_running_tool_ids`: set→array). See ExecPlan Artifacts. | ADL-011, §17 |
 
-**Exit criteria:** Image gen approach chosen, ES reachable privately from Cloud Run, ADK event format documented.
+**Exit criteria:** Image gen approach chosen; JP-analyzer requirement resolved against the local Docker ES and the ES deployment deferral decision recorded (GCE/VPC private-connectivity check moved to the deployment phase); ADK event format documented.
 
 ---
 
@@ -95,7 +95,7 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 | M2-6 | `DeleteClosetItemUseCase` | ❌ Not yet implemented | `DELETE /closet/items/{item_id}` — deletes across Firestore + ES + R2. | §6.10, ADL-015 |
 | M2-7 | `R2ImageStorageAdapter` | ❌ Not yet implemented | Cloudflare R2 signed URL issue + image fetch/delete; bucket CORS configured. | §5.2, §8.4, ADL-014 |
 | M2-8 | `FirestoreClosetRepository` | ❌ Not yet implemented | `users/{userId}/closet` metadata CRUD. | §5.2, §8.1 |
-| M2-9 | `ElasticsearchEmbeddingRepository` | ❌ Not yet implemented | `clothing_items` index create/upsert/delete; hybrid search support. | §5.2, §8.2 |
+| M2-9 | `ElasticsearchEmbeddingRepository` | ❌ Not yet implemented | `clothing_items` index create/upsert/delete; hybrid search support. **Sequencing (2026-06-04):** build against the local Docker ES behind `EmbeddingSearchPort`, keyword/Firestore-backed first; vector hybrid + GCE host swapped in at the deployment phase. | §5.2, §8.2 |
 | M2-10 | Cloud Tasks adapter (`TaskQueuePort`) | ❌ Not yet implemented | `CloudTasksAdapter` — enqueue jobs to `CLOUD_TASKS_QUEUE_EMBED`. | §5.2, §6.8 |
 | M2-11 | Flutter closet management UI | ❌ Not yet implemented | Upload (direct R2 PUT), list via Firestore realtime listener, delete. | §11, ADL-015 |
 | M2-12 | Firebase Security Rules (closet) | ❌ Not yet implemented | Rules allowing per-user direct read of `users/{uid}/closet`. | ADL-015 |
