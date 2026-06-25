@@ -12,8 +12,17 @@ ANALYSIS_RESPONSE_SCHEMA = {
         "tags": {"type": "ARRAY", "items": {"type": "STRING"}},
         "season": {"type": "STRING"},
         "style": {"type": "STRING"},
+        "gender": {
+            "type": "STRING",
+            "enum": ["male", "female", "common"],
+            "description": (
+                "Intended wearer gender inferred from the garment design: "
+                "'male' for clearly masculine cuts/styles, 'female' for "
+                "clearly feminine cuts/styles, 'common' when unisex or ambiguous."
+            ),
+        },
     },
-    "required": ["category", "colors", "tags", "season", "style"],
+    "required": ["category", "colors", "tags", "season", "style", "gender"],
 }
 
 
