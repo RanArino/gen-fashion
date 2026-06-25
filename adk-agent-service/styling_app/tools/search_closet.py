@@ -33,6 +33,7 @@ def search_closet(
     shared_closet_id: str | None = None,
     category: str | None = None,
     colors: list[str] | None = None,
+    gender: str | None = None,
     limit: int = 10,
 ) -> list[dict]:
     """Search the user's closet or the shared closet for matching items.
@@ -46,6 +47,7 @@ def search_closet(
         shared_closet_id: Optional demo closet filter (e.g. "adult-01").
         category: Optional exact category filter (e.g. "pants").
         colors: Optional color filter.
+        gender: Optional wearer gender preference; matching/common items are boosted.
         limit: Maximum number of items to return.
 
     Returns:
@@ -74,6 +76,7 @@ def search_closet(
         category=_normalize_category(category),
         colors=colors,
         closet_id=shared_closet_id if source == "SHARED_CLOSET" else None,
+        gender=gender,
         limit=limit,
     )
 
@@ -92,6 +95,9 @@ def search_closet(
                 "image_url": image_url,
                 "category": hit.get("category"),
                 "tags": hit.get("tags", []),
+                "colors": hit.get("colors", []),
+                "season": hit.get("season"),
+                "gender": hit.get("gender", "common"),
                 "attribution": SHARED_ATTRIBUTION if source == "SHARED_CLOSET" else None,
             }
         )

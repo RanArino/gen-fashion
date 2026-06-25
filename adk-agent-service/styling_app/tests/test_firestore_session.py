@@ -1,5 +1,6 @@
 import pytest
 
+from styling_app.adapters import firestore_session
 from styling_app.adapters.firestore_session import FirestoreSessionRepository
 
 
@@ -56,12 +57,15 @@ async def test_update_status_never_regresses():
 
 
 @pytest.mark.asyncio
-async def test_status_locked_after_completion():
+async def test_status_locked_after_completion(monkeypatch):
     client = _FakeClient()
     repo = FirestoreSessionRepository(client=client)
+    server_timestamp = object()
+    monkeypatch.setattr(firestore_session, "_server_timestamp", lambda: server_timestamp)
 
     await repo.update_status("s1", "SEARCHING")
     await repo.write_style_result("s1", {"coordinateImageUrl": "http://x"})
     await repo.update_status("s1", "GENERATING")  # post-completion -> ignored
 
     assert _statuses(client) == ["SEARCHING", "COMPLETED"]
+    assert client.writes[1]["completedAt"] is server_timestamp

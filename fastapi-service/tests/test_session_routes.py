@@ -1,10 +1,23 @@
+from datetime import datetime
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from app.auth import verify_firebase_token
-from app.dependencies import get_create_session_use_case, get_select_source_use_case, get_styling_repository
-from app.domain.styling import StyleSessionNotFound
+from app.dependencies import (
+    get_create_session_use_case,
+    get_select_candidates_use_case,
+    get_select_source_use_case,
+    get_styling_repository,
+)
+from app.domain.styling import (
+    ClothingSource,
+    StyleResult,
+    StyleSession,
+    StyleSessionId,
+    StyleSessionNotFound,
+    StyleSessionState,
+)
 from app.main import app
 
 
@@ -40,6 +53,16 @@ class FailingSelectUseCase:
         from app.use_cases.styling import AgentRunStartFailed
 
         raise AgentRunStartFailed("Failed to start styling run")
+
+
+class SelectCandidatesRouteUseCase:
+    async def execute(self, user_id, session_id, selected_item_ids):
+        assert selected_item_ids == ["item-1"]
+        return type(
+            "Result",
+            (),
+            {"session_id": session_id, "status": "PROPOSING", "source": "SHARED_CLOSET"},
+        )()
 
 
 class StreamRepo:
@@ -82,6 +105,45 @@ class StreamSession:
     clothing_source = type("Source", (), {"value": "SHARED_CLOSET"})()
 
 
+class ProposedSession:
+    state = type("State", (), {"value": "PROPOSING"})()
+    clothing_source = type("Source", (), {"value": "SHARED_CLOSET"})()
+    selected_items = []
+    proposed_candidates = [{"item_id": "item-1"}]
+
+
+class HistoryRepo:
+    def __init__(self, sessions):
+        self.sessions = sessions
+        self.request = None
+
+    async def list_completed(self, user_id, limit=20):
+        self.request = (user_id, limit)
+        return self.sessions
+
+
+def _completed_session(image_url: str) -> StyleSession:
+    completed_at = datetime(2026, 6, 24, 10, 32)
+    return StyleSession(
+        id=StyleSessionId(uuid4()),
+        user_id="user-123",
+        state=StyleSessionState.COMPLETED,
+        clothing_source=ClothingSource.SHARED_CLOSET,
+        shared_closet_id="adult-01",
+        selected_items=[
+            {
+                "item_id": "item-1",
+                "image_url": "https://example.test/item.jpg",
+                "category": "top",
+                "gender": "common",
+            }
+        ],
+        final_result=StyleResult(coordinate_image_url=image_url),
+        created_at=datetime(2026, 6, 24, 10, 30),
+        completed_at=completed_at,
+    )
+
+
 def test_create_session_requires_auth():
     reset_overrides()
     client = TestClient(app)
@@ -105,6 +167,41 @@ def test_create_session_returns_source_selecting():
         "status": "SOURCE_SELECTING",
         "source": "UNSET",
     }
+    reset_overrides()
+
+
+def test_list_sessions_returns_200_with_completed_sessions():
+    reset_overrides()
+    repo = HistoryRepo(
+        [
+            _completed_session("https://example.test/first.jpg"),
+            _completed_session("https://example.test/second.jpg"),
+        ]
+    )
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_styling_repository] = lambda: repo
+
+    response = TestClient(app).get("/sessions?limit=2")
+
+    assert response.status_code == 200
+    assert repo.request == ("user-123", 2)
+    assert [item["style_result"]["coordinate_image_url"] for item in response.json()] == [
+        "https://example.test/first.jpg",
+        "https://example.test/second.jpg",
+    ]
+    assert response.json()[0]["selected_items"][0]["item_id"] == "item-1"
+    reset_overrides()
+
+
+def test_list_sessions_empty_when_no_completed():
+    reset_overrides()
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_styling_repository] = lambda: HistoryRepo([])
+
+    response = TestClient(app).get("/sessions")
+
+    assert response.status_code == 200
+    assert response.json() == []
     reset_overrides()
 
 
@@ -174,6 +271,23 @@ def test_select_source_maps_agent_trigger_failure():
     reset_overrides()
 
 
+def test_select_candidates_accepts_explicit_selection():
+    reset_overrides()
+    session_id = str(uuid4())
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_select_candidates_use_case] = (
+        lambda: SelectCandidatesRouteUseCase()
+    )
+    response = TestClient(app).post(
+        f"/sessions/{session_id}/select",
+        json={"selectedItemIds": ["item-1"]},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "PROPOSING"
+    reset_overrides()
+
+
 def test_stream_requires_ownership_and_returns_sse_backfill():
     reset_overrides()
     session_id = str(uuid4())
@@ -207,4 +321,18 @@ def test_stream_drains_events_after_terminal_status_race():
     assert "style_synthesizer" in response.text
     assert "coordinateImageUrl" in response.text
     assert response.text.index("style_synthesizer") < response.text.index("session.completed")
+    reset_overrides()
+
+
+def test_stream_emits_proposed_candidates_and_closes():
+    reset_overrides()
+    session_id = str(uuid4())
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_styling_repository] = lambda: StreamRepo(ProposedSession())
+
+    response = TestClient(app).get(f"/sessions/{session_id}/stream")
+
+    assert response.status_code == 200
+    assert "event: session.proposed" in response.text
+    assert '"item_id": "item-1"' in response.text
     reset_overrides()

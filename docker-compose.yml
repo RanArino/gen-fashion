@@ -17,11 +17,25 @@ services:
 
   firestore-emulator:
     image: google/cloud-sdk:latest
-    command: /bin/bash -c "apt-get update && apt-get install -y openjdk-21-jre && gcloud beta emulators firestore start --host-port=0.0.0.0:8080"
+    command: >-
+      /bin/bash -c '
+        apt-get update && apt-get install -y openjdk-21-jre &&
+        metadata=$$(find /firestore-data -name "*.overall_export_metadata" -type f | sort | tail -n 1) &&
+        if [ -n "$$metadata" ]; then
+          import_arg="--import-data=$$metadata";
+          echo "Importing Firestore emulator data from $$metadata";
+        else
+          import_arg="";
+          echo "Starting Firestore emulator with empty persistent storage";
+        fi &&
+        exec gcloud beta emulators firestore start --host-port=0.0.0.0:8080 $$import_arg
+      '
     environment:
       - FIRESTORE_EMULATOR_HOST=0.0.0.0:8080
     ports:
       - "8080:8080"
+    volumes:
+      - gen-fashion_firestore-data:/firestore-data
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
       interval: 10s
@@ -145,4 +159,6 @@ services:
       - ${GOOGLE_APPLICATION_CREDENTIALS_HOST:-./credentials/vertex-ai-sa.json}:/credentials/vertex-ai-sa.json:ro
     command: ["python", "-m", "uvicorn", "styling_app.server:app", "--host", "0.0.0.0", "--port", "3000", "--reload"]
 
-volumes: {}
+volumes:
+  gen-fashion_firestore-data:
+    name: gen-fashion_firestore-data

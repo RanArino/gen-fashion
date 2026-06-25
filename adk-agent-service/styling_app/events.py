@@ -99,26 +99,19 @@ def normalize_adk_event(event: Any, seq_start: int, created_at: datetime | None 
             )
             seq += 1
 
-    actions = getattr(event, "actions", None)
-    transfer_to_agent = getattr(actions, "transfer_to_agent", None) if actions else None
-    if transfer_to_agent:
-        events.append(
-            {
-                "seq": seq,
-                "agentName": author,
-                "eventKind": "thinking",
-                "toolName": "transfer_to_agent",
-                "toolArgs": {"targetAgent": transfer_to_agent},
-                "toolResult": None,
-                "text": f"Transfer to {transfer_to_agent}",
-                "a2uiPayload": None,
-                "thoughtSignature": None,
-                "createdAt": created_at,
-                "ttlAt": ttl_at,
-            }
-        )
-
     return events
+
+
+def extract_search_candidates(event_payload: dict) -> list[dict[str, Any]]:
+    if event_payload.get("eventKind") != "tool_result":
+        return []
+    if event_payload.get("toolName") != "search_closet":
+        return []
+    result = event_payload.get("toolResult") or {}
+    candidates = result.get("result") if isinstance(result, dict) else result
+    if not isinstance(candidates, list):
+        return []
+    return [candidate for candidate in candidates if isinstance(candidate, dict)]
 
 
 def extract_style_result(event_payload: dict) -> dict | None:

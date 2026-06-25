@@ -3,6 +3,8 @@ from app.use_cases.styling.select_source import AgentRunStartFailed, SelectCloth
 from app.use_cases.styling.analyze_image import AnalyzeClothingImageUseCase
 from app.use_cases.styling.search_candidates import SearchCandidateItemsUseCase
 from app.use_cases.styling.generate_coordinate import GenerateCoordinateUseCase
+from app.use_cases.styling.select_candidates import SelectCandidatesUseCase
+from app.use_cases.styling.shared_closet_gallery import SharedClosetGalleryUseCase
 
 __all__ = [
     "CreateSessionUseCase",
@@ -11,4 +13,6 @@ __all__ = [
     "AnalyzeClothingImageUseCase",
     "SearchCandidateItemsUseCase",
     "GenerateCoordinateUseCase",
+    "SelectCandidatesUseCase",
+    "SharedClosetGalleryUseCase",
 ]

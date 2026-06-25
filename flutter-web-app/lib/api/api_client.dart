@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import '../history/history_item.dart';
 import 'streaming_http_client.dart'
     if (dart.library.html) 'streaming_http_client_web.dart';
 
@@ -118,6 +119,23 @@ class ApiClient {
     );
   }
 
+  Future<List<SessionHistoryItem>> listSessions({int limit = 20}) async {
+    final uri = Uri.parse('$_baseUrl/sessions')
+        .replace(queryParameters: {'limit': '$limit'});
+    final res = await _http.get(uri, headers: await _authHeaders());
+    if (res.statusCode != 200) {
+      throw ApiException(res.statusCode, res.body);
+    }
+    final data = jsonDecode(res.body) as List<dynamic>;
+    return data
+        .map(
+          (item) => SessionHistoryItem.fromJson(
+            item as Map<String, dynamic>,
+          ),
+        )
+        .toList();
+  }
+
   Future<StyleSessionResponse> selectSource({
     required String sessionId,
     required String source,
@@ -140,6 +158,57 @@ class ApiClient {
     return StyleSessionResponse.fromJson(
       jsonDecode(res.body) as Map<String, dynamic>,
     );
+  }
+
+  Future<StyleSessionResponse> selectCandidates({
+    required String sessionId,
+    required List<String> selectedItemIds,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/sessions/$sessionId/select');
+    final res = await _http.post(
+      uri,
+      headers: await _jsonHeaders(),
+      body: jsonEncode({'selectedItemIds': selectedItemIds}),
+    );
+    if (res.statusCode != 200 && res.statusCode != 202) {
+      throw ApiException(res.statusCode, res.body);
+    }
+    return StyleSessionResponse.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> updateItemMetadata(
+    String itemId,
+    Map<String, dynamic> metadata,
+  ) async {
+    final uri = Uri.parse('$_baseUrl/closet/items/$itemId');
+    final res = await _http.patch(
+      uri,
+      headers: await _jsonHeaders(),
+      body: jsonEncode(metadata),
+    );
+    if (res.statusCode != 200) {
+      throw ApiException(res.statusCode, res.body);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> listSharedClosets() async {
+    final uri = Uri.parse('$_baseUrl/shared-closets');
+    final res = await _http.get(uri, headers: await _authHeaders());
+    if (res.statusCode != 200) throw ApiException(res.statusCode, res.body);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (body['closets'] as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> listSharedClosetItems(
+    String closetId,
+  ) async {
+    final uri = Uri.parse('$_baseUrl/shared-closets/$closetId/items');
+    final res = await _http.get(uri, headers: await _authHeaders());
+    if (res.statusCode != 200) throw ApiException(res.statusCode, res.body);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (body['items'] as List).cast<Map<String, dynamic>>();
   }
 
   Stream<SseMessage> streamSessionEvents(String sessionId) async* {

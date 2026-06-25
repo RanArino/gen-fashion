@@ -13,7 +13,11 @@ from .registry import registry
 
 
 def style_synthesizer(
-    user_id: str, item_image_urls: list[str], style_description: str
+    user_id: str,
+    item_image_urls: list[str],
+    style_description: str,
+    gender: str = "common",
+    wearer_age: str = "adult",
 ) -> dict:
     """Generate a coordinate (outfit) image from the selected garment images.
 
@@ -21,6 +25,8 @@ def style_synthesizer(
         user_id: ID of the requesting user (owns the stored result).
         item_image_urls: Image URLs (or R2/MinIO keys) of the chosen garments.
         style_description: Desired styling direction for the generated photo.
+        gender: Wearer's gender preference (male/female/common).
+        wearer_age: Wearer's age group (adult/child).
 
     Returns:
         {coordinate_image_url, items, model_used}; model_used is
@@ -29,8 +35,12 @@ def style_synthesizer(
     image_bytes_list = [image_storage.fetch_bytes(url) for url in item_image_urls]
 
     settings = get_settings()
+    wearer = f"{wearer_age} wearer"
+    if gender != "common":
+        wearer = f"{wearer_age} {gender} wearer"
+    generation_prompt = f"Outfit worn by a {wearer}. {style_description}"
     try:
-        result_bytes = image_generation.generate(image_bytes_list, style_description)
+        result_bytes = image_generation.generate(image_bytes_list, generation_prompt)
         model_used = settings.image_generation_model
     except Exception:
         result_bytes = image_generation.build_collage(image_bytes_list)
@@ -43,6 +53,7 @@ def style_synthesizer(
         "coordinate_image_url": coordinate_image_url,
         "items": item_image_urls,
         "model_used": model_used,
+        "generation_prompt": generation_prompt,
     }
 
 

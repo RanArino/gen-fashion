@@ -15,6 +15,7 @@ def ask_preference(
     season: str | None = None,
     style: str | None = None,
     color_preference: str | None = None,
+    gender: str | None = None,
 ) -> dict:
     """Normalize the user's styling preferences for this session.
 
@@ -23,10 +24,11 @@ def ask_preference(
         season: e.g. "spring", "summer".
         style: e.g. "casual", "formal", "street".
         color_preference: e.g. "earth tones", "monochrome".
+        gender: "male", "female", or "common".
 
     Returns:
-        UserPreference-shaped dict {occasion, season, style, color_preference}
-        with blank values normalized to null.
+        UserPreference-shaped dict including gender, with blank values
+        normalized to null.
     """
 
     def _clean(value: str | None) -> str | None:
@@ -40,6 +42,7 @@ def ask_preference(
         "season": _clean(season),
         "style": _clean(style),
         "color_preference": _clean(color_preference),
+        "gender": _clean(gender),
     }
 
 

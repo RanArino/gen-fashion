@@ -101,6 +101,47 @@ void main() {
     expect(selected.source, 'SHARED_CLOSET');
   });
 
+  test('listSessions parses completed history and sends limit', () async {
+    final mock = MockClient((req) async {
+      expect(req.url.path, '/sessions');
+      expect(req.url.queryParameters['limit'], '5');
+      expect(req.headers['Authorization'], 'Bearer fake-token');
+      return http.Response(
+        jsonEncode([
+          {
+            'session_id': 'session-1',
+            'status': 'COMPLETED',
+            'created_at': '2026-06-24T10:30:00',
+            'completed_at': '2026-06-24T10:32:00',
+            'source': 'SHARED_CLOSET',
+            'shared_closet_id': 'adult-01',
+            'selected_items': [
+              {
+                'item_id': 'item-1',
+                'image_url': 'https://example.test/item.jpg',
+                'category': 'top',
+                'gender': 'common',
+              }
+            ],
+            'style_result': {
+              'coordinate_image_url': 'https://example.test/result.jpg',
+            },
+          }
+        ]),
+        200,
+      );
+    });
+
+    final sessions = await _client(mock).listSessions(limit: 5);
+
+    expect(sessions.single.sessionId, 'session-1');
+    expect(
+      sessions.single.coordinateImageUrl,
+      'https://example.test/result.jpg',
+    );
+    expect(sessions.single.selectedItems.single.itemId, 'item-1');
+  });
+
   test('streamSessionEvents parses SSE messages', () async {
     final mock = MockClient.streaming((req, bodyStream) async {
       expect(req.url.path, '/sessions/session-1/stream');
@@ -114,9 +155,33 @@ void main() {
       );
     });
 
-    final messages = await _client(mock).streamSessionEvents('session-1').toList();
+    final messages =
+        await _client(mock).streamSessionEvents('session-1').toList();
 
     expect(messages.single.event, 'agent.event');
     expect(messages.single.data['agentName'], 'ClosetAgent');
+  });
+
+  test('selectCandidates posts the explicit item selection', () async {
+    late Map<String, dynamic> body;
+    final mock = MockClient((req) async {
+      body = jsonDecode(req.body) as Map<String, dynamic>;
+      expect(req.url.path, '/sessions/session-1/select');
+      return http.Response(
+        jsonEncode({
+          'session_id': 'session-1',
+          'status': 'PROPOSING',
+          'source': 'SHARED_CLOSET',
+        }),
+        202,
+      );
+    });
+
+    await _client(mock).selectCandidates(
+      sessionId: 'session-1',
+      selectedItemIds: ['item-1'],
+    );
+
+    expect(body['selectedItemIds'], ['item-1']);
   });
 }

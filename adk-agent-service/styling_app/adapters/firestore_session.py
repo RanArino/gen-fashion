@@ -19,6 +19,12 @@ _STATUS_ORDER = {
 }
 
 
+def _server_timestamp():
+    from google.cloud import firestore
+
+    return firestore.SERVER_TIMESTAMP
+
+
 class FirestoreSessionRepository:
     """Firestore writer for M5 session state and agentEvents."""
 
@@ -55,12 +61,41 @@ class FirestoreSessionRepository:
         event_id = f"{int(event['seq']):06d}"
         await self._session_doc(session_id).collection("agentEvents").document(event_id).set(event)
 
+    async def next_seq(self, session_id: str) -> int:
+        query = self._session_doc(session_id).collection("agentEvents").order_by(
+            "seq", direction="DESCENDING"
+        ).limit(1)
+        async for snapshot in query.stream():
+            return int((snapshot.to_dict() or {}).get("seq", 0)) + 1
+        return 1
+
+    async def write_proposed_candidates(
+        self, session_id: str, candidates: list[dict[str, Any]]
+    ) -> None:
+        self._status_rank = _STATUS_ORDER["PROPOSING"]
+        await self._session_doc(session_id).set(
+            {
+                "status": "PROPOSING",
+                "proposedCandidates": candidates,
+                "selectedItems": [],
+                "updatedAt": datetime.now(timezone.utc),
+            },
+            merge=True,
+        )
+
+    async def get_closet_kind(self, closet_id: str) -> str | None:
+        snapshot = await self._client.collection("shared_closets").document(closet_id).get()
+        if not snapshot.exists:
+            return None
+        return (snapshot.to_dict() or {}).get("kind")
+
     async def write_style_result(self, session_id: str, style_result: dict[str, Any]) -> None:
         self._status_rank = _STATUS_ORDER["COMPLETED"]
         await self._session_doc(session_id).set(
             {
                 "status": "COMPLETED",
                 "styleResult": style_result,
+                "completedAt": _server_timestamp(),
                 "updatedAt": datetime.now(timezone.utc),
             },
             merge=True,

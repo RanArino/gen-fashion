@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../auth/auth_service.dart';
 import '../closet/closet_screen.dart';
+import '../closet/shared_closet_gallery.dart';
 import '../config.dart';
 import '../coordination/coordination_screen.dart';
+import '../history/history_screen.dart';
 import '../shared/attribution.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -24,6 +26,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final pages = [
       ClosetScreen(uid: widget.uid, embedded: true),
       CoordinationScreen(uid: widget.uid),
+      const HistoryScreen(),
+      const SharedClosetGallery(),
     ];
     return Scaffold(
       appBar: AppBar(
@@ -55,6 +59,16 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.auto_awesome_outlined),
             selectedIcon: Icon(Icons.auto_awesome),
             label: 'Coordinate',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'History',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.groups_outlined),
+            selectedIcon: Icon(Icons.groups),
+            label: 'Shared',
           ),
         ],
       ),

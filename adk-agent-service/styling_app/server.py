@@ -1,4 +1,5 @@
 import asyncio
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -9,10 +10,14 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from pydantic import BaseModel, Field
 
-from .agent import root_agent
+from .agent import build_agent_for_phase
 from .adapters.firestore_session import FirestoreSessionRepository
 from .config import get_settings
-from .events import extract_style_result, normalize_adk_event
+from .events import (
+    extract_search_candidates,
+    extract_style_result,
+    normalize_adk_event,
+)
 from .tools.search_closet import search_closet
 from .tools.style_synthesizer import style_synthesizer
 
@@ -28,6 +33,8 @@ class RunSessionRequest(BaseModel):
     source: str
     user_preference: dict[str, Any] = Field(alias="userPreference")
     shared_closet_id: str | None = Field(default=None, alias="sharedClosetId")
+    phase: str = "propose"
+    selected_items: list[dict[str, Any]] | None = Field(default=None, alias="selectedItems")
 
 
 @app.get("/health")
@@ -56,9 +63,125 @@ async def execute_run_session(
     runner: Runner | None = None,
 ) -> None:
     session_repo = session_repo or FirestoreSessionRepository()
+    try:
+        seq = await session_repo.next_seq(request.session_id)
+        closet_kind = await _resolve_closet_kind(request, session_repo)
+        gender = request.user_preference.get("gender") or "common"
+
+        if request.phase == "propose":
+            await session_repo.update_status(request.session_id, "SEARCHING")
+            normalized_events, seq = await _run_adk_phase(
+                request,
+                session_repo,
+                runner=runner,
+                seq=seq,
+                wearer_age=closet_kind,
+                message=(
+                    "Propose outfit candidates only. Delegate closet searches to "
+                    "ClosetAgent, let it create concrete descriptions for each "
+                    "garment type, and stop after returning candidates. Context: "
+                    f"{_message_context(request, gender, closet_kind)}"
+                ),
+            )
+            candidates = _collect_candidates(normalized_events)
+            if not candidates:
+                await session_repo.write_event(
+                    request.session_id,
+                    _event(
+                        seq,
+                        agent_name=APP_NAME,
+                        event_kind="thinking",
+                        text="Agent returned no candidates; running search fallback",
+                    ),
+                )
+                candidates = await _run_search_fallback(
+                    request, session_repo, seq + 1, gender
+                )
+            if not candidates:
+                await session_repo.mark_error(request.session_id, "No clothing candidates found")
+                return
+            await session_repo.write_proposed_candidates(request.session_id, candidates)
+            return
+
+        if request.phase == "generate":
+            if not request.selected_items:
+                await session_repo.mark_error(request.session_id, "Candidate selection is required")
+                return
+            selected_image_urls = _selected_image_urls(request.selected_items)
+            if len(selected_image_urls) != len(request.selected_items):
+                await session_repo.mark_error(
+                    request.session_id, "Selected items have no images"
+                )
+                return
+            await session_repo.update_status(request.session_id, "GENERATING")
+            normalized_events, seq = await _run_adk_phase(
+                request,
+                session_repo,
+                runner=runner,
+                seq=seq,
+                wearer_age=closet_kind,
+                message=(
+                    "Generate one coordinate image for the already-selected "
+                    "garments. Call style_synthesizer; you may only set an "
+                    "optional style_description. Context: "
+                    f"{_message_context(request, gender, closet_kind)}"
+                ),
+            )
+            result = _collect_style_result(
+                normalized_events, request.selected_items, selected_image_urls
+            )
+            if result is None:
+                await session_repo.write_event(
+                    request.session_id,
+                    _event(
+                        seq,
+                        agent_name=APP_NAME,
+                        event_kind="thinking",
+                        text="Agent returned no image; running consented generation fallback",
+                    ),
+                )
+                result = await _run_generate_fallback(
+                    request,
+                    session_repo,
+                    seq + 1,
+                    gender=gender,
+                    wearer_age=closet_kind,
+                )
+            if result is None:
+                await session_repo.mark_error(request.session_id, "Selected items have no images")
+                return
+            await session_repo.write_style_result(request.session_id, result)
+            return
+
+        raise ValueError(f"Unsupported run phase: {request.phase}")
+    except Exception as exc:
+        await session_repo.mark_error(request.session_id, str(exc))
+        raise
+
+
+async def _run_adk_phase(
+    request: RunSessionRequest,
+    session_repo: FirestoreSessionRepository,
+    *,
+    runner: Runner | None,
+    seq: int,
+    wearer_age: str,
+    message: str,
+) -> tuple[list[dict[str, Any]], int]:
     session_service = InMemorySessionService()
-    runner = runner or Runner(
-        agent=root_agent,
+    gender = request.user_preference.get("gender") or "common"
+    search_tool = None
+    style_tool = None
+    selected_image_urls: list[str] = []
+    if request.phase == "propose":
+        search_tool = _build_propose_search_tool(request, gender)
+    elif request.phase == "generate":
+        selected_image_urls = _selected_image_urls(request.selected_items)
+        style_tool = _build_generate_style_tool(request, gender, wearer_age)
+    active_runner = runner or Runner(
+        agent=build_agent_for_phase(
+            request.phase, search_tool=search_tool, style_tool=style_tool
+        ),
         app_name=APP_NAME,
         session_service=session_service,
     )
@@ -68,130 +191,225 @@ async def execute_run_session(
         "source": request.source,
         "sharedClosetId": request.shared_closet_id,
         "userPreference": request.user_preference,
+        "phase": request.phase,
+        "selectedItems": request.selected_items or [],
+        "gender": request.user_preference.get("gender") or "common",
+        "wearerAge": wearer_age,
     }
+    created = session_service.create_session(
+        app_name=APP_NAME,
+        user_id=request.user_id,
+        session_id=request.session_id,
+        state=state,
+    )
+    if hasattr(created, "__await__"):
+        await created
 
-    seq = 1
-    current_status: str | None = None
-
-    async def set_status(status: str) -> None:
-        nonlocal current_status
-        if current_status == status:
-            return
-        await session_repo.update_status(request.session_id, status)
-        current_status = status
-
+    normalized_events: list[dict[str, Any]] = []
     try:
-        await set_status("SEARCHING")
-        created_at = datetime.now(timezone.utc)
+        async with asyncio.timeout(get_settings().adk_run_timeout_seconds):
+            async for event in active_runner.run_async(
+                user_id=request.user_id,
+                session_id=request.session_id,
+                new_message=types.Content(
+                    role="user",
+                    parts=[types.Part(text=message)],
+                ),
+                state_delta=state,
+            ):
+                for normalized in normalize_adk_event(event, seq):
+                    if (
+                        request.phase == "propose"
+                        and normalized.get("eventKind") == "tool_call"
+                        and normalized.get("toolName") == "search_closet"
+                    ):
+                        normalized["toolArgs"] = {
+                            **(normalized.get("toolArgs") or {}),
+                            "source": request.source,
+                            "user_id": request.user_id,
+                            "shared_closet_id": request.shared_closet_id,
+                            "gender": gender,
+                        }
+                    elif (
+                        request.phase == "generate"
+                        and normalized.get("eventKind") == "tool_call"
+                        and normalized.get("toolName") == "style_synthesizer"
+                    ):
+                        llm_style = (normalized.get("toolArgs") or {}).get(
+                            "style_description"
+                        )
+                        normalized["toolArgs"] = {
+                            "user_id": request.user_id,
+                            "item_image_urls": selected_image_urls,
+                            "style_description": _effective_style_description(
+                                llm_style, request.user_preference
+                            ),
+                            "gender": gender,
+                            "wearer_age": wearer_age,
+                        }
+                    await session_repo.write_event(request.session_id, normalized)
+                    normalized_events.append(normalized)
+                    seq = int(normalized["seq"]) + 1
+    except TimeoutError:
         await session_repo.write_event(
             request.session_id,
-            {
-                "seq": seq,
-                "agentName": APP_NAME,
-                "eventKind": "thinking",
-                "toolName": None,
-                "toolArgs": None,
-                "toolResult": None,
-                "text": "Styling session accepted",
-                "a2uiPayload": None,
-                "thoughtSignature": None,
-                "createdAt": created_at,
-                "ttlAt": created_at + timedelta(hours=24),
-            },
+            _event(
+                seq,
+                agent_name=APP_NAME,
+                event_kind="thinking",
+                text=f"ADK {request.phase} run timed out",
+            ),
         )
         seq += 1
+    return normalized_events, seq
 
-        created = session_service.create_session(
-            app_name=APP_NAME,
+
+def _build_propose_search_tool(
+    request: RunSessionRequest,
+    gender: str,
+):
+    bound_gender = gender
+
+    def phase_search_closet(
+        description: str,
+        source: str | None = None,
+        user_id: str | None = None,
+        shared_closet_id: str | None = None,
+        category: str | None = None,
+        colors: list[str] | None = None,
+        gender: str | None = None,
+        limit: int = 10,
+    ) -> list[dict]:
+        return search_closet(
+            description=description,
+            source=request.source,
             user_id=request.user_id,
-            session_id=request.session_id,
-            state=state,
+            shared_closet_id=request.shared_closet_id,
+            category=category,
+            colors=colors,
+            gender=bound_gender,
+            limit=limit,
         )
-        if hasattr(created, "__await__"):
-            await created
 
-        message = types.Content(
-            role="user",
-            parts=[
-                types.Part(
-                    text=(
-                        "Create a complete outfit coordination for this session. "
-                        f"Use source={request.source}, sharedClosetId={request.shared_closet_id}, "
-                        f"preference={request.user_preference}."
-                    )
-                )
+    phase_search_closet.__name__ = "search_closet"
+    phase_search_closet.__doc__ = search_closet.__doc__
+    return phase_search_closet
+
+
+def _selected_image_urls(selected_items: list[dict[str, Any]] | None) -> list[str]:
+    return [item["image_url"] for item in selected_items or [] if item.get("image_url")]
+
+
+def _effective_style_description(
+    requested_style: Any, preference: dict[str, Any]
+) -> str:
+    if isinstance(requested_style, str) and requested_style.strip():
+        return requested_style.strip()
+    return _style_description(preference)
+
+
+def _build_generate_style_tool(
+    request: RunSessionRequest,
+    gender: str,
+    wearer_age: str,
+):
+    user_id = request.user_id
+    image_urls = _selected_image_urls(request.selected_items)
+    bound_gender = gender
+    bound_wearer_age = wearer_age
+
+    def style_synthesizer_tool(style_description: str = "") -> dict:
+        return style_synthesizer(
+            user_id=user_id,
+            item_image_urls=image_urls,
+            style_description=_effective_style_description(
+                style_description, request.user_preference
+            ),
+            gender=bound_gender,
+            wearer_age=bound_wearer_age,
+        )
+
+    style_synthesizer_tool.__name__ = "style_synthesizer"
+    style_synthesizer_tool.__doc__ = (
+        "Generate a coordinate image for the already-selected garments. Provide "
+        "only an optional style_description; the requesting user, garment images, "
+        "wearer gender, and wearer age are fixed by the server."
+    )
+    return style_synthesizer_tool
+
+
+def _message_context(request: RunSessionRequest, gender: str, wearer_age: str) -> str:
+    return json.dumps(
+        {
+            "sessionId": request.session_id,
+            "userId": request.user_id,
+            "source": request.source,
+            "sharedClosetId": request.shared_closet_id,
+            "userPreference": request.user_preference,
+            "selectedItems": request.selected_items or [],
+            "selectedItemImageUrls": [
+                item["image_url"]
+                for item in request.selected_items or []
+                if item.get("image_url")
             ],
-        )
-
-        final_style_result = None
-        try:
-            async with asyncio.timeout(get_settings().adk_run_timeout_seconds):
-                async for event in runner.run_async(
-                    user_id=request.user_id,
-                    session_id=request.session_id,
-                    new_message=message,
-                    state_delta=state,
-                ):
-                    for normalized in normalize_adk_event(event, seq):
-                        await session_repo.write_event(request.session_id, normalized)
-                        seq = int(normalized["seq"]) + 1
-                        if (
-                            normalized.get("toolName") == "style_synthesizer"
-                            and current_status != "GENERATING"
-                        ):
-                            await set_status("PROPOSING")
-                            await set_status("GENERATING")
-                        maybe_result = extract_style_result(normalized)
-                        if maybe_result is not None:
-                            final_style_result = maybe_result
-        except TimeoutError:
-            await session_repo.write_event(
-                request.session_id,
-                _event(
-                    seq,
-                    agent_name=APP_NAME,
-                    event_kind="thinking",
-                    text="ADK run timed out; continuing with deterministic fallback",
-                ),
-            )
-            seq += 1
-
-        if final_style_result is not None:
-            await session_repo.write_style_result(request.session_id, final_style_result)
-        else:
-            fallback_result = await _run_deterministic_fallback(request, session_repo, seq)
-            if fallback_result is not None:
-                await session_repo.write_style_result(request.session_id, fallback_result)
-            else:
-                await session_repo.mark_error(
-                    request.session_id,
-                    "ADK run finished without a coordinate image URL",
-                )
-    except Exception as exc:
-        await session_repo.mark_error(request.session_id, str(exc))
-        raise
+            "gender": gender,
+            "wearerAge": wearer_age,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
-async def _run_deterministic_fallback(
+def _collect_candidates(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates_by_id: dict[str, dict[str, Any]] = {}
+    for event in events:
+        for candidate in extract_search_candidates(event):
+            item_id = candidate.get("item_id") or candidate.get("itemId")
+            if item_id:
+                candidates_by_id.setdefault(str(item_id), candidate)
+    return list(candidates_by_id.values())
+
+
+def _collect_style_result(
+    events: list[dict[str, Any]],
+    selected_items: list[dict[str, Any]] | None,
+    selected_image_urls: list[str],
+) -> dict[str, Any] | None:
+    result = None
+    for event in events:
+        maybe_result = extract_style_result(event)
+        if maybe_result is not None:
+            result = maybe_result
+    if result is not None:
+        result["items"] = selected_image_urls
+        result["selectedItems"] = selected_items or []
+    return result
+
+
+async def _resolve_closet_kind(
+    request: RunSessionRequest, session_repo: FirestoreSessionRepository
+) -> str:
+    if request.source != "SHARED_CLOSET":
+        return "adult"
+    if request.shared_closet_id:
+        kind = await session_repo.get_closet_kind(request.shared_closet_id)
+        if kind:
+            return kind
+        if request.shared_closet_id.startswith("child-"):
+            return "child"
+    return "adult"
+
+
+async def _run_search_fallback(
     request: RunSessionRequest,
     session_repo: FirestoreSessionRepository,
     seq: int,
-) -> dict[str, Any] | None:
+    gender: str,
+) -> list[dict[str, Any]]:
     preference = request.user_preference
     colors = _preference_colors(preference)
     style_text = _style_description(preference)
-    selected: list[dict[str, Any]] = []
-
-    await session_repo.write_event(
-        request.session_id,
-        _event(
-            seq,
-            agent_name=APP_NAME,
-            event_kind="thinking",
-            text="Running deterministic coordination fallback",
-        ),
-    )
-    seq += 1
+    candidates_by_id: dict[str, dict[str, Any]] = {}
 
     for category, description in (
         ("top", f"{style_text} top"),
@@ -204,6 +422,8 @@ async def _run_deterministic_fallback(
             "shared_closet_id": request.shared_closet_id,
             "category": category,
             "colors": colors,
+            "gender": gender,
+            "limit": 5,
         }
         await session_repo.write_event(
             request.session_id,
@@ -228,19 +448,31 @@ async def _run_deterministic_fallback(
             ),
         )
         seq += 1
-        if candidates:
-            selected.append(candidates[0])
+        for candidate in candidates:
+            candidates_by_id.setdefault(candidate["item_id"], candidate)
+    return list(candidates_by_id.values())
 
+
+async def _run_generate_fallback(
+    request: RunSessionRequest,
+    session_repo: FirestoreSessionRepository,
+    seq: int,
+    *,
+    gender: str,
+    wearer_age: str,
+) -> dict[str, Any] | None:
+    selected = request.selected_items or []
     image_urls = [item["image_url"] for item in selected if item.get("image_url")]
     if not image_urls:
         return None
 
-    await session_repo.update_status(request.session_id, "PROPOSING")
-    await session_repo.update_status(request.session_id, "GENERATING")
+    style_text = _style_description(request.user_preference)
     synth_args = {
         "user_id": request.user_id,
         "item_image_urls": image_urls,
         "style_description": style_text,
+        "gender": gender,
+        "wearer_age": wearer_age,
     }
     await session_repo.write_event(
         request.session_id,

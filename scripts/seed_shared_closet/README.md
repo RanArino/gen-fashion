@@ -2,10 +2,13 @@
 
 Seeds the gen-fashion **demo closets** from the [Clothing Dataset (CC BY-SA 4.0)](https://www.kaggle.com/datasets/agrigorev/clothing-dataset-full) into the three data stores used by the app.
 
-Instead of one giant shared closet, the script builds **3 realistic ~30-item wardrobes** (req §16):
+Instead of one giant shared closet, the script builds **3 realistic 70-item wardrobes** (req §16):
 `adult-01`, `adult-02` (from `kids=false`) and `child-01` (from `kids=true`) — gender is not in the
-dataset, so we segment by the `kids` flag. Each closet is composed automatically by category quota
-(tops/outer/bottoms/dress/shoes/hat). All items keep `user_id:"__shared__"` and carry `closetId`/
+dataset, so we segment by the `kids` flag. Each closet first builds its original 50-item category quota,
+then appends 10 tops and 10 bottoms so the existing wardrobes remain stable. Final distributions
+(tops/outer/bottoms/dress/shoes/hat) are 22/7/20/8/8/5 for adults and
+25/6/22/4/8/5 for the child closet. All items keep
+`user_id:"__shared__"` and carry `closetId`/
 `closetKind`; per-closet metadata is written to Firestore `shared_closets/{closetId}`. The M5 picker
 filters by `closetId`; the M3-3 adapter (returns all `__shared__`) is unchanged. Uses the high-res
 `images_original/`.
@@ -31,13 +34,13 @@ cp .env.example .env        # adjust if needed; defaults match make dev
 python run_seed.py
 ```
 
-Builds the 3 demo closets (~90 items total). Expected summary:
-`{"created": 90, "skipped": 0, "errors": 0, "closets": {"adult-01": 30, "adult-02": 30, "child-01": 30}}`.
+Builds the 3 demo closets (210 items total). Expected summary on a fresh seed:
+`{"created": 210, "skipped": 0, "errors": 0, "closets": {"adult-01": 70, "adult-02": 70, "child-01": 70}}`.
 
 Verify the three stores:
 
 ```bash
-# ES: shared docs by closet (expect adult-01 / adult-02 / child-01, ~30 each)
+# ES: shared docs by closet (expect adult-01 / adult-02 / child-01, 70 each)
 curl -s 'http://localhost:9200/clothing_items/_search' -H 'Content-Type: application/json' \
   -d '{"size":0,"query":{"term":{"user_id":"__shared__"}},
        "aggs":{"by_closet":{"terms":{"field":"closetId"}}}}'
@@ -54,6 +57,12 @@ Idempotency check — second run should show `created: 0`:
 ```bash
 python run_seed.py
 ```
+
+The repository `make seed SOURCE_DIR=...` command performs purge → seed and
+then snapshots Firestore into the named `gen-fashion_firestore-data` Docker
+volume. `make dev` imports that snapshot and does not reseed on each launch.
+Use `make clean` to snapshot and stop, or `make reset` to intentionally delete
+the persisted local volumes.
 
 ## Offline / CI (no Kaggle creds)
 

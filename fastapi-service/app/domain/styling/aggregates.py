@@ -28,11 +28,13 @@ class StyleSession(AggregateRoot):
     shared_closet_id: Optional[str] = None
     analysis_result: Optional[dict[str, Any]] = None
     selected_items: list[dict[str, Any]] = None
+    proposed_candidates: list[dict[str, Any]] = None
     user_preference: Optional[UserPreference] = None
     proposed_coordinate: Optional[CoordinateProposal] = None
     final_result: Optional[StyleResult] = None
     created_at: datetime = None
     updated_at: datetime = None
+    completed_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
 
     def __post_init__(self):
@@ -45,6 +47,8 @@ class StyleSession(AggregateRoot):
             object.__setattr__(self, 'updated_at', datetime.utcnow())
         if self.selected_items is None:
             object.__setattr__(self, 'selected_items', [])
+        if self.proposed_candidates is None:
+            object.__setattr__(self, 'proposed_candidates', [])
 
     def select_source(
         self,
@@ -94,6 +98,15 @@ class StyleSession(AggregateRoot):
         object.__setattr__(self, 'selected_items', items)
         self._mark_updated()
 
+    def select_candidates(self, items: list[dict[str, Any]]) -> None:
+        """Accept an explicit, non-empty selection while awaiting approval."""
+        if self.state != StyleSessionState.PROPOSING:
+            raise ValueError(f"Cannot select candidates from {self.state.value}")
+        if not items:
+            raise ValueError("At least one candidate must be selected")
+        object.__setattr__(self, 'selected_items', items)
+        self._mark_updated()
+
     def propose(self, proposal: CoordinateProposal) -> None:
         """Transition to PROPOSING with a coordinate proposal."""
         if not self.state.can_transition_to(StyleSessionState.PROPOSING):
@@ -106,6 +119,7 @@ class StyleSession(AggregateRoot):
         if not self.state.can_transition_to(StyleSessionState.COMPLETED):
             raise ValueError(f"Cannot transition from {self.state} to COMPLETED")
         object.__setattr__(self, 'final_result', result)
+        object.__setattr__(self, 'completed_at', datetime.utcnow())
         self._transition_to(StyleSessionState.COMPLETED)
 
     def timeout(self) -> None:

@@ -26,8 +26,19 @@ async def test_elasticsearch_embedding_repo_index_lifecycle(monkeypatch):
             category="shirt",
             colors=["blue"],
             season="spring",
-            embedding=None,
+            embedding=[0.1] * repo._dims,
         )
+        await repo.update_item_metadata(
+            "test-item",
+            tags=["formal"],
+            category="shirt",
+            colors=["navy"],
+            season="autumn",
+            gender="common",
+        )
+        stored = await repo._client.get(index=repo._index, id="test-item")
+        assert stored["_source"]["tags"] == ["formal"]
+        assert stored["_source"]["embedding"] == [0.1] * repo._dims
         await repo.delete_item("test-item", "user-123")
     finally:
         await repo._client.close()

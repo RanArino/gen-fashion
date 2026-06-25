@@ -91,6 +91,88 @@ class _ClosetScreenState extends State<ClosetScreen> {
     }
   }
 
+  Future<void> _onEdit(ClosetItem item) async {
+    final category = TextEditingController(text: item.category ?? '');
+    final colors = TextEditingController(text: item.colors.join(', '));
+    final season = TextEditingController(text: item.season ?? '');
+    final tags = TextEditingController(text: item.tags.join(', '));
+    var gender = item.gender ?? 'common';
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit item metadata'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: category,
+                    decoration: const InputDecoration(labelText: 'Category')),
+                TextField(
+                    controller: colors,
+                    decoration: const InputDecoration(
+                        labelText: 'Colors (comma separated)')),
+                TextField(
+                    controller: season,
+                    decoration: const InputDecoration(labelText: 'Season')),
+                TextField(
+                    controller: tags,
+                    decoration: const InputDecoration(
+                        labelText: 'Tags (comma separated)')),
+                DropdownButtonFormField<String>(
+                  initialValue: gender,
+                  decoration: const InputDecoration(labelText: 'Gender'),
+                  items: const [
+                    DropdownMenuItem(value: 'common', child: Text('Common')),
+                    DropdownMenuItem(value: 'female', child: Text('Female')),
+                    DropdownMenuItem(value: 'male', child: Text('Male')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => gender = value);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+    if (saved != true) return;
+    List<String> values(String raw) => raw
+        .split(',')
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+    try {
+      await _api.updateItemMetadata(item.id, {
+        'category': category.text.trim(),
+        'colors': values(colors.text),
+        'season': season.text.trim(),
+        'tags': values(tags.text),
+        'gender': gender,
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Update failed: $e')),
+      );
+    } finally {
+      category.dispose();
+      colors.dispose();
+      season.dispose();
+      tags.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final content = Column(
@@ -169,13 +251,13 @@ class _ClosetScreenState extends State<ClosetScreen> {
         if (docs.isEmpty) {
           return const _EmptyState();
         }
-        final items = docs
-            .map((d) => ClosetItem.fromFirestore(d.id, d.data()))
-            .toList();
+        final items =
+            docs.map((d) => ClosetItem.fromFirestore(d.id, d.data())).toList();
         return ClosetGrid(
           items: items,
           cache: _cache,
           onDelete: _onDelete,
+          onEdit: _onEdit,
         );
       },
     );
@@ -209,12 +291,14 @@ class ClosetGrid extends StatelessWidget {
     required this.items,
     required this.cache,
     this.onDelete,
+    this.onEdit,
     this.thumbnailBuilder,
   });
 
   final List<ClosetItem> items;
   final DownloadUrlCache cache;
   final void Function(ClosetItem item)? onDelete;
+  final void Function(ClosetItem item)? onEdit;
 
   /// Override for tests; defaults to a real network thumbnail.
   final Widget Function(BuildContext, ClosetItem)? thumbnailBuilder;
@@ -240,6 +324,7 @@ class ClosetGrid extends StatelessWidget {
               thumbnail: thumbnailBuilder?.call(context, item) ??
                   Thumbnail(itemId: item.id, cache: cache),
               onDelete: onDelete == null ? null : () => onDelete!(item),
+              onEdit: onEdit == null ? null : () => onEdit!(item),
             );
           },
         );
@@ -254,11 +339,13 @@ class ClosetCard extends StatelessWidget {
     required this.item,
     required this.thumbnail,
     this.onDelete,
+    this.onEdit,
   });
 
   final ClosetItem item;
   final Widget thumbnail;
   final VoidCallback? onDelete;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -284,8 +371,20 @@ class ClosetCard extends StatelessWidget {
                       tooltip: 'Delete',
                       iconSize: 20,
                       onPressed: onDelete,
-                      icon: const Icon(Icons.delete_outline,
-                          color: Colors.white),
+                      icon:
+                          const Icon(Icons.delete_outline, color: Colors.white),
+                    ),
+                  ),
+                if (onEdit != null && item.status == ItemStatus.ready)
+                  Positioned(
+                    top: 4,
+                    right: 44,
+                    child: IconButton(
+                      tooltip: 'Edit metadata',
+                      iconSize: 20,
+                      onPressed: onEdit,
+                      icon:
+                          const Icon(Icons.edit_outlined, color: Colors.white),
                     ),
                   ),
               ],
@@ -307,6 +406,15 @@ class ClosetCard extends StatelessWidget {
                       style: Theme.of(context).textTheme.bodySmall,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  Text(
+                    [
+                      if (item.gender != null) item.gender,
+                      if (item.season != null) item.season,
+                      if (item.colors.isNotEmpty) item.colors.join('/'),
+                    ].whereType<String>().join(' · '),
+                    style: Theme.of(context).textTheme.bodySmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ] else if (item.status == ItemStatus.processing)
                   const Text('Analyzing…')
                 else if (item.status == ItemStatus.error)
@@ -345,8 +453,7 @@ class StatusBadge extends StatelessWidget {
       case ItemStatus.ready:
         bg = Colors.green.shade600;
         label = 'READY';
-        icon = const Icon(Icons.check_circle,
-            size: 14, color: Colors.white);
+        icon = const Icon(Icons.check_circle, size: 14, color: Colors.white);
         break;
       case ItemStatus.error:
         bg = Colors.red.shade600;

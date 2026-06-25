@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gen_fashion_web/coordination/coordination_screen.dart';
 
 void main() {
-  testWidgets('renders coordination controls and event accordion', (tester) async {
+  testWidgets('renders coordination controls and event accordion',
+      (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -37,7 +38,7 @@ void main() {
       ),
     );
 
-    expect(find.text('ClosetAgent · tool_call · search_closet'), findsOneWidget);
+    expect(find.text('ClosetAgent is searching the closet'), findsOneWidget);
   });
 
   test('AgentEvent parses backend payload', () {

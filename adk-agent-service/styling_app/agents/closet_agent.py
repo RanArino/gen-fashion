@@ -1,5 +1,7 @@
 """ClosetAgent (M4-2, req §7.1)."""
 
+from collections.abc import Callable
+
 from google.adk.agents import Agent
 
 from ..config import get_settings
@@ -19,7 +21,7 @@ _INSTRUCTION = (
 )
 
 
-def build_closet_agent() -> Agent:
+def build_closet_agent(search_tool: Callable | None = None) -> Agent:
     return Agent(
         name="ClosetAgent",
         model=get_settings().agent_model,
@@ -27,6 +29,6 @@ def build_closet_agent() -> Agent:
         instruction=_INSTRUCTION,
         tools=[
             registry.get("analyze_clothing_image"),
-            registry.get("search_closet"),
+            search_tool or registry.get("search_closet"),
         ],
     )

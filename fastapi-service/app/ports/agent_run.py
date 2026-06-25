@@ -9,6 +9,8 @@ class AgentRunRequest:
     source: str
     user_preference: dict
     shared_closet_id: str | None = None
+    phase: str = "propose"
+    selected_items: list[dict] | None = None
 
 
 class AgentRunPort(ABC):

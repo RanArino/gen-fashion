@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel
 from app.auth import verify_firebase_token
 from app.dependencies import (
     get_delete_closet_item_use_case,
     get_download_url_use_case,
     get_register_clothing_item_use_case,
     get_upload_url_use_case,
+    get_update_item_metadata_use_case,
 )
 from app.domain.closet import ClosetItemNotFound, MaxClosetItemsExceeded
 from app.use_cases.closet import (
@@ -12,10 +14,19 @@ from app.use_cases.closet import (
     GetDownloadUrlUseCase,
     GetUploadUrlUseCase,
     RegisterClothingItemUseCase,
+    UpdateClosetItemMetadataUseCase,
 )
 
 
 router = APIRouter()
+
+
+class UpdateItemMetadataRequest(BaseModel):
+    gender: str | None = None
+    category: str | None = None
+    colors: list[str] | None = None
+    season: str | None = None
+    tags: list[str] | None = None
 
 
 @router.get("/upload-url")
@@ -65,3 +76,18 @@ async def delete_item(
     except ClosetItemNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/items/{item_id}")
+async def update_item_metadata(
+    item_id: str,
+    request: UpdateItemMetadataRequest,
+    user_id: str = Depends(verify_firebase_token),
+    use_case: UpdateClosetItemMetadataUseCase = Depends(get_update_item_metadata_use_case),
+):
+    try:
+        return await use_case.execute(user_id, item_id, **request.model_dump())
+    except ClosetItemNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

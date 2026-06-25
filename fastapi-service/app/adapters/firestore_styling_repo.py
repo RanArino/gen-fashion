@@ -47,6 +47,7 @@ class FirestoreStylingRepository(StylingRepositoryPort):
             "season": preference.season,
             "style": preference.style,
             "colorPreference": preference.color_preference,
+            "gender": preference.gender,
         }
 
     @staticmethod
@@ -58,6 +59,7 @@ class FirestoreStylingRepository(StylingRepositoryPort):
             season=data.get("season"),
             style=data.get("style"),
             color_preference=data.get("colorPreference"),
+            gender=data.get("gender"),
         )
 
     @staticmethod
@@ -94,9 +96,11 @@ class FirestoreStylingRepository(StylingRepositoryPort):
                 session.user_preference
             ),
             "selectedItems": session.selected_items,
+            "proposedCandidates": session.proposed_candidates,
             "styleResult": FirestoreStylingRepository._result_to_document(session.final_result),
             "createdAt": session.created_at,
             "updatedAt": session.updated_at,
+            "completedAt": session.completed_at,
             "expiresAt": session.expires_at,
         }
 
@@ -113,12 +117,14 @@ class FirestoreStylingRepository(StylingRepositoryPort):
             shared_closet_id=data.get("sharedClosetId"),
             analysis_result=data.get("analysisResult"),
             selected_items=data.get("selectedItems", []),
+            proposed_candidates=data.get("proposedCandidates", []),
             user_preference=FirestoreStylingRepository._preference_from_document(
                 data.get("userPreference")
             ),
             final_result=FirestoreStylingRepository._result_from_document(data.get("styleResult")),
             created_at=FirestoreStylingRepository._parse_datetime(data.get("createdAt")),
             updated_at=FirestoreStylingRepository._parse_datetime(data.get("updatedAt")),
+            completed_at=FirestoreStylingRepository._parse_datetime(data.get("completedAt")),
             expires_at=FirestoreStylingRepository._parse_datetime(data.get("expiresAt")),
         )
 
@@ -134,6 +140,21 @@ class FirestoreStylingRepository(StylingRepositoryPort):
 
     async def update(self, session: StyleSession) -> None:
         await self._document(session.id).set(self._to_document(session), merge=True)
+
+    async def list_completed(self, user_id: str, limit: int = 20) -> list[StyleSession]:
+        query = (
+            self._collection()
+            .where("userId", "==", user_id)
+            .where("status", "==", StyleSessionState.COMPLETED.value)
+            .order_by("completedAt", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+        )
+        sessions: list[StyleSession] = []
+        async for snapshot in query.stream():
+            session = self._from_snapshot(snapshot)
+            if session is not None:
+                sessions.append(session)
+        return sessions
 
     async def list_events(
         self, user_id: str, session_id: StyleSessionId, after_seq: int = 0
