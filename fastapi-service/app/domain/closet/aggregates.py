@@ -3,7 +3,12 @@ from typing import Optional, List
 from dataclasses import dataclass
 from datetime import datetime
 from app.domain.shared.base_models import AggregateRoot
-from app.domain.closet.value_objects import ClothingItemId, ClothingTag, ImageEmbedding
+from app.domain.closet.value_objects import (
+    ClothingItemId,
+    ClothingItemStatus,
+    ClothingTag,
+    ImageEmbedding,
+)
 
 
 @dataclass
@@ -18,6 +23,10 @@ class ClothingItem(AggregateRoot):
     image_url: str
     tags: List[ClothingTag]
     embedding: Optional[ImageEmbedding] = None
+    status: ClothingItemStatus = ClothingItemStatus.PROCESSING
+    category: Optional[str] = None
+    colors: List[str] = None
+    season: Optional[str] = None
     created_at: datetime = None
     updated_at: datetime = None
 
@@ -27,6 +36,8 @@ class ClothingItem(AggregateRoot):
             raise ValueError("user_id must not be empty")
         if not self.image_url:
             raise ValueError("image_url must not be empty")
+        if self.colors is None:
+            object.__setattr__(self, 'colors', [])
         if self.created_at is None:
             object.__setattr__(self, 'created_at', datetime.utcnow())
         if self.updated_at is None:
@@ -41,6 +52,28 @@ class ClothingItem(AggregateRoot):
     def set_embedding(self, embedding: ImageEmbedding) -> None:
         """Set the embedding for this item."""
         object.__setattr__(self, 'embedding', embedding)
+        self._mark_updated()
+
+    def mark_ready(
+        self,
+        category: Optional[str],
+        colors: List[str],
+        season: Optional[str],
+        tags: List[ClothingTag],
+        embedding: Optional[ImageEmbedding] = None,
+    ) -> None:
+        """Mark analysis as complete and store extracted metadata."""
+        object.__setattr__(self, 'status', ClothingItemStatus.READY)
+        object.__setattr__(self, 'category', category)
+        object.__setattr__(self, 'colors', colors)
+        object.__setattr__(self, 'season', season)
+        object.__setattr__(self, 'tags', tags)
+        object.__setattr__(self, 'embedding', embedding)
+        self._mark_updated()
+
+    def mark_error(self) -> None:
+        """Mark analysis as failed."""
+        object.__setattr__(self, 'status', ClothingItemStatus.ERROR)
         self._mark_updated()
 
     def _mark_updated(self) -> None:

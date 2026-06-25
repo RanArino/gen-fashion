@@ -1,7 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Optional
-
-
 class ImageStoragePort(ABC):
     """Port for image storage operations (upload, fetch, delete)."""
 
@@ -28,4 +25,9 @@ class ImageStoragePort(ABC):
     @abstractmethod
     async def verify_image_exists(self, image_path: str) -> bool:
         """Check if an image exists in storage."""
+        raise NotImplementedError("Implement in M2-7: Cloudflare R2 adapter")
+
+    @abstractmethod
+    async def get_image_bytes(self, image_path: str) -> bytes:
+        """Fetch image bytes from storage for asynchronous processing."""
         raise NotImplementedError("Implement in M2-7: Cloudflare R2 adapter")

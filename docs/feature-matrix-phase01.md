@@ -85,22 +85,28 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 
 **Scope:** Authenticated users upload, view, and delete closet images; uploaded images are analyzed and embedded asynchronously. Reference: `req-phase01.md` §6.7–6.10, §8, §10, §11, ADL-014, ADL-015.
 
+> **ExecPlan (2026-06-04):** [20260604-m2-closet-management-backend.md](plans/20260604-m2-closet-management-backend.md) covers the **backend slice** of M2 — the nine server-side requirements M2-2…M2-10, which are verifiable end-to-end against `make dev`. The three client-facing requirements (M2-1, M2-11, M2-12) are **deferred to a follow-up frontend plan** because no Flutter app exists in the repo yet; they stay ❌ until then.
+>
+> **Backend implementation status (2026-06-04):** M2-2…M2-10 are implemented. `pytest -q` passes (`28 passed`) with live Elasticsearch reachable from Compose. Docker Compose boots Firestore Emulator, Firebase Auth Emulator, MinIO, Elasticsearch, and FastAPI. `scripts/m2_closet_smoke.py --expect-status ERROR` passes with the default dummy Gemini key, and `scripts/m2_closet_smoke.py --expect-status READY` passes with the `.env` Gemini key, proving authenticated signed upload, storage, Firestore READY metadata, local worker dispatch, Elasticsearch indexing, and delete cleanup.
+>
+> ⚠️ **BLOCKING deploy security gate (M2-5 internal route):** the `POST /internal/tasks/process-upload` worker route is now guarded by a fail-closed shared secret (`INTERNAL_TASK_SECRET`, header `X-Internal-Secret`) for local/defense-in-depth. **Before any public deploy, the M2 ExecPlan Decision Log gate must hold:** `CloudTasksAdapter` sets an OIDC token verified by the worker, Cloud Run `fastapi-service` ingress is set to `internal`, and `INTERNAL_TASK_SECRET` is a real Secret-Manager value. Tracked via `# TODO(deploy)` in `app/adapters/cloud_tasks_adapter.py`.
+
 | ID | Feature | Status | Description | Req ref |
 |---|---|---|---|---|
-| M2-1 | Firebase Auth — Google Sign-In | ❌ Not yet implemented | Flutter Web login via Google Sign-In; first login creates `users/{uid}`. | §10.1, §15 Phase 1a #4 |
-| M2-2 | FastAPI Firebase ID Token middleware | ❌ Not yet implemented | `verify_firebase_token` dependency; rejects invalid tokens with 401. | §10.3 |
-| M2-3 | `GetUploadUrlUseCase` | ❌ Not yet implemented | `GET /closet/upload-url` — issues 15-min R2 signed PUT URL; enforces `MAX_CLOSET_IMAGES_PER_USER`. | §6.7 |
-| M2-4 | `RegisterClothingItemUseCase` | ❌ Not yet implemented | `POST /closet/items/{item_id}/complete` — writes Firestore placeholder, enqueues embed job. | §6.8 |
-| M2-5 | `ProcessUploadedClothingItemUseCase` | ❌ Not yet implemented | `POST /internal/tasks/process-upload` — Gemini analysis + embedding, updates Firestore/ES. Cloud Tasks worker. | §6.9, §8.3 |
-| M2-6 | `DeleteClosetItemUseCase` | ❌ Not yet implemented | `DELETE /closet/items/{item_id}` — deletes across Firestore + ES + R2. | §6.10, ADL-015 |
-| M2-7 | `R2ImageStorageAdapter` | ❌ Not yet implemented | Cloudflare R2 signed URL issue + image fetch/delete; bucket CORS configured. | §5.2, §8.4, ADL-014 |
-| M2-8 | `FirestoreClosetRepository` | ❌ Not yet implemented | `users/{userId}/closet` metadata CRUD. | §5.2, §8.1 |
-| M2-9 | `ElasticsearchEmbeddingRepository` | ❌ Not yet implemented | `clothing_items` index create/upsert/delete; hybrid search support. **Sequencing (2026-06-04):** build against the local Docker ES behind `EmbeddingSearchPort`, keyword/Firestore-backed first; vector hybrid + GCE host swapped in at the deployment phase. | §5.2, §8.2 |
-| M2-10 | Cloud Tasks adapter (`TaskQueuePort`) | ❌ Not yet implemented | `CloudTasksAdapter` — enqueue jobs to `CLOUD_TASKS_QUEUE_EMBED`. | §5.2, §6.8 |
-| M2-11 | Flutter closet management UI | ❌ Not yet implemented | Upload (direct R2 PUT), list via Firestore realtime listener, delete. | §11, ADL-015 |
-| M2-12 | Firebase Security Rules (closet) | ❌ Not yet implemented | Rules allowing per-user direct read of `users/{uid}/closet`. | ADL-015 |
+| M2-1 | Firebase Auth — Google Sign-In | ❌ Not yet implemented | Flutter Web login via Google Sign-In; first login creates `users/{uid}`. **Deferred:** needs a Flutter app (none exists yet); to be planned in a dedicated frontend ExecPlan **after** the [M2 backend ExecPlan](plans/20260604-m2-closet-management-backend.md) is complete. | §10.1, §15 Phase 1a #4 |
+| M2-2 | FastAPI Firebase ID Token middleware | ✅ Implemented | `verify_firebase_token` dependency implemented; Firebase Auth Emulator token smoke passes; route tests verify missing bearer token returns 401. | §10.3 |
+| M2-3 | `GetUploadUrlUseCase` | ✅ Implemented | `GET /closet/upload-url` returns a 15-min signed PUT URL and enforces `MAX_CLOSET_IMAGES_PER_USER`; live READY smoke uploads through a host-reachable MinIO signed URL. | §6.7 |
+| M2-4 | `RegisterClothingItemUseCase` | ✅ Implemented | `POST /closet/items/{item_id}/complete` writes a PROCESSING placeholder and enqueues the worker task; live smoke proves Firestore placeholder + local worker dispatch. | §6.8 |
+| M2-5 | `ProcessUploadedClothingItemUseCase` | ✅ Implemented | `POST /internal/tasks/process-upload` in `fastapi-service` fetches storage bytes, runs Gemini analysis, handles embedding best-effort, updates Firestore READY/ERROR, and indexes ES. Live READY and ERROR smoke paths pass. **Security (2026-06-04):** the internal route is guarded by a fail-closed shared secret; production OIDC + Cloud Run internal ingress is a BLOCKING deploy gate (see note above). | §6.9, §8.3 |
+| M2-6 | `DeleteClosetItemUseCase` | ✅ Implemented | `DELETE /closet/items/{item_id}` performs best-effort ES/storage deletion and authoritative Firestore deletion; READY smoke confirms removal from Firestore, Elasticsearch, and storage. | §6.10, ADL-015 |
+| M2-7 | `R2ImageStorageAdapter` | ✅ Implemented | One boto3 S3-compatible adapter handles R2/MinIO signed URLs, byte fetch, existence check, and delete; live smoke proves MinIO object upload/presence/delete. | §5.2, §8.4, ADL-014 |
+| M2-8 | `FirestoreClosetRepository` | ✅ Implemented | Async Firestore CRUD/count for `users/{userId}/closet` with domain/document mapping, including `embeddingId: item_id` for READY documents; READY smoke verifies metadata fields. | §5.2, §8.1 |
+| M2-9 | `ElasticsearchEmbeddingRepository` | ✅ Implemented | `clothing_items` index create/upsert/delete and keyword-first search implemented; live ES adapter test passes and READY smoke verifies worker-created ES document. | §5.2, §8.2 |
+| M2-10 | Cloud Tasks adapter (`TaskQueuePort`) | ✅ Implemented | `CloudTasksAdapter` plus async fire-and-forget `LocalHttpTaskQueueAdapter`, selected by settings; tests and smoke prove enqueue isolation and internal-worker dispatch. | §5.2, §6.8 |
+| M2-11 | Flutter closet management UI | ❌ Not yet implemented | Upload (direct R2 PUT), list via Firestore realtime listener, delete. **Deferred:** needs a Flutter app (none exists yet); to be planned in a dedicated frontend ExecPlan **after** the [M2 backend ExecPlan](plans/20260604-m2-closet-management-backend.md) is complete. | §11, ADL-015 |
+| M2-12 | Firebase Security Rules (closet) | ❌ Not yet implemented | Rules allowing per-user direct read of `users/{uid}/closet`. **Deferred:** pairs with the Flutter direct-read path; to be planned in a dedicated frontend ExecPlan **after** the [M2 backend ExecPlan](plans/20260604-m2-closet-management-backend.md) is complete. | ADL-015 |
 
-**Exit criteria:** A logged-in user uploads an image → R2 stores it → Firestore metadata reaches `status: READY` → ES indexed; delete removes all three.
+**Exit criteria:** A logged-in user uploads an image → R2 stores it → Firestore metadata reaches `status: READY` → ES indexed; delete removes all three. *(The backend ExecPlan proves this at the API layer via `make dev` + a scripted curl flow; the Flutter client that drives it is the deferred follow-up plan.)*
 
 ---
 

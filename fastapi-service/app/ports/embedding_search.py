@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 from app.domain.styling import CandidateItem
 
 
@@ -14,8 +14,19 @@ class EmbeddingSearchPort(ABC):
         raise NotImplementedError("Implement in M2-9: Elasticsearch adapter")
 
     @abstractmethod
-    async def index_item(self, item_id: str, user_id: str, embedding: List[float]) -> None:
-        """Index a clothing item embedding."""
+    async def index_item(
+        self,
+        item_id: str,
+        user_id: str,
+        *,
+        is_shared: bool,
+        tags: List[str],
+        category: Optional[str],
+        colors: List[str],
+        season: Optional[str],
+        embedding: Optional[List[float]],
+    ) -> None:
+        """Index a clothing item document and optional embedding."""
         raise NotImplementedError("Implement in M2-9: Elasticsearch adapter")
 
     @abstractmethod

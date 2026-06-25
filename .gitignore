@@ -63,3 +63,6 @@ service-account-key.json
 # PoC generated outputs (inputs are committed; outputs are not)
 poc/image_generation/results/
 poc/adk_event_stream/.env
+
+# ローカル限定ドキュメント（コミットしない）
+docs/local/

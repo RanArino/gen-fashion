@@ -1,7 +1,14 @@
 from uuid import UUID
+from enum import Enum
 from typing import List
 from dataclasses import dataclass
 from app.domain.shared.base_models import ValueObject
+
+
+class ClothingItemStatus(str, Enum):
+    PROCESSING = "PROCESSING"
+    READY = "READY"
+    ERROR = "ERROR"
 
 
 @dataclass(frozen=True)

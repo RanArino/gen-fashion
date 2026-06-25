@@ -1,5 +1,10 @@
 from app.domain.closet.aggregates import ClothingItem
-from app.domain.closet.value_objects import ClothingItemId, ClothingTag, ImageEmbedding
+from app.domain.closet.value_objects import (
+    ClothingItemId,
+    ClothingItemStatus,
+    ClothingTag,
+    ImageEmbedding,
+)
 from app.domain.closet.exceptions import (
     ClosetException,
     ClosetItemNotFound,
@@ -10,6 +15,7 @@ from app.domain.closet.exceptions import (
 __all__ = [
     "ClothingItem",
     "ClothingItemId",
+    "ClothingItemStatus",
     "ClothingTag",
     "ImageEmbedding",
     "ClosetException",
