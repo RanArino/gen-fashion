@@ -60,9 +60,10 @@ flowchart LR
 | **M5** | コーディネートフロー & Accordion UI | 1a | 🟩 **Done**（FastAPI session routes/repository/use cases、ADK run endpoint/event writer、SSE polling stream、Flutter Coordination/Accordion UI 実装済み。local API/SSE smoke と rendered browser E2E は `COMPLETED` まで検証済み） |
 | **ME** | Pre-Deployment Experience & Domain Hardening | 1a | 🟩 **Done**（ME-1…ME-7 実装・ローカル検証完了。性別/child 伝播、必須候補選択ゲート、トレース/結果分離、共有/履歴ギャラリー、自分のメタデータ編集。履歴の weather / duplication 拡張は将来。） |
 | **MD** | Phase 1a Production Deployment & Hardening | 1a | 🟨 **WIP（ME gate closed; resume next）**（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-1…MD-14 🟡。GCE ES + VPC connector、フル vector seed、Cloud Run ×2、Secret Manager + OIDC、Vertex AI Nano Banana、Firebase Hosting。） |
+| **MF** | CI/CD（Continuous Delivery） | 1a | ⬜ **Planned（tracking only, no ExecPlan yet）**（MF-1…MF-6。GitHub Actions + Workload Identity Federation で MD の手動デプロイを自動化: CI ゲート（per-service tests + image build）+ CD（Artifact Registry → Cloud Run ×2 + Firebase Hosting）+ デプロイ後スモーク/ロールバック。req §19 / ADL-030–032。**MD 依存**、ExecPlan は MD 完了後。） |
 | **M6** | LINE チャネル統合 | 1b | ⬜ **Not started**（ファイル無し） |
 
-**現在地:** Phase 1a は **ME（ME-1…ME-7）までローカル検証完了**。ME-3/ME-6 の must-fix は閉じ、次は **MD（本番デプロイ）を再開**する。履歴の weather / duplication 拡張は将来。Phase 1b の LINE / LIFF / Rakuten（M6）には着手しない。
+**現在地:** Phase 1a は **ME（ME-1…ME-7）までローカル検証完了**。ME-3/ME-6 の must-fix は閉じ、次は **MD（本番デプロイ）を再開**する。MD 完了後に **MF（CI/CD）** を別 ExecPlan として起票し、MD の手動デプロイを GitHub Actions + WIF で自動化する（req §19、追跡のみ）。履歴の weather / duplication 拡張は将来。Phase 1b の LINE / LIFF / Rakuten（M6）には着手しない。
 
 **ME 実装追加（implemented and locally verified）:**
 - **入力アダプタ（routes）:** `POST /sessions/{id}/select`（候補確定 → generate フェーズ起動）、`GET /sessions`（認証ユーザーの完了履歴、`completedAt` 降順）、`GET /shared-closets` ＋ `GET /shared-closets/{closetId}/items`（共有クローゼット閲覧、読み取り専用・バックエンド経由）、`PATCH /closet/items/{id}`（自分のアイテムの検索用メタデータ編集、ADL-028）。

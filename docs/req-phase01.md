@@ -1013,6 +1013,30 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **Trade-off:** 履歴の保持方針が必要（`agentEvents` の 24h TTL とは別に、履歴は結果のみ長期保持する設計）。
 - **Date/Author:** 2026-06-21 / Ran（ME プレデプロイ監査）
 
+### ADL-030: CI/CD は GitHub Actions + Workload Identity Federation（キーレス OIDC）
+
+- **Decision:** Phase 1a の CI/CD は **GitHub Actions** で実装し、GCP への認証は **Workload Identity Federation（WIF）** による短命 OIDC トークンで行う（SA の JSON 鍵をリポジトリ／GitHub Secrets に保存しない）。Workload Identity Pool / Provider を作成し、デプロイ用 SA（例: `github-deployer`）に必要ロール（`roles/run.admin`、`roles/artifactregistry.writer`、`roles/iam.serviceAccountUser`、`roles/firebasehosting.admin` 等）を付与して、リポジトリ／ブランチを属性条件で限定してバインドする。
+- **Alternatives:** (a) Cloud Build トリガー（GCP ネイティブだがパイプライン定義がリポジトリ外で可視性が低い）、(b) SA JSON 鍵を GitHub Secrets に保存（鍵の漏洩・ローテーション運用のリスク）。
+- **Rationale:** GitHub Actions はパイプラインをリポジトリ内 YAML として可視化でき（PR の green check）、ポータブル。WIF は長命鍵を排除し、MD の OIDC + Secret Manager 方針（ADL-012 / ADL-024）と整合する。
+- **Trade-off:** WIF の初期セットアップ（Pool / Provider / SA バインド）が必要。リポジトリ／ブランチを限定する属性条件を正しく設定しないと過剰権限になる。
+- **Date/Author:** 2026-06-26 / Ran（CI/CD 計画起票時に提案）
+
+### ADL-031: CI ゲートはサービス別の並列ジョブ（PR + main push でテスト/解析/ビルド検証）
+
+- **Decision:** PR と `main` への push をトリガーに、サービス別の並列ジョブを実行する: `fastapi-service`（`pytest`、基準 68）、`adk-agent-service`（`pytest`、基準 41）、`flutter-web-app`（`flutter analyze` + `flutter test`、基準 14）、および両イメージの Docker ビルド検証。全ジョブ green を merge ゲートとする。Firestore Emulator / Elasticsearch を要する統合テストは GitHub Actions の service container で用意するか、不可分なものは単体に絞る（CI/CD ExecPlan 着手時に確定）。
+- **Alternatives:** (a) 単一直列ジョブ（遅く、失敗の切り分けが弱い）、(b) テストゲート無し（現状、品質が保証されない）。
+- **Rationale:** 既存テスト資産（fastapi 68 / adk 41 / flutter 14）をそのままゲート化でき、並列で高速。
+- **Trade-off:** CI 上での統合テスト環境（Emulator / ES）の用意が必要。`make test` は docker-compose 前提のため CI 用に分離する。
+- **Date/Author:** 2026-06-26 / Ran（CI/CD 計画起票時に提案）
+
+### ADL-032: CD は main マージで Artifact Registry → Cloud Run / Firebase Hosting に自動デプロイ、失敗時はリビジョンロールバック
+
+- **Decision:** `main` マージで、両イメージを **Artifact Registry** にビルド/プッシュ → 両 **Cloud Run** サービスをデプロイ → **Flutter Web** をビルドし **Firebase Hosting** にデプロイ → **デプロイ後スモーク**（`GET /health` ＋ deployed URL に対する認証付き coordination smoke）を実行する。スモーク失敗時は Cloud Run のトラフィックを直前のリビジョンへ戻す（`gcloud run services update-traffic --to-revisions=<prev>=100`）。デプロイ処理は MD が定義する `scripts/deploy/deploy_fastapi.sh` / `deploy_adk.sh` をワークフローから呼ぶ薄いラッパとし、アプリの振る舞いは変えない。秘密は Secret Manager（`--set-secrets`）経由でのみ注入し、ワークフローログに出さない。
+- **Alternatives:** (a) 手動デプロイのみ（MD 現状）、(b) 本番反映前に手動承認ゲートを置く（より安全だがデモ速度が落ちる。単一の使い捨て環境では過剰）。
+- **Rationale:** 「デプロイ後の CI/CD」を満たす。MD がコマンドを既に確定しているため、CD はその自動化に集約できる。
+- **Trade-off:** ステージング環境は持たない（単一環境）。品質の最後の砦はデプロイ後スモークであり、本番へ自動反映するぶん CI ゲートの厳格さが重要。
+- **Date/Author:** 2026-06-26 / Ran（CI/CD 計画起票時に提案）
+
 ---
 
 ## 14. Out of Scope (Phase 1)
@@ -1111,6 +1135,7 @@ CC BY-SA 4.0 に基づき、以下を実装する：
 | LINE Reply Token 有効期限 | MEDIUM（Phase 1b） | Cloud Tasks の遅延が 1 分を超えた場合の Push API へのフォールバック設計 |
 | 共有クローゼットの性別付与 | 解決済み（2026-06-21） | データセットに性別が無いため**カテゴリ別ヒューリスティック**でシード付与。ユーザーは自分のクローゼットでギャラリー編集可（§18.1 / ADL-026 / ADL-028） |
 | 実行履歴の天気・重複回避 | LOW（将来拡張） | 天気シグナル取り込みと直近着用との重複回避。Phase 1a 必須範囲外（§18.5 / ADL-029） |
+| CI の統合テスト環境 | MEDIUM | GitHub Actions 上で Firestore Emulator / Elasticsearch を service container で用意するか、統合テストを単体に絞るか（§19.2 / ADL-031、CI/CD ExecPlan 着手時に確定） |
 
 ---
 
@@ -1152,3 +1177,40 @@ CC BY-SA 4.0 に基づき、以下を実装する：
 - **永続化と一覧:** 完了したセッション（選択アイテム ＋ 生成画像 ＋ 日時）を一覧する API（`FirestoreStyleSessionRepository` に list を追加）と**時系列の履歴ギャラリー**を提供する。
 - **将来拡張:** 天気シグナルの取り込みと、直近数日〜数週間に着用した服との**重複回避**（"なるべく" 重複しない提案）。本項の天気・重複回避は **Phase 1a の必須範囲外**（ME の中でも将来拡張、ADL-029）。
 - **受け入れ:** 過去の実行が時系列ギャラリーで再確認できること。
+
+---
+
+## 19. Continuous Delivery / CI-CD (MF)
+
+> MD（手動 `gcloud` デプロイ）の上に構築する自動化レイヤ。feature-matrix の **MF-1…MF-6** に対応。MD（手動 `gcloud` デプロイ）の**上に**構築する自動化であり、アプリの振る舞いは変えない。プラットフォームは **GitHub Actions + Workload Identity Federation**（ADL-030 / ADL-031 / ADL-032）。**MD 依存**であり、**MD 完了後に起票する別 ExecPlan で実装する**（「one ExecPlan at a time」: 本節は req レベルの追跡のみで、ExecPlan は未起票）。本節着手時点の現状として、リポジトリには CI/CD 資産が一切無い（`.github/` / Cloud Build トリガー / `cloudbuild.yaml` / `scripts/deploy/` のいずれも未作成）。
+
+### 19.1 認証基盤（Workload Identity Federation、MF-1）
+
+- **構成:** Workload Identity Pool / Provider を作成し、GitHub Actions の OIDC トークンを GCP のデプロイ用 SA（`github-deployer`）にフェデレートする。SA の JSON 鍵は使わない（ADL-030）。
+- **権限:** リポジトリ＋ブランチ（`main` 等）を属性条件で限定。`github-deployer` に `roles/run.admin`、`roles/artifactregistry.writer`、`roles/iam.serviceAccountUser`（Cloud Run のランタイム SA を `actAs`）、`roles/firebasehosting.admin` を付与。
+- **受け入れ:** GitHub Actions のジョブが鍵なしで `gcloud` / `firebase` を認証実行できること。
+
+### 19.2 CI ゲート（MF-2）
+
+- **トリガー:** PR と `main` への push。
+- **並列ジョブ:** fastapi `pytest`（基準 68）、adk `pytest`（基準 41）、flutter `analyze` + `test`（基準 14）、両 `Dockerfile` のビルド検証。
+- **統合テスト:** Firestore Emulator / Elasticsearch を要するものは GitHub Actions の service container で用意するか、不可分でないものは単体に絞る（ADL-031、§17 Open Questions）。全 green を merge ゲートとする。
+- **受け入れ:** テストが落ちる PR が merge ブロックされること。
+
+### 19.3 CD パイプライン（MF-3 / MF-4）
+
+- **MF-3（バックエンド）:** `main` マージで両イメージを Artifact Registry にビルド/プッシュ → Cloud Run ×2 をデプロイ（MD の `scripts/deploy/deploy_*.sh` を呼ぶ薄いラッパ）。非機密は `--set-env-vars`、機密は `--set-secrets`（ADL-032 / ADL-012）。
+- **MF-4（フロントエンド）:** `flutter build web --release`（本番 `--dart-define`）→ `firebase deploy --only hosting`。Authorized domains / R2 CORS は MD-9 / MD-12 の設定を流用。
+- **受け入れ:** `main` マージのみで両 Cloud Run サービスと Firebase Hosting が更新されること。
+
+### 19.4 デプロイ後スモーク & ロールバック（MF-5）
+
+- **スモーク:** デプロイ後に `GET /health` と、deployed URL に対する認証付き coordination smoke（`scripts/m5_coordination_smoke.py` の deployed 版）を実行し `COMPLETED` を確認する。
+- **ロールバック:** スモーク失敗時は Cloud Run のトラフィックを直前の正常リビジョンへ戻す（`gcloud run services update-traffic --to-revisions=<prev>=100`）。
+- **受け入れ:** スモーク失敗時に本番が直前の正常リビジョンへ自動的に戻ること。
+
+### 19.5 ランブック & 同期（MF-6）
+
+- **文書化:** パイプラインのランブック（トリガー、必要権限、ロールバック手順、秘密の扱い）を記載する。
+- **同期:** CI/CD ExecPlan の着手・完了時に feature-matrix（MF-*）と ExecPlan を同期する（本リポジトリの sync ルール）。
+- **受け入れ:** 新規参加者がランブックだけで CI/CD を運用できること。
