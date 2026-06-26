@@ -1,5 +1,17 @@
 # Phase 1 Feature Matrix — gen-fashion
 
+> **CI/CD planning (2026-06-26 — tracking only, no ExecPlan yet):** The hackathon's
+> judging axis — **CI/CD after deployment** — was not present anywhere in the
+> requirements or plans (no `.github/`, no Cloud Build trigger, no `cloudbuild.yaml`,
+> no `scripts/deploy/`; "CI/CD" never appears in req/matrix; the MD plan is
+> deliberately manual `gcloud` + shell scripts, ADL rejecting Terraform). Added a new
+> milestone **MF (CI/CD)** with rows **MF-1…MF-6** to track it. Platform: **GitHub
+> Actions + Workload Identity Federation** (ADL-030 / ADL-031 / ADL-032, req §19). MF
+> automates MD's manual deploy steps and **depends on MD**. Per **"one ExecPlan at a
+> time"** the CI/CD ExecPlan is **not authored yet** (MD is the resume-next milestone);
+> this change is **req/matrix tracking only, no code** — the same method used for the
+> ME pre-deploy audit. **MF rows are ❌ Not yet implemented.**
+
 > **ME-7 completion update (2026-06-24): ✅ Implemented.** Completed ADK runs
 > now receive an authoritative Firestore `completedAt`; authenticated
 > `GET /sessions` returns the owner's completed runs newest first; and Flutter
@@ -62,9 +74,10 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 | **M5** | Coordination Flow & Accordion UI (Web E2E) | 1a | M3, M4 | Full Web GUI flow: session → analysis → search → propose → generate, with live Accordion UI. |
 | **ME** | Pre-Deployment Experience & Domain Hardening | 1a | M5 | Close six user-facing / domain gaps found before deploy (`ToDo` §1–6): closet gallery + metadata incl. shared closets, a gender/age dimension threaded end-to-end (child closet → child imagery), shared-closet gender data, Agent-Trace curation, candidate result UI + mandatory user-selection gate, and agent run history. |
 | **MD** | Phase 1a Production Deployment & Hardening | 1a | M5, ME | Deploy the verified Phase 1a stack to Google Cloud: Compute Engine ES + private connectivity, full vector seed, Cloud Run ×2, Secret Manager + OIDC, Nano Banana on Vertex AI, Firebase Hosting. |
+| **MF** | CI/CD (Continuous Delivery) | 1a | MD | Automate MD's manual deploy: GitHub Actions CI gate (per-service tests + image build) + CD (Artifact Registry → Cloud Run ×2 + Firebase Hosting) over Workload Identity Federation, with post-deploy smoke + revision rollback. The hackathon's CI/CD-after-deployment axis. |
 | **M6** | LINE Channel Integration | 1b | M5 | LINE users get the full coordination experience; Rakuten search added. |
 
-> Phase 1a = **M0–M5** (local-verified) **+ ME** (pre-deploy UX / domain hardening) **+ MD** (production cutover). Phase 1b = **M6**. **ME precedes MD** — MD's must-fix gate is the two requirement violations it found (the `child-01` → adult-image defect **ME-3** and the missing user-selection step **ME-6**); the rest of ME is strongly recommended before cutover. **MD** completes Phase 1a in the cloud and is independent of M6; LINE work (M6) must not start until M5 is complete (`req-phase01.md` §14).
+> Phase 1a = **M0–M5** (local-verified) **+ ME** (pre-deploy UX / domain hardening) **+ MD** (production cutover) **+ MF** (CI/CD automation over MD). Phase 1b = **M6**. **ME precedes MD** — MD's must-fix gate is the two requirement violations it found (the `child-01` → adult-image defect **ME-3** and the missing user-selection step **ME-6**); the rest of ME is strongly recommended before cutover. **MD** completes Phase 1a in the cloud and is independent of M6; LINE work (M6) must not start until M5 is complete (`req-phase01.md` §14).
 
 ---
 
@@ -250,6 +263,25 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 | MD-14 | Logging, TTL & teardown | 🟡 In progress | Verify ADK event stream queryable in Cloud Logging; ensure `agentEvents.ttlAt` TTL (24 h) policy active; commit/dry-run `scripts/deploy/teardown.sh`. | §9.3, ADL-021 |
 
 **Exit criteria:** Opening the public Firebase Hosting URL and completing a `SHARED_CLOSET` coordination to a generated image works against deployed infrastructure (`req-phase01.md` §15 Phase 1a #6 satisfied in the cloud); all secrets live in Secret Manager; ES is reachable only privately; a documented teardown can dismantle the throwaway environment.
+
+---
+
+## MF — CI/CD (Continuous Delivery)
+
+**Scope:** Automate the manual deployment MD performs by hand, and add the test gate the repo currently lacks. This is the hackathon's **CI/CD-after-deployment** axis. Built on GitHub Actions with keyless **Workload Identity Federation**; CD is a thin wrapper over MD's `scripts/deploy/deploy_*.sh`. **Depends on MD** (the deploy commands/scripts must exist first). Reference: `req-phase01.md` §19, ADL-030 / ADL-031 / ADL-032.
+
+> **Tracking only (2026-06-26):** rows added at the requirements level; **no ExecPlan authored yet** per "one ExecPlan at a time" (MD is the resume-next milestone). The CI/CD ExecPlan is authored after MD completes. No CI/CD assets exist in the repo today (`.github/`, Cloud Build trigger, `cloudbuild.yaml`, `scripts/deploy/` are all absent). Subagent fan-out for execution (audit per-service test/build entrypoints → author CI workflow → author CD workflow + WIF → smoke/rollback → runbook+sync) is defined in the planning discussion and runs when the ExecPlan is authored.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| MF-1 | Workload Identity Federation | ❌ Not yet implemented | Create the Workload Identity Pool/Provider; federate GitHub Actions OIDC to a `github-deployer` SA (no JSON key); bind by repo+branch; grant `run.admin` / `artifactregistry.writer` / `iam.serviceAccountUser` / `firebasehosting.admin`. | §19.1, ADL-030 |
+| MF-2 | CI gate (tests + build) | ❌ Not yet implemented | On PR + push to `main`, parallel jobs: fastapi `pytest` (68), adk `pytest` (41), flutter `analyze`+`test` (14), and Docker build validation of both images. Integration tests needing Firestore Emulator / ES use service containers or are scoped to unit. All green = merge gate. | §19.2, ADL-031 |
+| MF-3 | CD — backend (Cloud Run) | ❌ Not yet implemented | On `main` merge, build/push both images to Artifact Registry and deploy both Cloud Run services by calling MD's `scripts/deploy/deploy_*.sh`; env via `--set-env-vars`, secrets via `--set-secrets`. | §19.3, ADL-032 |
+| MF-4 | CD — frontend (Firebase Hosting) | ❌ Not yet implemented | On `main` merge, `flutter build web --release` with production `--dart-define`s and `firebase deploy --only hosting`; reuse MD-9/MD-12 authorized-domains + R2 CORS config. | §19.3, ADL-032, ADL-025 |
+| MF-5 | Post-deploy smoke + rollback | ❌ Not yet implemented | After deploy, run `GET /health` + an authenticated coordination smoke against the deployed URL (`scripts/m5_coordination_smoke.py` adapted) to `COMPLETED`; on failure, roll back Cloud Run traffic to the previous revision. | §19.4, ADL-032 |
+| MF-6 | Pipeline runbook + matrix sync | ❌ Not yet implemented | Document triggers, required IAM, rollback, and secret handling; keep MF-* rows and the CI/CD ExecPlan in sync per the repo's sync rule. | §19.5 |
+
+**Exit criteria:** A merge to `main` builds, deploys both Cloud Run services and Firebase Hosting via WIF (no stored keys), runs a post-deploy smoke to `COMPLETED`, and rolls back automatically on smoke failure — with the CI gate blocking merges whose tests fail.
 
 ---
 

@@ -168,7 +168,7 @@ Milestone A — GCP foundation
 
     gcloud firestore databases create --location=asia-northeast1 --type=firestore-native
     # from repo root, with firebase.json + firestore.rules present:
-    firebase deploy --only firestore:rules --project <PROJECT_ID>
+    firebase deploy --only firestore:rules,firestore:indexes --project <PROJECT_ID>
 
 
 5. Create the production Firebase project artifacts: in the Firebase console, attach Firebase to `<PROJECT_ID>`, enable the **Google** sign-in provider, register a **Web app**, and copy its config (apiKey, appId, messagingSenderId, authDomain, storageBucket) for MD-12's `--dart-define`s.
@@ -238,7 +238,7 @@ Milestone B — Data plane
     MAX_ITEMS_PER_CATEGORY=150 python scripts/seed_shared_closet/run_seed.py --with-embeddings
 
 
-    Expect a non-zero `created` on first run and `created=0` on a second run (idempotent). Verify ES has `embedding` populated: `GET clothing_items/_count` and a `knn` probe return shared docs with vectors.
+    Expect a non-zero `created` on first run (~210 total: 70 per closet across `adult-01`, `adult-02`, `child-01`) and `created=0` on a second run (idempotent). Verify ES has `embedding` populated: `GET clothing_items/_count` returns ≥ 210 and a `knn` probe returns shared docs carrying `embedding`.
 
 
 Milestone C — Services
@@ -253,9 +253,9 @@ Milestone C — Services
     gcloud builds submit adk-agent-service --tag $REPO/adk-agent-service:v1
 
 
-14. Land the three code changes (see Interfaces and Dependencies for exact edits):
-    - Add `fastapi_internal_base_url` (env `FASTAPI_INTERNAL_BASE_URL`) to `fastapi-service/app/config.py` and use it in `cloud_tasks_adapter.py` / `local_task_queue.py` for the `process-upload` URL; keep `adk_internal_base_url` for run-session.
-    - Add `internal_invoker_sa` to config; in `CloudTasksAdapter`, set `http_request["oidc_token"]` with `service_account_email=internal_invoker_sa` and `audience=fastapi_internal_base_url`; in `HttpAgentRunAdapter`, attach a Cloud Run OIDC identity token (audience = `adk_internal_base_url`) via `google.auth` when running in the cloud.
+14. Land the remaining cloud-auth code changes (see Interfaces and Dependencies for exact edits). Note: `fastapi_internal_base_url: str | None = None` is already in `config.py` and `local_task_queue.py` already uses it (both landed during the local re-verification, 2026-06-21); only the cloud-path changes below remain.
+    - Fix `cloud_tasks_adapter.py` line 28: change `adk_internal_base_url` → `fastapi_internal_base_url` (with the same `or adk_internal_base_url` fallback as `local_task_queue.py`) so the Cloud Tasks worker URL targets the fastapi service.
+    - Add `internal_invoker_sa: str | None = None` to `fastapi-service/app/config.py`; in `CloudTasksAdapter`, uncomment and correct the `oidc_token` block — set `service_account_email=internal_invoker_sa` and `audience=fastapi_internal_base_url` (the existing comment says `adk_internal_base_url` — that is wrong); in `HttpAgentRunAdapter`, attach a Cloud Run OIDC identity token (audience = `adk_internal_base_url`) via `google.auth` when running in the cloud.
     - In `fastapi-service/app/auth.py` `require_internal_secret`, additionally accept a verified Cloud Run OIDC bearer (verify the token's audience + that the SA email is `tasks-invoker-sa`); keep the shared secret as defense in depth.
     Rebuild/push `:v2` after these edits.
 
@@ -332,7 +332,7 @@ Milestone E — Acceptance + ops
 ## Validation and Acceptance
 
 
-Local pre-deploy gate (run before building images, from repo root): `docker-compose run --rm fastapi-service pytest` (expect the M5 baseline ~59 passed), `cd adk-agent-service && pytest -q` (expect ~25 passed), `cd flutter-web-app && flutter analyze` (No issues) and `flutter test`. The three code edits in step 14 must keep all of these green; add/adjust unit tests for the OIDC header attachment and the new `FASTAPI_INTERNAL_BASE_URL` routing in `fastapi-service/app/adapters/`.
+Local pre-deploy gate (run before building images, from repo root): `docker-compose run --rm fastapi-service pytest` (expect the ME baseline 68 passed), `cd adk-agent-service && pytest -q` (expect 41 passed), `cd flutter-web-app && flutter analyze` (no issues) and `flutter test` (expect 14 passed). The code edits in step 14 must keep all of these green; add/adjust unit tests for the OIDC header attachment and the `cloud_tasks_adapter.py` URL fix in `fastapi-service/app/adapters/`.
 
 
 Per-milestone acceptance, phrased as observable behavior:
@@ -367,14 +367,24 @@ No secret values belong in this file, the scripts, commits, or logs — only Sec
 GCP services: Cloud Run (two services), Artifact Registry (image storage), Cloud Build (image builds), Secret Manager (secrets), Cloud Tasks (embedding worker queue), Compute Engine (ES VM), Serverless VPC Access (private connectivity), Firestore (Native mode), Vertex AI / `aiplatform` (Gemini analysis, `gemini-embedding-2`, `gemini-2.5-flash-image`), Cloud Logging (ADK event stream). External: Cloudflare R2 (object storage) and Kaggle (dataset for the seed). Tooling: `gcloud`, `docker`/Cloud Build, Firebase CLI, Flutter SDK.
 
 
-Code changes required (minimal, all in `fastapi-service/`):
-- `app/config.py`: add `fastapi_internal_base_url: str | None = None` and `internal_invoker_sa: str | None = None`.
-- `app/adapters/cloud_tasks_adapter.py` and `app/adapters/local_task_queue.py`: build the `process-upload` URL from `fastapi_internal_base_url` (fallback to `adk_internal_base_url` only if unset, preserving local behavior); in `CloudTasksAdapter`, attach `oidc_token` with `audience=fastapi_internal_base_url`.
+Code changes remaining (all in `fastapi-service/`; `config.py` `fastapi_internal_base_url` field and `local_task_queue.py` URL routing are already done from the local re-verification):
+- `app/config.py`: add `internal_invoker_sa: str | None = None` (only this remains; `fastapi_internal_base_url` is already present).
+- `app/adapters/cloud_tasks_adapter.py`: fix line 28 to use `fastapi_internal_base_url or adk_internal_base_url` (not bare `adk_internal_base_url`) for the `process-upload` URL; uncomment and correct the `oidc_token` block (change the audience from `adk_internal_base_url` to `fastapi_internal_base_url` — the existing comment has the wrong value). `app/adapters/local_task_queue.py` already uses `fastapi_internal_base_url`; no further change there.
 - `app/adapters/adk_agent_run.py`: when `internal_invoker_sa`/cloud mode is configured, attach a Cloud Run OIDC identity token (`google.auth` ID token, audience = `adk_internal_base_url`) to the `/internal/run-session` call.
 - `app/auth.py` `require_internal_secret`: accept a verified Cloud Run OIDC bearer (audience + SA email check) in addition to the shared secret.
 
 
-These four edits are the only application changes; everything else is provisioning and configuration. They preserve local `make dev` behavior because the new settings are unset locally (the code falls back to the current shared-secret + `adk_internal_base_url` paths).
+These code changes preserve `make dev` behavior because the new settings are unset locally (the code falls back to the existing shared-secret + `adk_internal_base_url` paths).
 
 
 Requirements traceability: MD-1/MD-2 ← req §9.1, §12.1/§12.2, ADL-012; MD-3/MD-4 ← req §9.2, ADL-013, ADL-023, M1-3; MD-5/MD-6/MD-7 ← req §9.1, ADL-016; MD-8 ← req §6.8, §10.3, ADL-024; MD-9 ← req §8.4, ADL-014; MD-10 ← req §15 Phase 1a #7, §16.4, ADL-010, M3-2; MD-11 ← req §6.5, ADL-005, M4-7/M5-6; MD-12 ← req §11, ADL-025; MD-13 ← req §15 Phase 1a #6; MD-14 ← req §9.3, ADL-021.
+
+
+## Revision Notes
+
+
+2026-06-15 — Initial authoring. Milestones A–E defined; deployment requirements MD-1…MD-14 scoped; ADLs added to `req-phase01.md`; architecture overview synchronized.
+
+2026-06-21 — Local re-verification completed; three bugs found and fixed (MD-8 local base-URL split, Firestore project binding, `closetId` keyword mapping). MD-10 de-risked (embedding model corrected to `gemini-embedding-001`, `adk_run_timeout_seconds` raised to 90, `STREAM_MAX_SECONDS` raised to 150).
+
+2026-06-25 — Synchronized with completed ME ExecPlan. Changes: (1) step 4 firebase deploy command now includes `firestore:indexes` (ME-7 composite index is committed in `firestore.indexes.json`); (2) step 12 expected seed count updated from ~90 to 210 items (70/70/70, from ME shared-closet expansion); (3) step 14 clarified — `fastapi_internal_base_url` in `config.py` and `local_task_queue.py` URL routing are already done; remaining is `cloud_tasks_adapter.py` URL fix (line 28 still uses `adk_internal_base_url`), OIDC token with corrected audience, `internal_invoker_sa` in config, and OIDC bearer in `auth.py`; (4) Validation baselines updated to 68 FastAPI / 41 ADK / 14 Flutter; (5) Interfaces and Dependencies code-changes list updated to reflect what is already done vs. remaining.
