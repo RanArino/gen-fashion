@@ -28,6 +28,8 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 - [x] (2026-06-15) Authored this ExecPlan; selected the deployment requirements (MD-1…MD-14); set them to 🟡 In progress in `docs/feature-matrix-phase01.md`; recorded the new deployment ADLs in `docs/req-phase01.md`; synced `docs/architecture-overview.md`.
 - [x] (2026-06-21) Pre-deploy **local re-verification** (`docs/plans/20260621-md-phase1a-local-verification-checklist.md`): ran the local gate end-to-end and found three real bugs the prior "verified locally" claims had masked. Fixed: (a) **MD-8 base-URL split — local portion landed early** (`fastapi_internal_base_url` + `FASTAPI_INTERNAL_BASE_URL`), because the conflation broke `make dev` (upload→READY 404), not just the cloud; (b) Firestore client bound to the Vertex project instead of the Firebase project (`firestore_project_id` added); (c) `closetId` dynamic-`text` mapping broke SHARED_CLOSET search (keyword mapping added). After fixes the local M5 browser E2E reached `COMPLETED` with a **real Nano Banana image** (`gemini-2.5-flash-image`) — confirming the MD-11 model works at least in `us-central1` for project `animation-agent`. **MD-8 remaining (cloud): OIDC tokens on both hops + worker-route OIDC verification + Cloud Tasks audience.**
 - [x] (2026-06-21) Resolved the two non-blocking follow-ups from the local re-verification. **MD-10 de-risked:** embedding model corrected to `gemini-embedding-001` (768-dim `embed_content`) and the index side switched from image to **analyzed-text** embeddings so it shares the text-query space; local `--with-embeddings` seeded 90×768-dim vectors and a kNN probe returned semantically relevant hits (the seed's Vertex vs Firestore project was also split, mirroring the app fix; no-op in prod). **Agent timeout/UX:** `adk_run_timeout_seconds` made configurable (45→90) and fastapi `STREAM_MAX_SECONDS` raised (120→150) so the SSE stream always outlasts the ADK timeout + deterministic fallback — the coordination smoke then completed via the **primary** LLM path. Only MD-10's prod execution (seed against GCE ES inside the VPC) remains.
+- [x] (2026-06-27) Pre-production deployment readiness audit completed and this plan was resolved before any cloud deployment. Added an explicit **Milestone 0 — deploy readiness patch** for the remaining code/docs/scripts blockers: Cloud Tasks must target `FASTAPI_INTERNAL_BASE_URL`, both internal hops must use OIDC, the worker route must verify the OIDC bearer, Cloud Run containers must honor `$PORT`, `.env.example` must expose production-only deploy knobs, and `scripts/deploy/` helpers must exist before manual deployment or later MF CI/CD automation. Also resolved the ES bootstrap egress gap by allowing a temporary external IP only during VM install/seed and requiring it to be removed before acceptance; no architecture-overview update is needed because this is bootstrap procedure, not a steady-state component.
+- [ ] Milestone 0 — Deploy readiness patch: code/config/script fixes before provisioning (`CloudTasksAdapter`, `HttpAgentRunAdapter`, `require_internal_secret`, Dockerfiles, `.env.example`, deploy helper scripts).
 - [ ] Milestone A — GCP foundation: project, APIs, service accounts, IAM, Secret Manager, production R2 bucket + CORS, Firebase project (MD-1, MD-2, MD-9).
 - [ ] Milestone B — Data plane: Compute Engine Elasticsearch node, Serverless VPC Access connector + private connectivity verification, full vector seed (MD-3, MD-4, MD-10).
 - [ ] Milestone C — Services: Artifact Registry images, Cloud Run `fastapi-service` + `adk-agent-service`, Cloud Tasks queue, OIDC hardening + internal-base-url split (MD-5, MD-6, MD-7, MD-8).
@@ -44,8 +46,14 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
   Evidence: `fastapi-service/app/adapters/cloud_tasks_adapter.py:39-46`.
 - Observation: The `M2-5` feature-matrix note prescribes "Cloud Run `fastapi-service` ingress is set to `internal`". That cannot hold as written: `fastapi-service` also serves the public `/closet/*` and `/sessions/*` routes that the browser calls directly. Production protection of the worker route therefore relies on OIDC verification + the shared secret (defense in depth), not service-level internal ingress. Recorded as ADL-024.
   Evidence: `fastapi-service/app/main.py:20-23` registers public and internal routers on one app.
-- Observation: There is a documented count tension for the shared closet. `req-phase01.md` §15 Phase 1a #7 still says "2,000件以上"; the M3 re-scope (`feature-matrix-phase01.md` M3-2, ADL-010) reduced the demo to 3 curated closets (~90 items) and the seed script's `_CLOSET_QUOTA` totals 30 per closet. The deployment seed therefore produces ~90 demo-closet items **with 768-dim embeddings**; "full vector seed" means embeddings present + hybrid/kNN search working, not a raw count of 2,000. §15 #7 is clarified in this change.
-  Evidence: `scripts/seed_shared_closet/run_seed.py:86` `_CLOSET_QUOTA = {"tops": 8, "outer": 4, "bottoms": 6, "dress": 4, "shoes": 5, "hat": 3}`.
+- Observation: Both service Dockerfiles currently hard-code uvicorn ports (`fastapi-service`: `8000`; `adk-agent-service`: `3000`). Cloud Run injects a runtime `PORT` value and routes traffic to the configured container port; using `$PORT` in the image entrypoint is the least-coupled path and avoids silently deploying a revision that never becomes ready because the service expects a different port.
+  Evidence: `fastapi-service/Dockerfile:10` and `adk-agent-service/Dockerfile:12`; Cloud Run deploy commands in this plan previously had no `--port` override.
+- Observation: The planned ES VM is created with no external IP, but the bootstrap instructions immediately require outbound internet access for Elastic packages, Kaggle data, Cloudflare R2, Vertex AI, and Firestore. Without a bootstrap egress path, install and seed are likely to fail before Cloud Run can ever verify private ES access.
+  Evidence: step 8 used `--no-address`; steps 9 and 12 require package download and external API/storage access.
+- Observation: `scripts/deploy/` is absent, but the plan and later MF CI/CD milestone expect `scripts/deploy/deploy_fastapi.sh`, `scripts/deploy/deploy_adk.sh`, and `scripts/deploy/teardown.sh` to exist and be the command surface for manual deploys and later automation.
+  Evidence: `find scripts -maxdepth 3 -type f` shows smoke and seed scripts only; no `scripts/deploy/*`.
+- Observation: There is a documented count tension for the shared closet. `req-phase01.md` §15 Phase 1a #7 originally said "2,000件以上"; the M3/ME re-scope (`feature-matrix-phase01.md` M3-2, ADL-010) uses 3 curated closets with 70 items each. The deployment seed therefore produces **210 demo-closet items with 768-dim embeddings**; "full vector seed" means embeddings present + hybrid/kNN search working, not a raw count of 2,000.
+  Evidence: `scripts/seed_shared_closet/README.md` documents `adult-01`, `adult-02`, and `child-01` at 70 items each; `scripts/seed_shared_closet/run_seed.py` uses `gemini-embedding-001`.
 
 
 ## Decision Log
@@ -63,9 +71,15 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 - Decision: Infrastructure (Cloud Run, Compute Engine ES, VPC connector, Cloud Tasks) lives in `asia-northeast1`; Vertex AI (`GOOGLE_CLOUD_LOCATION`) stays at the region where the image model `gemini-2.5-flash-image` is confirmed available (`us-central1` unless the team verifies a closer region).
   Rationale: ES is pinned to `asia-northeast1` by req §9.2; co-locating Cloud Run minimizes ES latency. Vertex model regional availability is independent and must be verified, not assumed (model availability is time-sensitive; check current Vertex AI docs at execution time).
   Date/Author: 2026-06-15 / Ran (proposed at deployment ExecPlan authoring)
-- Decision: Deployment is performed with **`gcloud` CLI commands captured in this plan plus two committed helper scripts** (`scripts/deploy/deploy_fastapi.sh`, `scripts/deploy/deploy_adk.sh`), not Terraform.
+- Decision: Deployment is performed with **`gcloud` CLI commands captured in this plan plus three committed helper scripts** (`scripts/deploy/deploy_fastapi.sh`, `scripts/deploy/deploy_adk.sh`, `scripts/deploy/teardown.sh`), not Terraform.
   Rationale: Hackathon scope and a single throwaway environment do not justify a Terraform state backend; the existing repo convention is shell scripts under `scripts/`. Reproducibility comes from committed scripts + this plan.
   Date/Author: 2026-06-15 / Ran (proposed at deployment ExecPlan authoring)
+- Decision: The Cloud Run images must listen on the injected `$PORT` instead of hard-coded service-specific ports; deploy scripts should not rely on `--port` unless rolling back to the old images during recovery.
+  Rationale: This matches Cloud Run's container contract, keeps one image usable across local overrides and Cloud Run, and removes a fragile hidden dependency between Dockerfile ports and deploy command flags.
+  Date/Author: 2026-06-27 / Codex (pre-production readiness audit)
+- Decision: The ES VM may use a **temporary external IP only for bootstrap and production seed**, then the access config must be deleted before acceptance. No firewall rule may expose `tcp:9200` publicly; Elasticsearch remains reachable only from localhost and the Serverless VPC Access connector range.
+  Rationale: This avoids adding Cloud NAT as a steady-state component while still giving the VM enough outbound access to install Elasticsearch and run the Kaggle/R2/Vertex/Firestore seed. The final accepted infrastructure still satisfies the "ES VM has no external IP" security posture.
+  Date/Author: 2026-06-27 / Codex (pre-production readiness audit)
 
 
 ## Outcomes & Retrospective
@@ -83,7 +97,7 @@ This repository (`gen-fashion`) is a two-container application plus a Flutter We
 - `fastapi-service/` — Python/FastAPI "edge" service. Public routes `/closet/*` (signed upload URLs, register, delete, signed download) and `/sessions/*` (create session, select source, SSE stream), plus the internal worker route `/internal/tasks/process-upload`. Config is `fastapi-service/app/config.py` (`pydantic-settings`, reads env + `.env`). Adapter selection is in `fastapi-service/app/dependencies.py` (`get_task_queue()` switches to `CloudTasksAdapter` only when `TASK_QUEUE_MODE=cloud_tasks` **and** `google_cloud_project` is set). Container entry: `fastapi-service/Dockerfile` (`uvicorn app.main:app` on `:8000`).
 - `adk-agent-service/` — Python ADK ("Agent Development Kit") service (ADL-022). It runs the `styling_app` agent topology (orchestrator + ClosetAgent + StylingAgent + four tools) and exposes a FastAPI wrapper `styling_app/server.py` with `/health` and `POST /internal/run-session` (`:3000`). Config: `adk-agent-service/styling_app/config.py`. When `GOOGLE_GENAI_USE_VERTEXAI=true` it bridges `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` into the process env so ADK's Gemini client uses Vertex AI + Application Default Credentials. Image generation model defaults to `gemini-2.5-flash-image` (Nano Banana) in `styling_app/adapters/image_generation.py`; on failure or missing quota it falls back to a collage (ADL-005).
 - `flutter-web-app/` — Flutter Web SPA. All environment- and Firebase-specific values are compile-time `--dart-define` flags read in `flutter-web-app/lib/config.dart` (`API_BASE_URL`, `USE_EMULATORS`, `FIREBASE_*`, emulator hosts). Generated `firebase_options.dart` is intentionally git-ignored; production values are passed via `--dart-define`.
-- `scripts/seed_shared_closet/run_seed.py` — idempotent seeder for the shared demo closet. Flags: `--max-items-per-category N` (default 150 / env `MAX_ITEMS_PER_CATEGORY`), `--with-embeddings` (compute 768-dim `gemini-embedding-2` vectors and index them), `--source-dir PATH`, `--purge`. It downloads from Kaggle, uploads images to R2, indexes into Elasticsearch `clothing_items` (with `user_id="__shared__"`), and writes `shared_closet/*` + `shared_closets/{closetId}` Firestore docs. `item_id = uuid5(filename)` makes re-runs idempotent.
+- `scripts/seed_shared_closet/run_seed.py` — idempotent seeder for the shared demo closet. Flags: `--max-items-per-category N` (default 150 / env `MAX_ITEMS_PER_CATEGORY`), `--with-embeddings` (compute 768-dim `gemini-embedding-001` text vectors and index them), `--source-dir PATH`, `--purge`. It downloads from Kaggle, uploads images to R2, indexes into Elasticsearch `clothing_items` (with `user_id="__shared__"`), and writes `shared_closet/*` + `shared_closets/{closetId}` Firestore docs. `item_id = uuid5(filename)` makes re-runs idempotent.
 - `docker-compose.yml` — the local stack. It is the canonical reference for the env vars each service expects; the production deploy substitutes managed services for each Compose service (MinIO→R2, local ES→Compute Engine ES, emulators→real Firestore/Firebase Auth, `TASK_QUEUE_MODE=local`→`cloud_tasks`).
 - `firestore.rules` — owner-only read on `users/{uid}` and `users/{uid}/closet/*`, all client writes denied. Must be deployed to the production Firebase project.
 - `docs/req-phase01.md` — the source of truth for requirements and ADLs. `docs/feature-matrix-phase01.md` — implementation status. `docs/architecture-overview.md` — the implemented-vs-planned visualization. All three are kept in sync with this plan.
@@ -98,16 +112,19 @@ Assumed inputs the operator must have before starting: a billing-enabled GCP pro
 ## Plan of Work
 
 
-The work is sequenced so each milestone leaves a coherent, independently verifiable state. The guiding principle is **the code is already environment-driven**, so deployment is mostly provisioning managed resources and supplying the right env/secret values — with three small, necessary code changes (the conflated internal base URL, OIDC tokens on both internal hops, and a `gcloud`-friendly config surface). No feature behavior changes.
+The work is sequenced so each milestone leaves a coherent, independently verifiable state. The guiding principle is **the code is already environment-driven**, so deployment is mostly provisioning managed resources and supplying the right env/secret values — with one pre-provisioning readiness patch and then the cloud resources. No feature behavior changes.
+
+
+Milestone 0 — Deploy readiness patch. Before creating cloud resources, land the small code/config/script changes that make the manual deploy executable: split the Cloud Tasks worker URL in the cloud path, attach and verify OIDC tokens for the two internal hops, make both Dockerfiles honor Cloud Run's injected `$PORT`, mirror deploy-only env knobs in `.env.example`, and add the thin `scripts/deploy/` wrappers that later MF CI/CD will call. This milestone is verified entirely locally with unit tests, Docker image startup checks, and script dry runs.
 
 
 Milestone A — GCP foundation (MD-1, MD-2, MD-9). Create/select the project, enable APIs, create three least-privilege service accounts (`fastapi-sa`, `adk-sa`, `tasks-invoker-sa`) and bind IAM, create the Firestore database (Native mode) in `asia-northeast1` and deploy `firestore.rules`, create the production Firebase project with Google sign-in enabled, create the production Cloudflare R2 bucket `gen-fashion-images` with the §8.4 CORS rule pointing at the Firebase Hosting origin, and store every secret (R2 keys, `ELASTICSEARCH_API_KEY`, `INTERNAL_TASK_SECRET`) in Secret Manager. This milestone touches no application code; it produces the identities and secrets everything else consumes.
 
 
-Milestone B — Data plane (MD-3, MD-4, MD-10). Provision the `e2-medium` Elasticsearch VM (no external IP) in `asia-northeast1-a` with a 30 GB SSD, install Elasticsearch 8.x with security enabled, mint an API key, and firewall `tcp:9200` to the connector range only. Create the Serverless VPC Access connector and verify (from the VM and later from a deployed service) that ES is reachable privately and that the JP-analyzer is not required (closing the open M1-3 PoC question). Then run the seed `--with-embeddings` from inside the VPC (on the ES VM itself, which has the network path and credentials) so the shared closet exists in production R2 + ES + Firestore with vectors.
+Milestone B — Data plane (MD-3, MD-4, MD-10). Provision the `e2-medium` Elasticsearch VM in `asia-northeast1-a` with a 30 GB SSD. During bootstrap only, allow the VM an ephemeral external IP so it can install Elasticsearch and run the Kaggle/R2/Vertex/Firestore seed; do not expose `tcp:9200` publicly. Install Elasticsearch 8.x with security enabled, mint an API key, create the Serverless VPC Access connector, and firewall `tcp:9200` to the connector range only. Then run the seed `--with-embeddings` from the VM, remove the VM's external IP, and verify (from Cloud Run after Milestone C) that ES remains reachable privately and that the JP-analyzer is not required (closing the open M1-3 PoC question).
 
 
-Milestone C — Services (MD-5, MD-6, MD-7, MD-8). Create an Artifact Registry Docker repo, build and push both images, and deploy both Cloud Run services with the deploy settings from req §9.1 / ADL-016 (`fastapi-service`: public, min 0 / max 10, 1 GB / 1 CPU / 60 s; `adk-agent-service`: private, min 1 / max 5, 2 GB / 1 CPU / 600 s). Create the Cloud Tasks queue `gen-fashion-embed`, flip `TASK_QUEUE_MODE=cloud_tasks`, and land the three code changes: (1) split the internal base URL so the worker task targets the fastapi URL; (2) attach OIDC tokens on both internal hops; (3) verify the OIDC bearer on the worker route. Wire each service's env + secrets and the cross-service URLs.
+Milestone C — Services (MD-5, MD-6, MD-7, MD-8). Create an Artifact Registry Docker repo, build and push both images, and deploy both Cloud Run services through the committed helper scripts with the deploy settings from req §9.1 / ADL-016 (`fastapi-service`: public, min 0 / max 10, 1 GB / 1 CPU / 60 s; `adk-agent-service`: private, min 1 / max 5, 2 GB / 1 CPU / 600 s). Create the Cloud Tasks queue `gen-fashion-embed`, flip `TASK_QUEUE_MODE=cloud_tasks`, wire each service's env + secrets and cross-service URLs, and prove the OIDC-hardened internal paths work.
 
 
 Milestone D — Generation + frontend (MD-11, MD-12). Confirm `gemini-2.5-flash-image` produces a real generated image on Vertex AI for the deployed `adk-agent-service` (not the collage fallback), adjusting `GOOGLE_CLOUD_LOCATION` to a region where the model is available. Build the Flutter Web release with production `--dart-define`s and deploy to Firebase Hosting; add the hosting domain to Firebase Auth authorized domains and the R2 CORS allowlist.
@@ -122,6 +139,74 @@ Milestone E — Acceptance + ops (MD-13, MD-14). Run the production E2E: open th
 All `gcloud` commands assume `gcloud config set project <PROJECT_ID>` and a default region of `asia-northeast1`. Replace `<PROJECT_ID>` and Cloudflare values with the real ones. Commands are shown as indented blocks.
 
 
+Milestone 0 — Deploy readiness patch
+
+
+0.1. Patch the remaining MD-8 cloud code paths before any cloud resource is created:
+
+
+    - `fastapi-service/app/config.py`: add `internal_invoker_sa: str | None = None`.
+    - `fastapi-service/app/adapters/cloud_tasks_adapter.py`: build the worker URL from `settings.fastapi_internal_base_url or settings.adk_internal_base_url`; when `internal_invoker_sa` and `fastapi_internal_base_url` are set, attach:
+
+        http_request["oidc_token"] = {
+            "service_account_email": settings.internal_invoker_sa,
+            "audience": settings.fastapi_internal_base_url.rstrip("/"),
+        }
+
+      Keep `X-Internal-Secret` in headers as defense in depth.
+    - `fastapi-service/app/adapters/adk_agent_run.py`: when cloud OIDC is configured, fetch a Google identity token for `settings.adk_internal_base_url.rstrip("/")` and send `Authorization: Bearer <token>` on `POST /internal/run-session`; keep `X-Internal-Secret`.
+    - `fastapi-service/app/auth.py`: update `require_internal_secret` so production accepts only requests with both a valid shared secret and a verified OIDC bearer whose audience is `FASTAPI_INTERNAL_BASE_URL` and whose service-account email equals `INTERNAL_INVOKER_SA`. Local behavior remains shared-secret only when `INTERNAL_INVOKER_SA` is unset. Use Google token verification APIs rather than hand-decoding JWTs.
+    - `fastapi-service/requirements.txt` and `fastapi-service/pyproject.toml` / lockfile if needed: ensure `google-auth` is an explicit dependency for token fetch/verification.
+
+
+0.2. Patch the Cloud Run container contract:
+
+
+    - `fastapi-service/Dockerfile`: run uvicorn on `${PORT:-8000}` through a shell entrypoint or small startup command.
+    - `adk-agent-service/Dockerfile`: run uvicorn on `${PORT:-3000}` through a shell entrypoint or small startup command.
+    - Keep `docker-compose.yml` commands pinned to `8000` / `3000` for local hot reload; compose already overrides the Dockerfile command.
+
+
+0.3. Mirror production deploy knobs in `.env.example`:
+
+
+    # Production-only internal URLs / OIDC:
+    # FASTAPI_INTERNAL_BASE_URL=https://fastapi-service-xxxxx-an.a.run.app
+    # ADK_INTERNAL_BASE_URL=https://adk-agent-service-xxxxx-an.a.run.app
+    # INTERNAL_INVOKER_SA=tasks-invoker-sa@<PROJECT_ID>.iam.gserviceaccount.com
+
+
+    Also update stale comments that say `fastapi-service` can use Cloud Run internal ingress; it stays public and protects only `/internal/tasks/process-upload` with OIDC + shared secret.
+
+
+0.4. Add deploy helper scripts under `scripts/deploy/`:
+
+
+    - `deploy_adk.sh`: requires `PROJECT_ID`, `REGION`, `IMAGE_TAG`, `ES_INTERNAL_IP`, `R2_ENDPOINT_URL`, `R2_PUBLIC_ENDPOINT_URL`, `R2_BUCKET_NAME`; deploys `adk-agent-service` private and grants `fastapi-sa` `roles/run.invoker`.
+    - `deploy_fastapi.sh`: requires the same common inputs plus `ADK_URL`, `FASTAPI_URL` or a `--bootstrap` mode. First deploy may omit `FASTAPI_INTERNAL_BASE_URL`; after the service URL exists, redeploy with `FASTAPI_INTERNAL_BASE_URL=$FASTAPI_URL`.
+    - `teardown.sh`: supports `--dry-run` by default and only deletes resources named in this plan.
+
+
+0.5. Verify Milestone 0 locally:
+
+
+    (cd fastapi-service && pytest -q)
+    (cd adk-agent-service && pytest -q)
+    (cd flutter-web-app && flutter analyze && flutter test)
+    docker build -t gen-fashion-fastapi:md0 fastapi-service
+    docker run --rm -d --name gen-fashion-fastapi-md0 -e PORT=18000 -p 18000:18000 gen-fashion-fastapi:md0
+    curl -f http://localhost:18000/health
+    docker stop gen-fashion-fastapi-md0
+    docker build -t gen-fashion-adk:md0 adk-agent-service
+    docker run --rm -d --name gen-fashion-adk-md0 -e PORT=13000 -p 13000:13000 gen-fashion-adk:md0
+    curl -f http://localhost:13000/health
+    docker stop gen-fashion-adk-md0
+    bash scripts/deploy/teardown.sh --dry-run
+
+
+    Expected results: FastAPI tests match the current ME baseline (68+ passing), ADK tests match the current baseline (41+ passing), Flutter analyze is clean and tests pass (14+), both images respond on the injected `PORT`, and teardown dry run prints only resources created by this plan. Architecture overview does not need an update because these are deployment-contract/script changes, not a new steady-state component.
+
+
 Milestone A — GCP foundation
 
 
@@ -132,7 +217,7 @@ Milestone A — GCP foundation
       run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com \
       secretmanager.googleapis.com cloudtasks.googleapis.com compute.googleapis.com \
       vpcaccess.googleapis.com firestore.googleapis.com aiplatform.googleapis.com \
-      logging.googleapis.com
+      logging.googleapis.com iamcredentials.googleapis.com
 
 
 2. Create service accounts:
@@ -158,9 +243,9 @@ Milestone A — GCP foundation
     gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:fastapi-sa@$PROJECT.iam.gserviceaccount.com" --role=roles/logging.logWriter
     # adk-sa also reads the internal secret from Secret Manager
     gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:adk-sa@$PROJECT.iam.gserviceaccount.com" --role=roles/secretmanager.secretAccessor
-    # fastapi-sa may mint OIDC tokens as tasks-invoker-sa for Cloud Tasks
+    # fastapi-sa may attach tasks-invoker-sa to Cloud Tasks OIDC tokens
     gcloud iam service-accounts add-iam-policy-binding tasks-invoker-sa@$PROJECT.iam.gserviceaccount.com \
-      --member="serviceAccount:fastapi-sa@$PROJECT.iam.gserviceaccount.com" --role=roles/iam.serviceAccountTokenCreator
+      --member="serviceAccount:fastapi-sa@$PROJECT.iam.gserviceaccount.com" --role=roles/iam.serviceAccountUser
 
 
 4. Create the Firestore database (Native mode) and deploy rules:
@@ -189,31 +274,36 @@ Milestone A — GCP foundation
 Milestone B — Data plane
 
 
-8. Create the ES VM (no external IP) and SSD disk:
+8. Create the ES VM and SSD disk with a temporary external IP for bootstrap. Do not create any firewall rule that exposes Elasticsearch publicly:
 
 
     gcloud compute instances create gen-fashion-es \
       --zone=asia-northeast1-a --machine-type=e2-medium \
       --image-family=debian-12 --image-project=debian-cloud \
       --boot-disk-size=30GB --boot-disk-type=pd-ssd \
-      --network=default --no-address
+      --network=default
 
 
-9. SSH in (via IAP, since there is no external IP) and install Elasticsearch 8.x:
+9. SSH in and install Elasticsearch 8.x:
 
 
-    gcloud compute ssh gen-fashion-es --zone=asia-northeast1-a --tunnel-through-iap
+    gcloud compute ssh gen-fashion-es --zone=asia-northeast1-a
     # on the VM:
     wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo gpg --dearmor -o /usr/share/keyrings/elasticsearch-keyring.gpg
     echo "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee /etc/apt/sources.list.d/elastic-8.x.list
     sudo apt-get update && sudo apt-get install -y elasticsearch
     # /etc/elasticsearch/elasticsearch.yml: network.host: 0.0.0.0 ; discovery.type: single-node ; xpack.security.enabled: true
     sudo systemctl enable --now elasticsearch
-    # mint an API key for the app and store it in Secret Manager (MD-2):
-    sudo /usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s node   # (or use the security API to create an API key)
+    # reset or capture the elastic password, then mint an application API key with the security API:
+    sudo /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic
 
 
-    Take the resulting API key and, from the workstation, store it:
+    Create an API key scoped to the app's index, then from the workstation store the base64 `encoded` value in Secret Manager:
+
+
+    curl -k -u elastic:<pw> -X POST https://localhost:9200/_security/api_key \
+      -H 'Content-Type: application/json' \
+      -d '{"name":"gen-fashion-app","role_descriptors":{"gen-fashion-app":{"cluster":["monitor"],"indices":[{"names":["clothing_items"],"privileges":["create_index","read","write","delete","manage"]}]}}}'
 
 
     printf '%s' "<ELASTICSEARCH_API_KEY>" | gcloud secrets create ELASTICSEARCH_API_KEY --data-file=-
@@ -241,23 +331,45 @@ Milestone B — Data plane
     Expect a non-zero `created` on first run (~210 total: 70 per closet across `adult-01`, `adult-02`, `child-01`) and `created=0` on a second run (idempotent). Verify ES has `embedding` populated: `GET clothing_items/_count` returns ≥ 210 and a `knn` probe returns shared docs carrying `embedding`.
 
 
+12.1. Remove the bootstrap external IP before continuing to Cloud Run deploy:
+
+
+    ACCESS_CONFIG=$(gcloud compute instances describe gen-fashion-es \
+      --zone=asia-northeast1-a \
+      --format='value(networkInterfaces[0].accessConfigs[0].name)')
+    gcloud compute instances delete-access-config gen-fashion-es \
+      --zone=asia-northeast1-a \
+      --access-config-name="$ACCESS_CONFIG"
+    gcloud compute instances describe gen-fashion-es \
+      --zone=asia-northeast1-a \
+      --format='value(networkInterfaces[0].accessConfigs)'
+
+
+    The final command must print nothing. From this point forward, access the VM through IAP (`gcloud compute ssh gen-fashion-es --zone=asia-northeast1-a --tunnel-through-iap`). This restores the final-state security posture: no external IP and ES reachable only from localhost plus the connector range.
+
+
 Milestone C — Services
 
 
-13. Create the Artifact Registry repo and build/push both images:
+13. Create the Artifact Registry repo and build/push both Milestone-0-patched images:
 
 
     gcloud artifacts repositories create gen-fashion --repository-format=docker --location=asia-northeast1
     REPO=asia-northeast1-docker.pkg.dev/<PROJECT_ID>/gen-fashion
-    gcloud builds submit fastapi-service --tag $REPO/fastapi-service:v1
-    gcloud builds submit adk-agent-service --tag $REPO/adk-agent-service:v1
+    IMAGE_TAG=md-$(date +%Y%m%d-%H%M)
+    gcloud builds submit fastapi-service --tag $REPO/fastapi-service:$IMAGE_TAG
+    gcloud builds submit adk-agent-service --tag $REPO/adk-agent-service:$IMAGE_TAG
 
 
-14. Land the remaining cloud-auth code changes (see Interfaces and Dependencies for exact edits). Note: `fastapi_internal_base_url: str | None = None` is already in `config.py` and `local_task_queue.py` already uses it (both landed during the local re-verification, 2026-06-21); only the cloud-path changes below remain.
-    - Fix `cloud_tasks_adapter.py` line 28: change `adk_internal_base_url` → `fastapi_internal_base_url` (with the same `or adk_internal_base_url` fallback as `local_task_queue.py`) so the Cloud Tasks worker URL targets the fastapi service.
-    - Add `internal_invoker_sa: str | None = None` to `fastapi-service/app/config.py`; in `CloudTasksAdapter`, uncomment and correct the `oidc_token` block — set `service_account_email=internal_invoker_sa` and `audience=fastapi_internal_base_url` (the existing comment says `adk_internal_base_url` — that is wrong); in `HttpAgentRunAdapter`, attach a Cloud Run OIDC identity token (audience = `adk_internal_base_url`) via `google.auth` when running in the cloud.
-    - In `fastapi-service/app/auth.py` `require_internal_secret`, additionally accept a verified Cloud Run OIDC bearer (verify the token's audience + that the SA email is `tasks-invoker-sa`); keep the shared secret as defense in depth.
-    Rebuild/push `:v2` after these edits.
+14. Confirm the image tag was built from the Milestone 0 readiness patch:
+
+
+    git status --short
+    gcloud artifacts docker images list $REPO/fastapi-service --include-tags --filter="tags:$IMAGE_TAG"
+    gcloud artifacts docker images list $REPO/adk-agent-service --include-tags --filter="tags:$IMAGE_TAG"
+
+
+    `git status --short` may show the committed plan/doc changes before commit, but must not show uncommitted application-code edits that were omitted from the image build.
 
 
 15. Create the Cloud Tasks queue:
@@ -269,7 +381,18 @@ Milestone C — Services
 16. Deploy `adk-agent-service` (private):
 
 
-    gcloud run deploy adk-agent-service --image $REPO/adk-agent-service:v2 \
+    bash scripts/deploy/deploy_adk.sh \
+      --project <PROJECT_ID> --region asia-northeast1 --image "$REPO/adk-agent-service:$IMAGE_TAG" \
+      --es-internal-ip <es-vm-internal-ip> \
+      --r2-endpoint-url https://<account_id>.r2.cloudflarestorage.com \
+      --r2-public-endpoint-url https://<account_id>.r2.cloudflarestorage.com \
+      --r2-bucket-name gen-fashion-images
+
+
+    The script expands to the equivalent of:
+
+
+    gcloud run deploy adk-agent-service --image $REPO/adk-agent-service:$IMAGE_TAG \
       --region=asia-northeast1 --service-account=adk-sa@<PROJECT_ID>.iam.gserviceaccount.com \
       --no-allow-unauthenticated --min-instances=1 --max-instances=5 --memory=2Gi --cpu=1 --timeout=600 \
       --vpc-connector=gen-fashion-conn --vpc-egress=private-ranges-only \
@@ -284,15 +407,41 @@ Milestone C — Services
 
 
     ADK_URL=$(gcloud run services describe adk-agent-service --region=asia-northeast1 --format='value(status.url)')
-    gcloud run deploy fastapi-service --image $REPO/fastapi-service:v2 \
+    bash scripts/deploy/deploy_fastapi.sh \
+      --project <PROJECT_ID> --region asia-northeast1 --image "$REPO/fastapi-service:$IMAGE_TAG" \
+      --adk-url "$ADK_URL" --bootstrap \
+      --es-internal-ip <es-vm-internal-ip> \
+      --r2-endpoint-url https://<account_id>.r2.cloudflarestorage.com \
+      --r2-public-endpoint-url https://<account_id>.r2.cloudflarestorage.com \
+      --r2-bucket-name gen-fashion-images
+    FASTAPI_URL=$(gcloud run services describe fastapi-service --region=asia-northeast1 --format='value(status.url)')
+    bash scripts/deploy/deploy_fastapi.sh \
+      --project <PROJECT_ID> --region asia-northeast1 --image "$REPO/fastapi-service:$IMAGE_TAG" \
+      --adk-url "$ADK_URL" --fastapi-url "$FASTAPI_URL" \
+      --es-internal-ip <es-vm-internal-ip> \
+      --r2-endpoint-url https://<account_id>.r2.cloudflarestorage.com \
+      --r2-public-endpoint-url https://<account_id>.r2.cloudflarestorage.com \
+      --r2-bucket-name gen-fashion-images
+
+
+    The script expands to the equivalent of:
+
+
+    gcloud run deploy fastapi-service --image $REPO/fastapi-service:$IMAGE_TAG \
       --region=asia-northeast1 --service-account=fastapi-sa@<PROJECT_ID>.iam.gserviceaccount.com \
       --allow-unauthenticated --min-instances=0 --max-instances=10 --memory=1Gi --cpu=1 --timeout=60 \
       --vpc-connector=gen-fashion-conn --vpc-egress=private-ranges-only \
-      --set-env-vars=GOOGLE_CLOUD_PROJECT=<PROJECT_ID>,FIREBASE_PROJECT_ID=<PROJECT_ID>,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=us-central1,ELASTICSEARCH_URL=https://<es-vm-internal-ip>:9200,R2_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com,R2_PUBLIC_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com,R2_BUCKET_NAME=gen-fashion-images,TASK_QUEUE_MODE=cloud_tasks,CLOUD_TASKS_QUEUE_EMBED=gen-fashion-embed,CLOUD_TASKS_LOCATION=asia-northeast1,ADK_INTERNAL_BASE_URL=$ADK_URL,INTERNAL_INVOKER_SA=tasks-invoker-sa@<PROJECT_ID>.iam.gserviceaccount.com \
+      --set-env-vars=GOOGLE_CLOUD_PROJECT=<PROJECT_ID>,FIREBASE_PROJECT_ID=<PROJECT_ID>,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=us-central1,ELASTICSEARCH_URL=https://<es-vm-internal-ip>:9200,R2_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com,R2_PUBLIC_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com,R2_BUCKET_NAME=gen-fashion-images,TASK_QUEUE_MODE=cloud_tasks,CLOUD_TASKS_QUEUE_EMBED=gen-fashion-embed,CLOUD_TASKS_LOCATION=asia-northeast1,ADK_INTERNAL_BASE_URL=$ADK_URL,FASTAPI_INTERNAL_BASE_URL=$FASTAPI_URL,INTERNAL_INVOKER_SA=tasks-invoker-sa@<PROJECT_ID>.iam.gserviceaccount.com \
       --set-secrets=ELASTICSEARCH_API_KEY=ELASTICSEARCH_API_KEY:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,INTERNAL_TASK_SECRET=INTERNAL_TASK_SECRET:latest
 
 
-    Capture `FASTAPI_URL`, then redeploy `fastapi-service` once more setting `FASTAPI_INTERNAL_BASE_URL=$FASTAPI_URL` (the worker task targets the fastapi service's own URL). Grant `tasks-invoker-sa` `roles/run.invoker` on `fastapi-service` so the OIDC-authenticated Cloud Task is accepted.
+    The second deploy must include `FASTAPI_INTERNAL_BASE_URL=$FASTAPI_URL` so the worker task targets the fastapi service's own URL. Grant `tasks-invoker-sa` `roles/run.invoker` on `fastapi-service` so the OIDC-authenticated Cloud Task is accepted:
+
+
+    gcloud run services add-iam-policy-binding fastapi-service \
+      --region=asia-northeast1 \
+      --member="serviceAccount:tasks-invoker-sa@<PROJECT_ID>.iam.gserviceaccount.com" \
+      --role=roles/run.invoker
 
 
 Milestone D — Generation + frontend
@@ -332,12 +481,13 @@ Milestone E — Acceptance + ops
 ## Validation and Acceptance
 
 
-Local pre-deploy gate (run before building images, from repo root): `docker-compose run --rm fastapi-service pytest` (expect the ME baseline 68 passed), `cd adk-agent-service && pytest -q` (expect 41 passed), `cd flutter-web-app && flutter analyze` (no issues) and `flutter test` (expect 14 passed). The code edits in step 14 must keep all of these green; add/adjust unit tests for the OIDC header attachment and the `cloud_tasks_adapter.py` URL fix in `fastapi-service/app/adapters/`.
+Local pre-deploy gate (run before building images, from repo root): Milestone 0 step 0.5 is mandatory. It covers FastAPI tests (expect the ME baseline 68+ passing), ADK tests (expect 41+ passing), Flutter analyze/test (expect clean / 14+ passing), Docker image `$PORT` startup checks, and deploy-script dry runs. Add or adjust unit tests for the OIDC header attachment, OIDC bearer verification, and the `cloud_tasks_adapter.py` URL fix in `fastapi-service/app/adapters/`.
 
 
 Per-milestone acceptance, phrased as observable behavior:
+- 0: tests pass locally; both Docker images answer `/health` on an arbitrary injected `PORT`; `scripts/deploy/teardown.sh --dry-run` lists only resources named in this plan; `.env.example` contains `FASTAPI_INTERNAL_BASE_URL` and `INTERNAL_INVOKER_SA`.
 - A: `gcloud secrets list` shows `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `ELASTICSEARCH_API_KEY`, `INTERNAL_TASK_SECRET`; `firebase deploy --only firestore:rules` succeeds; the R2 bucket returns the configured CORS headers on an `OPTIONS` preflight from the hosting origin.
-- B: `curl` to ES from the VM returns cluster health `green`/`yellow`; the seed prints a non-zero `created` then `created=0` on re-run; `GET clothing_items/_count` ≥ ~90 and a `knn` query returns shared items carrying `embedding`.
+- B: `curl` to ES from the VM returns cluster health `green`/`yellow`; the seed prints a non-zero `created` then `created=0` on re-run; `GET clothing_items/_count` ≥ 210 and a `knn` query returns shared items carrying `embedding`; `gcloud compute instances describe gen-fashion-es --format='value(networkInterfaces[0].accessConfigs)'` prints nothing before Cloud Run deployment starts.
 - C: `curl https://<FASTAPI_URL>/health` → `200`; the ADK service rejects an unauthenticated call (`403`) but accepts the OIDC-authenticated call from `fastapi-service`; a closet upload drives a Firestore doc to `status: READY` (proving the Cloud Task reached the fastapi worker URL, i.e. the base-url split works).
 - D: a `SHARED_CLOSET` run yields a `styleResult.coordinateImageUrl` that opens a **generated** image; `adk-agent-service` logs show the Nano Banana path, not the collage fallback. The hosted SPA loads and signs in with Google.
 - E: the browser E2E reaches `COMPLETED`; ADK events are visible in Cloud Logging; the `agentEvents` TTL policy is `enabled`; `teardown.sh` exists and its dry run lists exactly the resources created here.
@@ -349,13 +499,13 @@ Milestone acceptance overall: opening the public Firebase Hosting URL and comple
 ## Idempotence and Recovery
 
 
-Resource-creation commands are safe to re-run if you treat "already exists" as success (or `gcloud ... describe` first). `gcloud run deploy` is fully idempotent — it creates a new revision each time, so re-running with corrected env/secrets is the normal recovery path; roll back with `gcloud run services update-traffic <svc> --to-revisions=<prev>=100`. The seed is idempotent by design (`uuid5(filename)`); `--purge` clears prior shared data before reseeding. Secrets are versioned; add a new version rather than recreating. The ES VM is the one piece of mutable state — snapshot the disk before risky changes. If private connectivity fails, the most common causes are (a) the firewall source range not matching the connector `/28`, (b) `--vpc-egress` not set to `private-ranges-only`, or (c) using the VM's name instead of its internal IP in `ELASTICSEARCH_URL`.
+Resource-creation commands are safe to re-run if you treat "already exists" as success (or `gcloud ... describe` first). `gcloud run deploy` is fully idempotent — it creates a new revision each time, so re-running with corrected env/secrets is the normal recovery path; roll back with `gcloud run services update-traffic <svc> --to-revisions=<prev>=100`. The seed is idempotent by design (`uuid5(filename)`); `--purge` clears prior shared data before reseeding. Secrets are versioned; add a new version rather than recreating. The ES VM is the one piece of mutable state — snapshot the disk before risky changes. If bootstrap install or seed fails due to outbound connectivity, temporarily recreate the external access config, finish the failed step, then delete the access config again before Milestone C. If private connectivity fails after Cloud Run deploy, the most common causes are (a) the firewall source range not matching the connector `/28`, (b) `--vpc-egress` not set to `private-ranges-only`, or (c) using the VM's name instead of its internal IP in `ELASTICSEARCH_URL`.
 
 
 ## Artifacts and Notes
 
 
-Helper scripts to commit under `scripts/deploy/`: `deploy_fastapi.sh`, `deploy_adk.sh`, `teardown.sh` (thin wrappers over the `gcloud` commands above, parameterized by `PROJECT_ID`/region/image tag). Keep the canonical command list in this plan as the source of truth; the scripts are conveniences, not a second spec. Record the final URLs, the ES internal IP, and the deployed image tags in `Outcomes & Retrospective` when the milestone completes.
+Helper scripts to commit under `scripts/deploy/`: `deploy_fastapi.sh`, `deploy_adk.sh`, `teardown.sh` (thin wrappers over the `gcloud` commands above, parameterized by `PROJECT_ID`/region/image tag). Keep the canonical command list in this plan as the source of truth; the scripts are conveniences, not a second spec. Record the final URLs, the ES internal IP, the temporary external-IP removal evidence, and the deployed image tags in `Outcomes & Retrospective` when the milestone completes.
 
 
 No secret values belong in this file, the scripts, commits, or logs — only Secret Manager names. The `.env.example` already separates local defaults from the "[4] 本番デプロイ時のみ" block; mirror any new variable there (`FASTAPI_INTERNAL_BASE_URL`, `INTERNAL_INVOKER_SA`) with placeholder values.
@@ -364,14 +514,17 @@ No secret values belong in this file, the scripts, commits, or logs — only Sec
 ## Interfaces and Dependencies
 
 
-GCP services: Cloud Run (two services), Artifact Registry (image storage), Cloud Build (image builds), Secret Manager (secrets), Cloud Tasks (embedding worker queue), Compute Engine (ES VM), Serverless VPC Access (private connectivity), Firestore (Native mode), Vertex AI / `aiplatform` (Gemini analysis, `gemini-embedding-2`, `gemini-2.5-flash-image`), Cloud Logging (ADK event stream). External: Cloudflare R2 (object storage) and Kaggle (dataset for the seed). Tooling: `gcloud`, `docker`/Cloud Build, Firebase CLI, Flutter SDK.
+GCP services: Cloud Run (two services), Artifact Registry (image storage), Cloud Build (image builds), Secret Manager (secrets), Cloud Tasks (embedding worker queue), Compute Engine (ES VM), Serverless VPC Access (private connectivity), Firestore (Native mode), Vertex AI / `aiplatform` (Gemini analysis, `gemini-embedding-001`, `gemini-2.5-flash-image`), Cloud Logging (ADK event stream), IAM Credentials API (identity-token support). External: Cloudflare R2 (object storage) and Kaggle (dataset for the seed). Tooling: `gcloud`, `docker`/Cloud Build, Firebase CLI, Flutter SDK.
 
 
-Code changes remaining (all in `fastapi-service/`; `config.py` `fastapi_internal_base_url` field and `local_task_queue.py` URL routing are already done from the local re-verification):
-- `app/config.py`: add `internal_invoker_sa: str | None = None` (only this remains; `fastapi_internal_base_url` is already present).
-- `app/adapters/cloud_tasks_adapter.py`: fix line 28 to use `fastapi_internal_base_url or adk_internal_base_url` (not bare `adk_internal_base_url`) for the `process-upload` URL; uncomment and correct the `oidc_token` block (change the audience from `adk_internal_base_url` to `fastapi_internal_base_url` — the existing comment has the wrong value). `app/adapters/local_task_queue.py` already uses `fastapi_internal_base_url`; no further change there.
-- `app/adapters/adk_agent_run.py`: when `internal_invoker_sa`/cloud mode is configured, attach a Cloud Run OIDC identity token (`google.auth` ID token, audience = `adk_internal_base_url`) to the `/internal/run-session` call.
-- `app/auth.py` `require_internal_secret`: accept a verified Cloud Run OIDC bearer (audience + SA email check) in addition to the shared secret.
+Milestone 0 code/script changes (all required before provisioning):
+- `fastapi-service/app/config.py`: add `internal_invoker_sa: str | None = None` (`fastapi_internal_base_url` is already present).
+- `fastapi-service/app/adapters/cloud_tasks_adapter.py`: use `fastapi_internal_base_url or adk_internal_base_url` for the `process-upload` URL; attach Cloud Tasks OIDC with `service_account_email=internal_invoker_sa` and `audience=fastapi_internal_base_url.rstrip("/")`.
+- `fastapi-service/app/adapters/adk_agent_run.py`: when `adk_internal_base_url` points at Cloud Run and production OIDC is configured, attach a Google ID token with audience `adk_internal_base_url.rstrip("/")` to `/internal/run-session`.
+- `fastapi-service/app/auth.py` `require_internal_secret`: in production, require both the shared secret and a verified OIDC bearer whose audience and service-account email match config; locally, keep shared-secret-only behavior when `internal_invoker_sa` is unset.
+- `fastapi-service/Dockerfile` and `adk-agent-service/Dockerfile`: listen on `${PORT:-8000}` and `${PORT:-3000}` respectively.
+- `.env.example`: document `FASTAPI_INTERNAL_BASE_URL` and `INTERNAL_INVOKER_SA`.
+- `scripts/deploy/deploy_fastapi.sh`, `scripts/deploy/deploy_adk.sh`, `scripts/deploy/teardown.sh`: add thin wrappers and dry-run teardown.
 
 
 These code changes preserve `make dev` behavior because the new settings are unset locally (the code falls back to the existing shared-secret + `adk_internal_base_url` paths).
@@ -388,3 +541,5 @@ Requirements traceability: MD-1/MD-2 ← req §9.1, §12.1/§12.2, ADL-012; MD-3
 2026-06-21 — Local re-verification completed; three bugs found and fixed (MD-8 local base-URL split, Firestore project binding, `closetId` keyword mapping). MD-10 de-risked (embedding model corrected to `gemini-embedding-001`, `adk_run_timeout_seconds` raised to 90, `STREAM_MAX_SECONDS` raised to 150).
 
 2026-06-25 — Synchronized with completed ME ExecPlan. Changes: (1) step 4 firebase deploy command now includes `firestore:indexes` (ME-7 composite index is committed in `firestore.indexes.json`); (2) step 12 expected seed count updated from ~90 to 210 items (70/70/70, from ME shared-closet expansion); (3) step 14 clarified — `fastapi_internal_base_url` in `config.py` and `local_task_queue.py` URL routing are already done; remaining is `cloud_tasks_adapter.py` URL fix (line 28 still uses `adk_internal_base_url`), OIDC token with corrected audience, `internal_invoker_sa` in config, and OIDC bearer in `auth.py`; (4) Validation baselines updated to 68 FastAPI / 41 ADK / 14 Flutter; (5) Interfaces and Dependencies code-changes list updated to reflect what is already done vs. remaining.
+
+2026-06-27 — Resolved the pre-production deployment readiness audit before cloud work starts. Added Milestone 0 for the required code/config/script patch: Cloud Tasks worker URL split in the cloud path, OIDC token attachment and verification, `$PORT`-compatible Dockerfiles, `.env.example` deploy knobs, and `scripts/deploy/` wrappers. Updated Milestone B so the ES VM may use a temporary external IP for bootstrap/seed only, with a mandatory access-config deletion before Cloud Run deployment. Updated Milestone C to deploy one timestamped Milestone-0-patched image tag via helper scripts. Updated validation, recovery, artifacts, and dependencies to match the resolved flow.
