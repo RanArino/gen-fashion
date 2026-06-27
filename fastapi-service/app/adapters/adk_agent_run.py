@@ -1,7 +1,15 @@
 import httpx
+import google.auth.transport.requests
+import google.oauth2.id_token
 
 from app.config import get_settings
 from app.ports import AgentRunPort, AgentRunRequest
+
+
+def _fetch_oidc_token(audience: str) -> str:
+    """Fetch a Google OIDC identity token for the given audience via ADC."""
+    auth_req = google.auth.transport.requests.Request()
+    return google.oauth2.id_token.fetch_id_token(auth_req, audience)
 
 
 class HttpAgentRunAdapter(AgentRunPort):
@@ -24,6 +32,13 @@ class HttpAgentRunAdapter(AgentRunPort):
         headers = {}
         if settings.internal_task_secret:
             headers["X-Internal-Secret"] = settings.internal_task_secret
+        # Production OIDC hardening: attach a Google identity token so the
+        # adk-agent-service (deployed --no-allow-unauthenticated) can verify
+        # that the caller is fastapi-sa (MD-8).
+        if settings.internal_invoker_sa:
+            audience = self.base_url
+            token = _fetch_oidc_token(audience)
+            headers["Authorization"] = f"Bearer {token}"
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(
                 f"{self.base_url}/internal/run-session",

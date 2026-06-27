@@ -25,9 +25,15 @@ class CloudTasksAdapter(TaskQueuePort):
             self._settings.cloud_tasks_location,
             queue,
         )
-        url = f"{self._settings.adk_internal_base_url.rstrip('/')}{handler_path}"
+        # The process-upload worker lives in fastapi-service, not the ADK service.
+        # Use FASTAPI_INTERNAL_BASE_URL when set; fall back to adk_internal_base_url
+        # only for local dev where both routes are on the same host.
+        worker_base = (
+            self._settings.fastapi_internal_base_url or self._settings.adk_internal_base_url
+        )
+        url = f"{worker_base.rstrip('/')}{handler_path}"
         headers = {"Content-Type": "application/json"}
-        # Defense-in-depth stopgap: the worker also accepts the shared secret.
+        # Defense-in-depth: shared secret is always sent alongside the OIDC token.
         if self._settings.internal_task_secret:
             headers["X-Internal-Secret"] = self._settings.internal_task_secret
         http_request = {
@@ -36,14 +42,13 @@ class CloudTasksAdapter(TaskQueuePort):
             "headers": headers,
             "body": json.dumps(payload).encode("utf-8"),
         }
-        # TODO(deploy): BLOCKING security gate before any public deploy — set an
-        # OIDC token so the worker can cryptographically verify the caller, and
-        # set Cloud Run ingress=internal. Replace the shared-secret stopgap with:
-        #   http_request["oidc_token"] = {
-        #       "service_account_email": self._settings.internal_invoker_sa,
-        #       "audience": self._settings.adk_internal_base_url,
-        #   }
-        # and verify the bearer in require_internal_secret. See M2 ExecPlan Decision Log.
+        # Production OIDC hardening: attach a Cloud Tasks OIDC token so the
+        # fastapi worker can cryptographically verify the caller (MD-8).
+        if self._settings.internal_invoker_sa and self._settings.fastapi_internal_base_url:
+            http_request["oidc_token"] = {
+                "service_account_email": self._settings.internal_invoker_sa,
+                "audience": self._settings.fastapi_internal_base_url.rstrip("/"),
+            }
         task = {"http_request": http_request}
         if delay_seconds > 0:
             schedule_time = timestamp_pb2.Timestamp()
