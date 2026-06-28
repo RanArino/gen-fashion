@@ -31,7 +31,7 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 - [x] (2026-06-27) Pre-production deployment readiness audit completed and this plan was resolved before any cloud deployment. Added an explicit **Milestone 0 — deploy readiness patch** for the remaining code/docs/scripts blockers: Cloud Tasks must target `FASTAPI_INTERNAL_BASE_URL`, both internal hops must use OIDC, the worker route must verify the OIDC bearer, Cloud Run containers must honor `$PORT`, `.env.example` must expose production-only deploy knobs, and `scripts/deploy/` helpers must exist before manual deployment or later MF CI/CD automation. Also resolved the ES bootstrap egress gap by allowing a temporary external IP only during VM install/seed and requiring it to be removed before acceptance; no architecture-overview update is needed because this is bootstrap procedure, not a steady-state component.
 - [x] (2026-06-27) Milestone 0 — Deploy readiness patch: code/config/script fixes before provisioning (`CloudTasksAdapter`, `HttpAgentRunAdapter`, `require_internal_secret`, Dockerfiles, `.env.example`, deploy helper scripts). Verified: FastAPI 67 passed / ADK 41 passed; both images respond on injected `PORT` (18000 / 13000); `teardown.sh --dry-run` lists exactly the plan resources.
 - [x] (2026-06-27) Milestone A — GCP foundation complete (project `animation-agent`, region `asia-northeast1`). Enabled 11 core APIs + Firebase Management/Hosting/Identity Toolkit; created `fastapi-sa`/`adk-sa`/`tasks-invoker-sa` with least-privilege IAM (incl. `fastapi-sa`→`tasks-invoker-sa` `serviceAccountUser` for Cloud Tasks OIDC); created Firestore (Native, `asia-northeast1`) and deployed `firestore.rules` + `firestore.indexes.json`; added Firebase to the project (via console — CLI `addfirebase` 403'd until Firebase ToS accepted), enabled Google sign-in, registered Web app `gen-fashion-web` (config saved to gitignored `credentials/firebase-sdk.md` for MD-12 `--dart-define`); created Cloudflare R2 bucket `gen-fashion-images` + CORS for the `animation-agent.web.app` origin; stored `INTERNAL_TASK_SECRET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` in Secret Manager (both `fastapi-sa`/`adk-sa` hold `secretmanager.secretAccessor`). MD-1 ✅, MD-9 ✅; MD-2 stays 🟡 (`ELASTICSEARCH_API_KEY` minted in Milestone B; `--set-env-vars` config applied at Cloud Run deploy in Milestone C). **`ELASTICSEARCH_API_KEY` not yet created — deferred to Milestone B per plan step 9.**
-- [ ] Milestone B — Data plane: Compute Engine Elasticsearch node, Serverless VPC Access connector + private connectivity verification, full vector seed (MD-3, MD-4, MD-10).
+- [ ] Milestone B — Data plane: Compute Engine Elasticsearch node (`pd-standard` + static internal IP), Cloud Run **Direct VPC egress** private connectivity verification (no Serverless VPC Access connector — ADL-023, re-scoped 2026-06-27 for cost), full vector seed (MD-3, MD-4, MD-10).
 - [ ] Milestone C — Services: Artifact Registry images, Cloud Run `fastapi-service` + `adk-agent-service`, Cloud Tasks queue, OIDC hardening + internal-base-url split (MD-5, MD-6, MD-7, MD-8).
 - [ ] Milestone D — Generation + frontend: production Nano Banana image generation on Vertex AI, Flutter Web build + Firebase Hosting (MD-11, MD-12).
 - [ ] Milestone E — Acceptance + ops: production E2E smoke, Cloud Logging verification, documented teardown (MD-13, MD-14).
@@ -59,16 +59,16 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 ## Decision Log
 
 
-- Decision: Cloud Run reaches the Compute Engine Elasticsearch node over a **Serverless VPC Access connector** with `--vpc-egress=private-ranges-only`; the ES VM has **no external IP** and a firewall rule allows `tcp:9200` only from the connector's `/28` range.
-  Rationale: ADL-013 left the choice open ("VPC Peering または Cloud NAT"). A Serverless VPC Access connector is the lowest-friction, well-documented path for Cloud Run → private VM in one VPC, keeps ES off the public internet, and is trivially torn down after the hackathon. Recorded as ADL-023 in `req-phase01.md`.
-  Date/Author: 2026-06-15 / Ran (proposed at deployment ExecPlan authoring)
+- Decision: Cloud Run reaches the Compute Engine Elasticsearch node over **Direct VPC egress** (`--network`/`--subnet` + `--vpc-egress=private-ranges-only`), **not** a Serverless VPC Access connector; the ES VM has **no external IP**, uses a **reserved static internal IP**, and a firewall rule allows `tcp:9200` only from the Cloud Run egress subnet's internal range.
+  Rationale: ADL-013 left the choice open ("VPC Peering または Cloud NAT"). Direct VPC egress is the GA successor to the connector and Google's recommended option: it carries the same egress billing rate but has **no idle connector instances** (the connector runs a minimum of e2-micro×2 billed even when idle), so it removes the connector fixed cost while keeping the identical closed-network posture (ES off the public internet, internal-IP only). Best fit for the hackathon's short-lived, low-cost target; torn down with the VM after the hackathon. **Re-scoped 2026-06-27 from a Serverless VPC Access connector for cost; recorded as ADL-023 in `req-phase01.md`** (which also captures `pd-standard` + stop-when-idle + optional `Asia/Tokyo` night-stop schedule).
+  Date/Author: 2026-06-15 / Ran (proposed at deployment ExecPlan authoring); revised 2026-06-27 (connector → Direct VPC egress)
 - Decision: The two internal hops use **Cloud Run OIDC identity tokens** in production. `adk-agent-service` is deployed `--no-allow-unauthenticated` and only `fastapi-sa` holds `roles/run.invoker` on it; `fastapi-service` stays public (browser-facing) and protects `/internal/tasks/process-upload` with OIDC verification **plus** the existing `X-Internal-Secret` (Secret Manager value). The shared secret is retained as defense in depth, not removed.
   Rationale: Private service-to-service auth without exposing the ADK service; `fastapi-service` cannot be internal-only because it serves the SPA. Recorded as ADL-024.
   Date/Author: 2026-06-15 / Ran (proposed at deployment ExecPlan authoring)
 - Decision: The Flutter Web client is hosted on **Firebase Hosting** (`<project>.web.app`), with real Firebase config injected via `--dart-define` at build time and `USE_EMULATORS=false`.
   Rationale: The app already depends on Firebase Auth + Firestore; Firebase Hosting gives a stable HTTPS origin and an automatic authorized domain, and `flutter-web-app/lib/config.dart` already reads every Firebase value from `--dart-define`. `req-phase01.md` only ever mentioned a Vercel domain inside a CORS example, so the hosting target was undecided. Recorded as ADL-025.
   Date/Author: 2026-06-15 / Ran (proposed at deployment ExecPlan authoring)
-- Decision: Infrastructure (Cloud Run, Compute Engine ES, VPC connector, Cloud Tasks) lives in `asia-northeast1`; Vertex AI (`GOOGLE_CLOUD_LOCATION`) stays at the region where the image model `gemini-2.5-flash-image` is confirmed available (`us-central1` unless the team verifies a closer region).
+- Decision: Infrastructure (Cloud Run, Compute Engine ES, the Direct VPC egress subnet, Cloud Tasks) lives in `asia-northeast1`; Vertex AI (`GOOGLE_CLOUD_LOCATION`) stays at the region where the image model `gemini-2.5-flash-image` is confirmed available (`us-central1` unless the team verifies a closer region).
   Rationale: ES is pinned to `asia-northeast1` by req §9.2; co-locating Cloud Run minimizes ES latency. Vertex model regional availability is independent and must be verified, not assumed (model availability is time-sensitive; check current Vertex AI docs at execution time).
   Date/Author: 2026-06-15 / Ran (proposed at deployment ExecPlan authoring)
 - Decision: Deployment is performed with **`gcloud` CLI commands captured in this plan plus three committed helper scripts** (`scripts/deploy/deploy_fastapi.sh`, `scripts/deploy/deploy_adk.sh`, `scripts/deploy/teardown.sh`), not Terraform.
@@ -77,7 +77,7 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 - Decision: The Cloud Run images must listen on the injected `$PORT` instead of hard-coded service-specific ports; deploy scripts should not rely on `--port` unless rolling back to the old images during recovery.
   Rationale: This matches Cloud Run's container contract, keeps one image usable across local overrides and Cloud Run, and removes a fragile hidden dependency between Dockerfile ports and deploy command flags.
   Date/Author: 2026-06-27 / Codex (pre-production readiness audit)
-- Decision: The ES VM may use a **temporary external IP only for bootstrap and production seed**, then the access config must be deleted before acceptance. No firewall rule may expose `tcp:9200` publicly; Elasticsearch remains reachable only from localhost and the Serverless VPC Access connector range.
+- Decision: The ES VM may use a **temporary external IP only for bootstrap and production seed**, then the access config must be deleted before acceptance. No firewall rule may expose `tcp:9200` publicly; Elasticsearch remains reachable only from localhost and the Cloud Run Direct VPC egress subnet range.
   Rationale: This avoids adding Cloud NAT as a steady-state component while still giving the VM enough outbound access to install Elasticsearch and run the Kaggle/R2/Vertex/Firestore seed. The final accepted infrastructure still satisfies the "ES VM has no external IP" security posture.
   Date/Author: 2026-06-27 / Codex (pre-production readiness audit)
 
@@ -85,7 +85,7 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 ## Outcomes & Retrospective
 
 
-To be completed as milestones land. Capture: the chosen GCP project id and region; the ES VM internal IP and connector range; final Cloud Run URLs; the deployed image tags; confirmation that the production E2E reached `COMPLETED` with a generated (non-collage) image; and the teardown command actually run after the demo.
+To be completed as milestones land. Capture: the chosen GCP project id and region; the ES VM static internal IP and the Direct VPC egress subnet range; final Cloud Run URLs; the deployed image tags; confirmation that the production E2E reached `COMPLETED` with a generated (non-collage) image; and the teardown command actually run after the demo.
 
 
 Recorded so far (Milestone A, 2026-06-27):
@@ -113,7 +113,7 @@ This repository (`gen-fashion`) is a two-container application plus a Flutter We
 - `docs/req-phase01.md` — the source of truth for requirements and ADLs. `docs/feature-matrix-phase01.md` — implementation status. `docs/architecture-overview.md` — the implemented-vs-planned visualization. All three are kept in sync with this plan.
 
 
-Terms: **R2** = Cloudflare R2 object storage (S3-compatible); locally substituted by **MinIO**. **ADC** = Application Default Credentials (Cloud Run service-account identity). **OIDC token** = a short-lived identity token Cloud Run/Cloud Tasks can mint so a caller proves which service account it is. **Serverless VPC Access connector** = the bridge that lets Cloud Run send traffic into a VPC's private IP range. **Nano Banana** = the `gemini-2.5-flash-image` model used for coordinate-image generation.
+Terms: **R2** = Cloudflare R2 object storage (S3-compatible); locally substituted by **MinIO**. **ADC** = Application Default Credentials (Cloud Run service-account identity). **OIDC token** = a short-lived identity token Cloud Run/Cloud Tasks can mint so a caller proves which service account it is. **Direct VPC egress** = the Cloud Run feature that routes a service's outbound traffic straight into a VPC subnet's private IP range, with no separate connector instances (the GA successor to the Serverless VPC Access connector). **Nano Banana** = the `gemini-2.5-flash-image` model used for coordinate-image generation.
 
 
 Assumed inputs the operator must have before starting: a billing-enabled GCP project id (this plan calls it `<PROJECT_ID>`; pick e.g. `gen-fashion-prod` — note the local default is `gen-fashion-local`), `Owner`/`Editor` on it, a Cloudflare account for R2, and a Kaggle API token (`~/.kaggle/kaggle.json`) for the seed. `gcloud`, `docker`, the Firebase CLI, and the Flutter SDK are installed locally.
@@ -131,7 +131,7 @@ Milestone 0 — Deploy readiness patch. Before creating cloud resources, land th
 Milestone A — GCP foundation (MD-1, MD-2, MD-9). Create/select the project, enable APIs, create three least-privilege service accounts (`fastapi-sa`, `adk-sa`, `tasks-invoker-sa`) and bind IAM, create the Firestore database (Native mode) in `asia-northeast1` and deploy `firestore.rules`, create the production Firebase project with Google sign-in enabled, create the production Cloudflare R2 bucket `gen-fashion-images` with the §8.4 CORS rule pointing at the Firebase Hosting origin, and store every secret (R2 keys, `ELASTICSEARCH_API_KEY`, `INTERNAL_TASK_SECRET`) in Secret Manager. This milestone touches no application code; it produces the identities and secrets everything else consumes.
 
 
-Milestone B — Data plane (MD-3, MD-4, MD-10). Provision the `e2-medium` Elasticsearch VM in `asia-northeast1-a` with a 30 GB SSD. During bootstrap only, allow the VM an ephemeral external IP so it can install Elasticsearch and run the Kaggle/R2/Vertex/Firestore seed; do not expose `tcp:9200` publicly. Install Elasticsearch 8.x with security enabled, mint an API key, create the Serverless VPC Access connector, and firewall `tcp:9200` to the connector range only. Then run the seed `--with-embeddings` from the VM, remove the VM's external IP, and verify (from Cloud Run after Milestone C) that ES remains reachable privately and that the JP-analyzer is not required (closing the open M1-3 PoC question).
+Milestone B — Data plane (MD-3, MD-4, MD-10). Provision the `e2-medium` Elasticsearch VM in `asia-northeast1-a` with a **30 GB `pd-standard`** boot disk and a **reserved static internal IP**. During bootstrap only, allow the VM an ephemeral external IP so it can install Elasticsearch and run the Kaggle/R2/Vertex/Firestore seed; do not expose `tcp:9200` publicly. Install Elasticsearch 8.x with security enabled, mint an API key, and firewall `tcp:9200` to the **Cloud Run Direct VPC egress subnet range only** (no Serverless VPC Access connector — ADL-023). Then run the seed `--with-embeddings` from the VM, remove the VM's external IP, and verify (from Cloud Run after Milestone C) that ES remains reachable privately over Direct VPC egress and that the JP-analyzer is not required (closing the open M1-3 PoC question). **Cost (ADL-023):** stop the VM when not actively testing (idle cost = the `pd-standard` disk only); for the post-submission public window an optional Compute Engine instance schedule (`Asia/Tokyo` cron) can auto-stop the VM overnight — wire it but leave it ON/OFF as a judgement call on availability vs. cost.
 
 
 Milestone C — Services (MD-5, MD-6, MD-7, MD-8). Create an Artifact Registry Docker repo, build and push both images, and deploy both Cloud Run services through the committed helper scripts with the deploy settings from req §9.1 / ADL-016 (`fastapi-service`: public, min 0 / max 10, 1 GB / 1 CPU / 60 s; `adk-agent-service`: private, min 1 / max 5, 2 GB / 1 CPU / 600 s). Create the Cloud Tasks queue `gen-fashion-embed`, flip `TASK_QUEUE_MODE=cloud_tasks`, wire each service's env + secrets and cross-service URLs, and prove the OIDC-hardened internal paths work.
@@ -284,14 +284,20 @@ Milestone A — GCP foundation
 Milestone B — Data plane
 
 
-8. Create the ES VM and SSD disk with a temporary external IP for bootstrap. Do not create any firewall rule that exposes Elasticsearch publicly:
+8. Reserve a static internal IP (so the VM's address survives stop/start), then create the ES VM with a `pd-standard` disk and a temporary external IP for bootstrap. Do not create any firewall rule that exposes Elasticsearch publicly:
 
+
+    # Static internal IP from the asia-northeast1 default subnet
+    gcloud compute addresses create gen-fashion-es-ip \
+      --region=asia-northeast1 --subnet=default
+    ES_IP=$(gcloud compute addresses describe gen-fashion-es-ip \
+      --region=asia-northeast1 --format='value(address)')
 
     gcloud compute instances create gen-fashion-es \
       --zone=asia-northeast1-a --machine-type=e2-medium \
       --image-family=debian-12 --image-project=debian-cloud \
-      --boot-disk-size=30GB --boot-disk-type=pd-ssd \
-      --network=default
+      --boot-disk-size=30GB --boot-disk-type=pd-standard \
+      --network=default --subnet=default --private-network-ip="$ES_IP"
 
 
 9. SSH in and install Elasticsearch 8.x:
@@ -319,14 +325,25 @@ Milestone B — Data plane
     printf '%s' "<ELASTICSEARCH_API_KEY>" | gcloud secrets create ELASTICSEARCH_API_KEY --data-file=-
 
 
-10. Create the Serverless VPC Access connector and a firewall rule that allows only the connector range to reach ES:
+10. Open the private path. Direct VPC egress needs **no connector resource** — it is enabled on the Cloud Run services in Milestone C (`--network=default --subnet=default --vpc-egress=private-ranges-only`). Here, just allow `tcp:9200` from the egress subnet's range so Cloud Run can reach ES (and nothing else can):
 
 
-    gcloud compute networks vpc-access connectors create gen-fashion-conn \
-      --region=asia-northeast1 --network=default --range=10.8.0.0/28
-    gcloud compute firewall-rules create allow-es-from-connector \
+    SUBNET_RANGE=$(gcloud compute networks subnets describe default \
+      --region=asia-northeast1 --format='value(ipCidrRange)')
+    gcloud compute firewall-rules create allow-es-from-cloudrun \
       --network=default --direction=INGRESS --action=ALLOW \
-      --rules=tcp:9200 --source-ranges=10.8.0.0/28
+      --rules=tcp:9200 --source-ranges="$SUBNET_RANGE"
+
+
+    Optional cost control for the post-submission public window — auto-stop the VM overnight (JST). Leave this OFF if judges/users may access at night; the schedule can be detached anytime. (First schedule creation may prompt a one-time IAM grant to the Compute Engine service agent.)
+
+
+    gcloud compute resource-policies create instance-schedule es-night-off \
+      --region=asia-northeast1 \
+      --vm-stop-schedule="0 2 * * *" --vm-start-schedule="0 8 * * *" \
+      --timezone="Asia/Tokyo"
+    gcloud compute instances add-resource-policies gen-fashion-es \
+      --zone=asia-northeast1-a --resource-policies=es-night-off
 
 
 11. Verify private connectivity (MD-4): from the ES VM, `curl -k -u elastic:<pw> https://localhost:9200/_cluster/health` returns `status: green|yellow`; after MD-7, confirm `adk-agent-service` logs show successful ES queries. Record the JP-analyzer finding (expected: not required for the curated demo set), closing the M1-3 PoC question.
@@ -355,7 +372,7 @@ Milestone B — Data plane
       --format='value(networkInterfaces[0].accessConfigs)'
 
 
-    The final command must print nothing. From this point forward, access the VM through IAP (`gcloud compute ssh gen-fashion-es --zone=asia-northeast1-a --tunnel-through-iap`). This restores the final-state security posture: no external IP and ES reachable only from localhost plus the connector range.
+    The final command must print nothing. From this point forward, access the VM through IAP (`gcloud compute ssh gen-fashion-es --zone=asia-northeast1-a --tunnel-through-iap`). This restores the final-state security posture: no external IP and ES reachable only from localhost plus the Cloud Run Direct VPC egress subnet range.
 
 
 Milestone C — Services
@@ -405,7 +422,7 @@ Milestone C — Services
     gcloud run deploy adk-agent-service --image $REPO/adk-agent-service:$IMAGE_TAG \
       --region=asia-northeast1 --service-account=adk-sa@<PROJECT_ID>.iam.gserviceaccount.com \
       --no-allow-unauthenticated --min-instances=1 --max-instances=5 --memory=2Gi --cpu=1 --timeout=600 \
-      --vpc-connector=gen-fashion-conn --vpc-egress=private-ranges-only \
+      --network=default --subnet=default --vpc-egress=private-ranges-only \
       --set-env-vars=GOOGLE_CLOUD_PROJECT=<PROJECT_ID>,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=us-central1,AGENT_MODEL=gemini-2.5-flash,ELASTICSEARCH_URL=https://<es-vm-internal-ip>:9200,R2_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com,R2_PUBLIC_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com,R2_BUCKET_NAME=gen-fashion-images \
       --set-secrets=ELASTICSEARCH_API_KEY=ELASTICSEARCH_API_KEY:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,INTERNAL_TASK_SECRET=INTERNAL_TASK_SECRET:latest
 
@@ -440,7 +457,7 @@ Milestone C — Services
     gcloud run deploy fastapi-service --image $REPO/fastapi-service:$IMAGE_TAG \
       --region=asia-northeast1 --service-account=fastapi-sa@<PROJECT_ID>.iam.gserviceaccount.com \
       --allow-unauthenticated --min-instances=0 --max-instances=10 --memory=1Gi --cpu=1 --timeout=60 \
-      --vpc-connector=gen-fashion-conn --vpc-egress=private-ranges-only \
+      --network=default --subnet=default --vpc-egress=private-ranges-only \
       --set-env-vars=GOOGLE_CLOUD_PROJECT=<PROJECT_ID>,FIREBASE_PROJECT_ID=<PROJECT_ID>,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=us-central1,ELASTICSEARCH_URL=https://<es-vm-internal-ip>:9200,R2_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com,R2_PUBLIC_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com,R2_BUCKET_NAME=gen-fashion-images,TASK_QUEUE_MODE=cloud_tasks,CLOUD_TASKS_QUEUE_EMBED=gen-fashion-embed,CLOUD_TASKS_LOCATION=asia-northeast1,ADK_INTERNAL_BASE_URL=$ADK_URL,FASTAPI_INTERNAL_BASE_URL=$FASTAPI_URL,INTERNAL_INVOKER_SA=tasks-invoker-sa@<PROJECT_ID>.iam.gserviceaccount.com \
       --set-secrets=ELASTICSEARCH_API_KEY=ELASTICSEARCH_API_KEY:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,INTERNAL_TASK_SECRET=INTERNAL_TASK_SECRET:latest
 
@@ -485,7 +502,7 @@ Milestone E — Acceptance + ops
 20. Production E2E (MD-13). Open `https://<PROJECT_ID>.web.app`, sign in with Google, start a session, choose `SHARED_CLOSET`, and confirm the Accordion streams tool events and the session reaches `COMPLETED` with a generated image. The API-level equivalent (adapt the existing `scripts/m5_coordination_smoke.py` against the deployed URL with a real Firebase ID token) must reach `status: COMPLETED`.
 
 
-21. Ops (MD-14). Confirm ADK events appear in Cloud Logging (`gcloud logging read 'resource.labels.service_name="adk-agent-service"' --limit=20`). Ensure the Firestore TTL policy on `sessions/{id}/agentEvents.ttlAt` (24 h, ADL-021) exists: `gcloud firestore fields ttls update ttlAt --collection-group=agentEvents --enable-ttl`. Write the teardown steps into `scripts/deploy/teardown.sh` (delete both Cloud Run services, the VM, the connector, the firewall rule, the queue, the Artifact Registry repo) and dry-run it.
+21. Ops (MD-14). Confirm ADK events appear in Cloud Logging (`gcloud logging read 'resource.labels.service_name="adk-agent-service"' --limit=20`). Ensure the Firestore TTL policy on `sessions/{id}/agentEvents.ttlAt` (24 h, ADL-021) exists: `gcloud firestore fields ttls update ttlAt --collection-group=agentEvents --enable-ttl`. Write the teardown steps into `scripts/deploy/teardown.sh` (delete both Cloud Run services, the VM, the static internal IP, the firewall rule, any night-stop instance schedule, the queue, the Artifact Registry repo) and dry-run it.
 
 
 ## Validation and Acceptance
@@ -509,7 +526,7 @@ Milestone acceptance overall: opening the public Firebase Hosting URL and comple
 ## Idempotence and Recovery
 
 
-Resource-creation commands are safe to re-run if you treat "already exists" as success (or `gcloud ... describe` first). `gcloud run deploy` is fully idempotent — it creates a new revision each time, so re-running with corrected env/secrets is the normal recovery path; roll back with `gcloud run services update-traffic <svc> --to-revisions=<prev>=100`. The seed is idempotent by design (`uuid5(filename)`); `--purge` clears prior shared data before reseeding. Secrets are versioned; add a new version rather than recreating. The ES VM is the one piece of mutable state — snapshot the disk before risky changes. If bootstrap install or seed fails due to outbound connectivity, temporarily recreate the external access config, finish the failed step, then delete the access config again before Milestone C. If private connectivity fails after Cloud Run deploy, the most common causes are (a) the firewall source range not matching the connector `/28`, (b) `--vpc-egress` not set to `private-ranges-only`, or (c) using the VM's name instead of its internal IP in `ELASTICSEARCH_URL`.
+Resource-creation commands are safe to re-run if you treat "already exists" as success (or `gcloud ... describe` first). `gcloud run deploy` is fully idempotent — it creates a new revision each time, so re-running with corrected env/secrets is the normal recovery path; roll back with `gcloud run services update-traffic <svc> --to-revisions=<prev>=100`. The seed is idempotent by design (`uuid5(filename)`); `--purge` clears prior shared data before reseeding. Secrets are versioned; add a new version rather than recreating. The ES VM is the one piece of mutable state — snapshot the disk before risky changes. If bootstrap install or seed fails due to outbound connectivity, temporarily recreate the external access config, finish the failed step, then delete the access config again before Milestone C. If private connectivity fails after Cloud Run deploy, the most common causes are (a) the firewall source range not matching the Direct VPC egress subnet's range, (b) `--vpc-egress` not set to `private-ranges-only` (or `--network`/`--subnet` omitted on `gcloud run deploy`), or (c) using the VM's name instead of its static internal IP in `ELASTICSEARCH_URL`.
 
 
 ## Artifacts and Notes
@@ -524,7 +541,7 @@ No secret values belong in this file, the scripts, commits, or logs — only Sec
 ## Interfaces and Dependencies
 
 
-GCP services: Cloud Run (two services), Artifact Registry (image storage), Cloud Build (image builds), Secret Manager (secrets), Cloud Tasks (embedding worker queue), Compute Engine (ES VM), Serverless VPC Access (private connectivity), Firestore (Native mode), Vertex AI / `aiplatform` (Gemini analysis, `gemini-embedding-001`, `gemini-2.5-flash-image`), Cloud Logging (ADK event stream), IAM Credentials API (identity-token support). External: Cloudflare R2 (object storage) and Kaggle (dataset for the seed). Tooling: `gcloud`, `docker`/Cloud Build, Firebase CLI, Flutter SDK.
+GCP services: Cloud Run (two services), Artifact Registry (image storage), Cloud Build (image builds), Secret Manager (secrets), Cloud Tasks (embedding worker queue), Compute Engine (ES VM), Cloud Run Direct VPC egress (private connectivity, ADL-023 — no Serverless VPC Access connector), Firestore (Native mode), Vertex AI / `aiplatform` (Gemini analysis, `gemini-embedding-001`, `gemini-2.5-flash-image`), Cloud Logging (ADK event stream), IAM Credentials API (identity-token support). External: Cloudflare R2 (object storage) and Kaggle (dataset for the seed). Tooling: `gcloud`, `docker`/Cloud Build, Firebase CLI, Flutter SDK.
 
 
 Milestone 0 code/script changes (all required before provisioning):
@@ -555,3 +572,7 @@ Requirements traceability: MD-1/MD-2 ← req §9.1, §12.1/§12.2, ADL-012; MD-3
 2026-06-27 — Resolved the pre-production deployment readiness audit before cloud work starts. Added Milestone 0 for the required code/config/script patch: Cloud Tasks worker URL split in the cloud path, OIDC token attachment and verification, `$PORT`-compatible Dockerfiles, `.env.example` deploy knobs, and `scripts/deploy/` wrappers. Updated Milestone B so the ES VM may use a temporary external IP for bootstrap/seed only, with a mandatory access-config deletion before Cloud Run deployment. Updated Milestone C to deploy one timestamped Milestone-0-patched image tag via helper scripts. Updated validation, recovery, artifacts, and dependencies to match the resolved flow.
 
 2026-06-27 — Milestone 0 complete. Implemented all code/config/script changes: `internal_invoker_sa` added to `config.py`; `cloud_tasks_adapter.py` worker URL fixed to use `FASTAPI_INTERNAL_BASE_URL` + OIDC token attached; `adk_agent_run.py` fetches Google identity token via ADC when `internal_invoker_sa` is set; `auth.py` `require_internal_secret` verifies OIDC bearer in production (audience = `FASTAPI_INTERNAL_BASE_URL`, email = `INTERNAL_INVOKER_SA`); both Dockerfiles now listen on `${PORT:-default}`; `google-auth==2.29.0` added to `fastapi-service/requirements.txt`; `.env.example` section [4] documents `FASTAPI_INTERNAL_BASE_URL`, `ADK_INTERNAL_BASE_URL`, `INTERNAL_INVOKER_SA`; `scripts/deploy/deploy_fastapi.sh`, `deploy_adk.sh`, `teardown.sh` committed. All step-0.5 checks passed: FastAPI 67 passed, ADK 41 passed, both Docker images responded on injected PORT, `teardown.sh --dry-run` listed exactly plan resources.
+
+2026-06-27 — Milestone A complete (GCP foundation): project `animation-agent` / `asia-northeast1`; 11 APIs + Firebase; 3 service accounts + least-privilege IAM; Firestore Native + rules/indexes deployed; Firebase + Google sign-in + Web app `gen-fashion-web`; R2 bucket `gen-fashion-images` + CORS; `INTERNAL_TASK_SECRET`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` in Secret Manager. MD-1 ✅, MD-9 ✅; MD-2 stays 🟡 (`ELASTICSEARCH_API_KEY` in Milestone B, env config at Cloud Run deploy).
+
+2026-06-27 — **Milestone B re-scoped for hackathon cost (ADL-023 revised).** Cloud Run → ES private path switched from a **Serverless VPC Access connector** to **Direct VPC egress** (`--network=default --subnet=default --vpc-egress=private-ranges-only`): removes the connector's idle fixed fee (min e2-micro×2) while keeping the same closed-network posture (ES no external IP, `tcp:9200` only from the egress subnet range). ES VM now uses **`pd-standard` (not SSD)** + a **reserved static internal IP** (survives stop/start), with stop-when-idle operation and an optional `Asia/Tokyo` night-stop instance schedule for the post-submission window. Updated: ADL-023 (req-phase01.md), Milestone B prose + steps 8/10/12.1, Cloud Run deploy flags (steps + `deploy_fastapi.sh`/`deploy_adk.sh` now take `--network`/`--subnet`, default `default`/`default`), `teardown.sh` (drop connector delete; add static-IP + night-stop deletes), glossary, dependencies, recovery, feature-matrix MD-3/MD-4/M1-3, and architecture-overview.
