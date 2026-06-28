@@ -164,6 +164,94 @@ gcloud artifacts docker images list $REPO/adk-agent-service --include-tags
 gcloud auth configure-docker asia-northeast1-docker.pkg.dev
 ```
 
+### Cloud Build でイメージをビルド & プッシュ
+
+```bash
+REPO=asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion
+IMAGE_TAG=md-$(date +%Y%m%d-%H%M)
+
+# 両サービスを並行ビルド（ターミナル2枚で同時実行 or & でバックグラウンド）
+gcloud builds submit fastapi-service --tag $REPO/fastapi-service:$IMAGE_TAG --project=animation-agent
+gcloud builds submit adk-agent-service --tag $REPO/adk-agent-service:$IMAGE_TAG --project=animation-agent
+```
+
+### イメージタグを使った再デプロイ（コード修正後のロールアウト）
+
+```bash
+# 現在のタグを確認してから最新イメージで更新
+REPO=asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion
+NEW_TAG=md-$(date +%Y%m%d-%H%M)
+
+bash scripts/deploy/deploy_adk.sh \
+  --project animation-agent --region asia-northeast1 \
+  --image "$REPO/adk-agent-service:$NEW_TAG" \
+  --es-internal-ip 10.146.0.2 \
+  --r2-endpoint-url https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com \
+  --r2-public-endpoint-url https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com \
+  --r2-bucket-name gen-fashion-images
+
+ADK_URL=$(gcloud run services describe adk-agent-service --region=asia-northeast1 --format='value(status.url)')
+FASTAPI_URL=$(gcloud run services describe fastapi-service --region=asia-northeast1 --format='value(status.url)')
+bash scripts/deploy/deploy_fastapi.sh \
+  --project animation-agent --region asia-northeast1 \
+  --image "$REPO/fastapi-service:$NEW_TAG" \
+  --adk-url "$ADK_URL" --fastapi-url "$FASTAPI_URL" \
+  --es-internal-ip 10.146.0.2 \
+  --r2-endpoint-url https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com \
+  --r2-public-endpoint-url https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com \
+  --r2-bucket-name gen-fashion-images
+```
+
+### クリーンアップポリシー（最新 3 タグのみ保持）
+
+```bash
+gcloud artifacts repositories set-cleanup-policies gen-fashion \
+  --project=animation-agent --location=asia-northeast1 \
+  --policy='[{"name":"keep-recent","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":3}}]'
+```
+
+---
+
+## Cloud Tasks（Milestone C 以降）
+
+```bash
+# キュー一覧・状態確認
+gcloud tasks queues list --location=asia-northeast1 --project=animation-agent
+
+# キュー詳細（バックログ件数、レート制限など）
+gcloud tasks queues describe gen-fashion-embed \
+  --location=asia-northeast1 --project=animation-agent
+
+# タスク一覧（滞留しているタスクがないか確認）
+gcloud tasks list --queue=gen-fashion-embed \
+  --location=asia-northeast1 --project=animation-agent
+```
+
+---
+
+## Flutter Web ビルド & Firebase Hosting（Milestone D 以降）
+
+```bash
+# 本番ビルド（credentials/firebase-sdk.md の値を使う）
+cd flutter-web-app
+flutter build web --release \
+  --dart-define=API_BASE_URL=https://fastapi-service-hvwhpzcehq-an.a.run.app \
+  --dart-define=USE_EMULATORS=false \
+  --dart-define=FIREBASE_PROJECT_ID=animation-agent \
+  --dart-define=FIREBASE_API_KEY=AIzaSyDWx1gLxdKy3MHmMlQpWjHtTo5mKEsKyEc \
+  --dart-define=FIREBASE_APP_ID=1:789766161934:web:e894240fca5dc80b9ede5f \
+  --dart-define=FIREBASE_MESSAGING_SENDER_ID=789766161934 \
+  --dart-define=FIREBASE_AUTH_DOMAIN=animation-agent.firebaseapp.com \
+  --dart-define=FIREBASE_STORAGE_BUCKET=animation-agent.firebasestorage.app
+cd ..
+
+# Firebase Hosting にデプロイ
+firebase deploy --only hosting --project animation-agent
+
+# デプロイ後の公開 URL
+# https://animation-agent.web.app
+```
+
 ---
 
 ## Firestore
@@ -194,6 +282,15 @@ gcloud secrets list --project=animation-agent \
 gcloud services list --enabled --project=animation-agent \
   --filter="name:(run OR artifactregistry OR cloudbuild OR secretmanager OR cloudtasks OR compute OR firestore OR aiplatform OR logging OR iamcredentials)" \
   --format='value(name)'
+
+# Cloud Run サービス 2 本の稼働状況まとめ確認
+gcloud run services list --region=asia-northeast1 --project=animation-agent \
+  --format='table(metadata.name,status.url,status.conditions[0].status,status.conditions[0].message)'
+
+# fastapi + adk の /health を一発確認
+FASTAPI_URL=$(gcloud run services describe fastapi-service --region=asia-northeast1 --format='value(status.url)')
+ADK_URL=$(gcloud run services describe adk-agent-service --region=asia-northeast1 --format='value(status.url)')
+echo "fastapi: $(curl -sf $FASTAPI_URL/health)" && echo "adk (expect 403): $(curl -s -o /dev/null -w '%{http_code}' $ADK_URL/health)"
 ```
 
 ---
