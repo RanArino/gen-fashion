@@ -18,6 +18,9 @@ ES_INTERNAL_IP=""
 R2_ENDPOINT_URL=""
 R2_PUBLIC_ENDPOINT_URL=""
 R2_BUCKET_NAME="gen-fashion-images"
+# Direct VPC egress (ADL-023): reach the private ES VM with no Serverless VPC Access connector.
+VPC_NETWORK="default"
+VPC_SUBNET="default"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -28,6 +31,8 @@ while [[ $# -gt 0 ]]; do
     --r2-endpoint-url)   R2_ENDPOINT_URL="$2";      shift 2 ;;
     --r2-public-endpoint-url) R2_PUBLIC_ENDPOINT_URL="$2"; shift 2 ;;
     --r2-bucket-name)    R2_BUCKET_NAME="$2";       shift 2 ;;
+    --network)           VPC_NETWORK="$2";          shift 2 ;;
+    --subnet)            VPC_SUBNET="$2";           shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -51,7 +56,8 @@ gcloud run deploy adk-agent-service \
   --memory=2Gi \
   --cpu=1 \
   --timeout=600 \
-  --vpc-connector="gen-fashion-conn" \
+  --network="${VPC_NETWORK}" \
+  --subnet="${VPC_SUBNET}" \
   --vpc-egress=private-ranges-only \
   --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=us-central1,AGENT_MODEL=gemini-2.5-flash,ELASTICSEARCH_URL=https://${ES_INTERNAL_IP}:9200,R2_ENDPOINT_URL=${R2_ENDPOINT_URL},R2_PUBLIC_ENDPOINT_URL=${R2_PUBLIC_ENDPOINT_URL},R2_BUCKET_NAME=${R2_BUCKET_NAME}" \
   --set-secrets="ELASTICSEARCH_API_KEY=ELASTICSEARCH_API_KEY:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,INTERNAL_TASK_SECRET=INTERNAL_TASK_SECRET:latest"

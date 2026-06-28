@@ -50,19 +50,24 @@ run gcloud artifacts repositories delete gen-fashion \
   --project="${PROJECT}" --location="${REGION}" --quiet
 
 echo ""
-echo "--- Serverless VPC Access connector ---"
-run gcloud compute networks vpc-access connectors delete gen-fashion-conn \
-  --project="${PROJECT}" --region="${REGION}" --quiet
-
-echo ""
-echo "--- Firewall rule ---"
-run gcloud compute firewall-rules delete allow-es-from-connector \
+echo "--- Firewall rule (Direct VPC egress, ADL-023) ---"
+run gcloud compute firewall-rules delete allow-es-from-cloudrun \
   --project="${PROJECT}" --quiet
 
 echo ""
 echo "--- Compute Engine ES VM ---"
 run gcloud compute instances delete gen-fashion-es \
   --project="${PROJECT}" --zone="${ZONE}" --quiet
+
+echo ""
+echo "--- Static internal IP (release after the VM is gone) ---"
+run gcloud compute addresses delete gen-fashion-es-ip \
+  --project="${PROJECT}" --region="${REGION}" --quiet
+
+echo ""
+echo "--- Optional night-stop instance schedule (no-op if it was never created) ---"
+run gcloud compute resource-policies delete es-night-off \
+  --project="${PROJECT}" --region="${REGION}" --quiet
 
 echo ""
 echo "--- Secret Manager secrets ---"
