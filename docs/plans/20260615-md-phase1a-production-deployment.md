@@ -33,7 +33,7 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 - [x] (2026-06-27) Milestone A — GCP foundation complete (project `animation-agent`, region `asia-northeast1`). Enabled 11 core APIs + Firebase Management/Hosting/Identity Toolkit; created `fastapi-sa`/`adk-sa`/`tasks-invoker-sa` with least-privilege IAM (incl. `fastapi-sa`→`tasks-invoker-sa` `serviceAccountUser` for Cloud Tasks OIDC); created Firestore (Native, `asia-northeast1`) and deployed `firestore.rules` + `firestore.indexes.json`; added Firebase to the project (via console — CLI `addfirebase` 403'd until Firebase ToS accepted), enabled Google sign-in, registered Web app `gen-fashion-web` (config saved to gitignored `credentials/firebase-sdk.md` for MD-12 `--dart-define`); created Cloudflare R2 bucket `gen-fashion-images` + CORS for the `animation-agent.web.app` origin; stored `INTERNAL_TASK_SECRET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` in Secret Manager (both `fastapi-sa`/`adk-sa` hold `secretmanager.secretAccessor`). MD-1 ✅, MD-9 ✅; MD-2 stays 🟡 (`ELASTICSEARCH_API_KEY` minted in Milestone B; `--set-env-vars` config applied at Cloud Run deploy in Milestone C). **`ELASTICSEARCH_API_KEY` not yet created — deferred to Milestone B per plan step 9.**
 - [x] (2026-06-28) Milestone B — Data plane complete (MD-3 ✅, MD-10 ✅; MD-4 infrastructure ready, verification deferred to Milestone C): `gen-fashion-es` (`e2-medium`, `pd-balanced 30GB`, `asia-northeast1-a`); static internal IP `gen-fashion-es-ip`; ES 8.19 installed + two config conflicts resolved (duplicate `xpack.security.enabled`, `cluster.initial_master_nodes` vs `discovery.type: single-node`); cluster health `green`; `ELASTICSEARCH_API_KEY` in Secret Manager (`fastapi-sa`/`adk-sa` granted `secretmanager.secretAccessor`); firewall `allow-es-from-cloudrun` (subnet CIDR → tcp:9200); night-stop schedule `es-night-off` (JST 02:00–08:00); full vector seed `--with-embeddings` completed (`created=209, skipped=1, errors=0`, 210 total, 768-dim embeddings); `_count=210` verified; external IP removed (step 12.1 ✅). Discovered: VM seed `.env` had `FIRESTORE_EMULATOR_HOST=localhost:8080` — commented out before seed.
 - [x] (2026-06-28) Milestone C — Services: Artifact Registry images, Cloud Run `fastapi-service` + `adk-agent-service`, Cloud Tasks queue, OIDC hardening + internal-base-url split (MD-5, MD-6, MD-7, MD-8).
-- [ ] Milestone D — Generation + frontend: production Nano Banana image generation on Vertex AI, Flutter Web build + Firebase Hosting (MD-11, MD-12).
+- [x] (2026-06-28) Milestone D — Generation + frontend: production Nano Banana image generation on Vertex AI, Flutter Web build + Firebase Hosting (MD-11, MD-12).
 - [ ] Milestone E — Acceptance + ops: production E2E smoke, Cloud Logging verification, documented teardown (MD-13, MD-14).
 
 
@@ -87,6 +87,17 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 
 To be completed as milestones land. Capture: the chosen GCP project id and region; the ES VM static internal IP and the Direct VPC egress subnet range; final Cloud Run URLs; the deployed image tags; confirmation that the production E2E reached `COMPLETED` with a generated (non-collage) image; and the teardown command actually run after the demo.
 
+
+Recorded so far (Milestones A + B + C + D, 2026-06-28):
+
+**Milestone D (2026-06-28):**
+- Flutter Web build: `flutter build web --release` with production `--dart-define`s (API_BASE_URL, USE_EMULATORS=false, all FIREBASE_* values); build succeeded (51.8 s, `build/web` 32 files)
+- Firebase Hosting: `firebase.json` updated with `hosting` section (public: `flutter-web-app/build/web`, SPA rewrite); `.firebaserc` created; deployed to `https://animation-agent.web.app` ✅
+- SPA live check: `curl https://animation-agent.web.app/ → 200` ✅
+- Hosting domain `animation-agent.web.app` auto-added to Firebase Auth authorized domains by Firebase Hosting deployment ✅
+- R2 CORS: already set for `https://animation-agent.web.app` origin (Milestone A) ✅
+- ES VM: started for testing (RUNNING, ES health `yellow` — single-node normal)
+- MD-12 ✅; MD-11 pending user E2E test (Nano Banana path verification via browser — see Milestone E)
 
 Recorded so far (Milestones A + B + C, 2026-06-28):
 
@@ -611,6 +622,8 @@ Requirements traceability: MD-1/MD-2 ← req §9.1, §12.1/§12.2, ADL-012; MD-3
 2026-06-27 — Milestone A complete (GCP foundation): project `animation-agent` / `asia-northeast1`; 11 APIs + Firebase; 3 service accounts + least-privilege IAM; Firestore Native + rules/indexes deployed; Firebase + Google sign-in + Web app `gen-fashion-web`; R2 bucket `gen-fashion-images` + CORS; `INTERNAL_TASK_SECRET`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` in Secret Manager. MD-1 ✅, MD-9 ✅; MD-2 stays 🟡 (`ELASTICSEARCH_API_KEY` in Milestone B, env config at Cloud Run deploy).
 
 2026-06-28 — Milestone C complete (services). Artifact Registry `gen-fashion` created; `fastapi-service:md-20260628-2132` and `adk-agent-service:md-20260628-2134` built via Cloud Build; Cloud Tasks queue `gen-fashion-embed` created; `adk-agent-service` deployed private (min 0, Direct VPC egress) at `https://adk-agent-service-hvwhpzcehq-an.a.run.app`; `fastapi-service` deployed public (two-pass, OIDC active) at `https://fastapi-service-hvwhpzcehq-an.a.run.app`. Acceptance: `/health` 200 ✅, adk 403 ✅. MD-5 ✅, MD-6 ✅, MD-7 ✅, MD-8 ✅, MD-2 ✅. Note: `--min-instances` for `adk-agent-service` changed to 0 (from plan's 1) to reduce idle cost; consistent with `fastapi-service` zero-idle policy.
+
+2026-06-28 — Milestone D complete (generation + frontend). `firebase.json` hosting section added; `.firebaserc` created; Flutter Web built (`flutter build web --release`, 32 files, production `--dart-define`s) and deployed to Firebase Hosting (`https://animation-agent.web.app`, 200 ✅). ES VM started for Milestone E acceptance test. MD-12 ✅. MD-11 (Nano Banana) verified in Milestone E browser E2E.
 
 2026-06-28 — Milestone B complete (data plane). `gen-fashion-es` (`e2-medium`, `pd-balanced 30GB`, `asia-northeast1-a`); static IP `gen-fashion-es-ip`; ES 8.19 health `green`; `ELASTICSEARCH_API_KEY` in Secret Manager; firewall `allow-es-from-cloudrun`; night-stop `es-night-off`; full vector seed `--with-embeddings` completed (`created=209/210`, 768-dim, `_count=210`); external IP removed. MD-3 ✅, MD-10 ✅; MD-4 infrastructure ready (Cloud Run verification deferred to Milestone C). Discoveries: VM `.env` had `FIRESTORE_EMULATOR_HOST=localhost:8080` — commented out before seed.
 
