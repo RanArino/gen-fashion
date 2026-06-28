@@ -1,0 +1,236 @@
+# GCP 運用コマンド集 — gen-fashion
+
+このドキュメントはプロジェクトに対してよく使う `gcloud` コマンドをまとめたもの。
+作業のたびに随時追加・更新すること。
+
+## 前提設定
+
+```bash
+# プロジェクトとデフォルトリージョンを設定（これをやっておくと --project / --region を毎回省略できる）
+gcloud config set project animation-agent
+gcloud config set compute/region asia-northeast1
+gcloud config set compute/zone asia-northeast1-a
+
+# 現在の設定を確認
+gcloud config list
+```
+
+---
+
+## Compute Engine — Elasticsearch VM
+
+VM 名: `gen-fashion-es` / ゾーン: `asia-northeast1-a`
+
+> **コスト方針:** 使っていないときは止めることを推奨。課金は `pd-balanced` ディスク（約 $3/月）のみになる。
+> 夜間 (JST 02:00) は `es-night-off` スケジュールで自動停止、08:00 に自動起動。
+
+### 起動 / 停止
+
+```bash
+# 起動（Milestone C の ES 疎通確認や再シード時など）
+gcloud compute instances start gen-fashion-es --zone=asia-northeast1-a
+
+# 停止（作業終了後は必ず実行）
+gcloud compute instances stop gen-fashion-es --zone=asia-northeast1-a
+
+# 状態確認
+gcloud compute instances describe gen-fashion-es \
+  --zone=asia-northeast1-a --format='value(status)'
+```
+
+### SSH 接続
+
+```bash
+# 通常接続（VM に外部 IP がある間のみ）
+gcloud compute ssh gen-fashion-es --zone=asia-northeast1-a
+
+# IAP 経由（外部 IP 削除後はこちらを使う — Milestone B 完了後はこちらが必須）
+gcloud compute ssh gen-fashion-es --zone=asia-northeast1-a --tunnel-through-iap
+
+# コマンドを直接渡す場合（--quiet でホスト確認プロンプトをスキップ）
+gcloud compute ssh gen-fashion-es --zone=asia-northeast1-a --tunnel-through-iap --quiet \
+  --command="<コマンド>"
+```
+
+### Elasticsearch の状態確認
+
+VM に SSH してから実行する。
+
+```bash
+# サービス状態
+sudo systemctl status elasticsearch
+
+# クラスタ健全性（green / yellow が正常）
+ES_API=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_API_KEY --project=animation-agent)
+curl -sk -H "Authorization: ApiKey $ES_API" https://localhost:9200/_cluster/health | python3 -m json.tool
+
+# インデックス内のドキュメント数（210 以上あれば seed 完了済み）
+curl -sk -H "Authorization: ApiKey $ES_API" https://localhost:9200/clothing_items/_count
+
+# embedding フィールドの存在確認（768次元ベクトルが入っていることを確認）
+curl -sk -H "Authorization: ApiKey $ES_API" -H 'Content-Type: application/json' \
+  https://localhost:9200/clothing_items/_search \
+  -d '{"query":{"term":{"user_id":"__shared__"}},"_source":["embedding"],"size":1}' \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); e=d["hits"]["hits"][0]["_source"].get("embedding",[]); print(f"dim={len(e)}")'
+```
+
+### VM の外部 IP 状態確認
+
+```bash
+# 空文字が返れば外部 IP なし（正常な本番状態）
+gcloud compute instances describe gen-fashion-es \
+  --zone=asia-northeast1-a --format='value(networkInterfaces[0].accessConfigs)'
+```
+
+---
+
+## Secret Manager
+
+シークレットの値をコードやコマンドに渡す場合はここから取得する。
+**シークレットの値はチャットやログに貼らないこと。**
+
+```bash
+# 最新バージョンを取得して変数に格納
+ES_API=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_API_KEY --project=animation-agent)
+R2_KEY=$(gcloud secrets versions access latest --secret=R2_ACCESS_KEY_ID --project=animation-agent)
+R2_SECRET=$(gcloud secrets versions access latest --secret=R2_SECRET_ACCESS_KEY --project=animation-agent)
+TASK_SECRET=$(gcloud secrets versions access latest --secret=INTERNAL_TASK_SECRET --project=animation-agent)
+
+# 登録済みシークレット一覧
+gcloud secrets list --project=animation-agent
+
+# 新しいシークレットを登録（値はファイル経由で渡す — echo でパイプするとシェル履歴に残る）
+printf '%s' "<値>" | gcloud secrets create <SECRET_NAME> --data-file=- --project=animation-agent
+
+# 既存シークレットに新しいバージョンを追加
+printf '%s' "<新しい値>" | gcloud secrets versions add <SECRET_NAME> --data-file=- --project=animation-agent
+```
+
+---
+
+## ファイアウォールルール
+
+```bash
+# 現在のルール一覧（gen-fashion 関連のみ）
+gcloud compute firewall-rules list --filter="name:gen-fashion OR name:allow-es" \
+  --format="table(name,direction,sourceRanges,allowed)"
+
+# ES への許可ルール詳細確認
+gcloud compute firewall-rules describe allow-es-from-cloudrun
+```
+
+---
+
+## Cloud Run（Milestone C 以降）
+
+```bash
+# サービス一覧
+gcloud run services list --region=asia-northeast1
+
+# サービスの URL を取得
+gcloud run services describe fastapi-service --region=asia-northeast1 --format='value(status.url)'
+gcloud run services describe adk-agent-service --region=asia-northeast1 --format='value(status.url)'
+
+# ヘルスチェック
+FASTAPI_URL=$(gcloud run services describe fastapi-service --region=asia-northeast1 --format='value(status.url)')
+curl -f "$FASTAPI_URL/health"
+
+# ログを確認（直近 20 件）
+gcloud logging read 'resource.labels.service_name="fastapi-service"' \
+  --limit=20 --format='value(timestamp,textPayload)'
+gcloud logging read 'resource.labels.service_name="adk-agent-service"' \
+  --limit=20 --format='value(timestamp,textPayload)'
+
+# リビジョン一覧（ロールバック対象を探す場合）
+gcloud run revisions list --service=fastapi-service --region=asia-northeast1
+
+# 特定リビジョンにトラフィックを戻す（ロールバック）
+gcloud run services update-traffic fastapi-service \
+  --region=asia-northeast1 --to-revisions=<REVISION_NAME>=100
+```
+
+---
+
+## Artifact Registry（Milestone C 以降）
+
+```bash
+REPO=asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion
+
+# イメージ一覧
+gcloud artifacts docker images list $REPO/fastapi-service --include-tags
+gcloud artifacts docker images list $REPO/adk-agent-service --include-tags
+
+# ローカルから Docker 認証（初回のみ）
+gcloud auth configure-docker asia-northeast1-docker.pkg.dev
+```
+
+---
+
+## Firestore
+
+```bash
+# TTL ポリシーの確認（agentEvents コレクションの ttlAt フィールド）
+gcloud firestore fields ttls list --project=animation-agent
+
+# TTL ポリシーを有効化（Milestone E）
+gcloud firestore fields ttls update ttlAt \
+  --collection-group=agentEvents --enable-ttl --project=animation-agent
+```
+
+---
+
+## よく使う確認コマンド（ワンライナー）
+
+```bash
+# VM の状態・内部 IP・外部 IP をまとめて確認
+gcloud compute instances describe gen-fashion-es --zone=asia-northeast1-a \
+  --format='table(name,status,networkInterfaces[0].networkIP,networkInterfaces[0].accessConfigs[0].natIP)'
+
+# Secret Manager の全シークレット名と更新日時
+gcloud secrets list --project=animation-agent \
+  --format='table(name,updateTime)'
+
+# 有効な API 一覧（デプロイに必要な API が全部 enabled か確認）
+gcloud services list --enabled --project=animation-agent \
+  --filter="name:(run OR artifactregistry OR cloudbuild OR secretmanager OR cloudtasks OR compute OR firestore OR aiplatform OR logging OR iamcredentials)" \
+  --format='value(name)'
+```
+
+---
+
+## トラブルシューティング
+
+### Elasticsearch が起動しない
+
+```bash
+# ログを確認
+sudo journalctl -xeu elasticsearch.service --no-pager | tail -50
+
+# 設定ファイルの競合を確認（cluster.initial_master_nodes と discovery.type:single-node は共存不可）
+sudo grep -E "cluster.initial_master_nodes|discovery.type" /etc/elasticsearch/elasticsearch.yml
+```
+
+### シードスクリプトが Firestore エミュレータに接続しようとする
+
+VM の `scripts/seed_shared_closet/.env` に `FIRESTORE_EMULATOR_HOST` が設定されている可能性がある。
+本番シード時はコメントアウトする。
+
+```bash
+# VM 上で確認・修正
+grep "FIRESTORE_EMULATOR" /home/ran/seed_shared_closet/.env
+sed -i 's/^FIRESTORE_EMULATOR_HOST=/#FIRESTORE_EMULATOR_HOST=/' /home/ran/seed_shared_closet/.env
+```
+
+### Cloud Run が ES に接続できない
+
+原因の多くは以下の 3 点。
+
+1. `ELASTICSEARCH_URL` に内部 IP（静的割当）ではなく VM 名を使っている → 内部 IP を使うこと
+2. Cloud Run のデプロイ時に `--network`/`--subnet`/`--vpc-egress=private-ranges-only` を省略している
+3. ファイアウォールルール `allow-es-from-cloudrun` のソース範囲が subnet の CIDR と一致していない
+
+```bash
+# subnet の CIDR を確認（ファイアウォールルールと照合）
+gcloud compute networks subnets describe default \
+  --region=asia-northeast1 --format='value(ipCidrRange)'
+```

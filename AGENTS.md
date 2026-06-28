@@ -107,6 +107,16 @@ When asked to commit, use Conventional Commits:
 
 Common types are `feat`, `fix`, `docs`, `refactor`, `test`, `build`, and `chore`. Choose a scope that matches the child repository or feature area.
 
+## GCP Operations Cheatsheet
+
+`docs/gcp-cheatsheet.md` is the living reference for project-specific `gcloud` commands (project `animation-agent`, region `asia-northeast1`). It covers VM start/stop/SSH, Secret Manager access, Elasticsearch verification, Cloud Run, Artifact Registry, Firestore TTL, and troubleshooting.
+
+**Agents must keep this document up to date:**
+
+- When a new GCP operation is first used (e.g., a new `gcloud` command, a new resource type, a new troubleshooting pattern), add it to the relevant section of `docs/gcp-cheatsheet.md` in the same change.
+- When a resource name, project ID, or region changes, update the corresponding entry.
+- Do not add entries that duplicate `gcloud --help` output — only add commands that are non-obvious, project-specific, or have known pitfalls.
+
 ## Child Repository Overrides
 
 A child repository may define its own `AGENTS.md` with more specific rules. The nearest `AGENTS.md` to the files being edited takes precedence. Use this top-level file only for behavior that should remain true across all applications and services under `/Users/ran/my-app`.
