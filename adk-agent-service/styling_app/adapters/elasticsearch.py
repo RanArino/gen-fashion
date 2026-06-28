@@ -17,7 +17,7 @@ from ..config import get_settings
 @lru_cache
 def _client() -> Elasticsearch:
     settings = get_settings()
-    kwargs = {"hosts": [settings.elasticsearch_url]}
+    kwargs = {"hosts": [settings.elasticsearch_url], "verify_certs": False}
     if settings.elasticsearch_api_key:
         kwargs["api_key"] = settings.elasticsearch_api_key
     return Elasticsearch(**kwargs)
