@@ -39,7 +39,8 @@ class HttpAgentRunAdapter(AgentRunPort):
             audience = self.base_url
             token = _fetch_oidc_token(audience)
             headers["Authorization"] = f"Bearer {token}"
-        async with httpx.AsyncClient(timeout=10) as client:
+        # 60s covers Cloud Run cold-start (~26s observed) plus network overhead.
+        async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
                 f"{self.base_url}/internal/run-session",
                 json=payload,

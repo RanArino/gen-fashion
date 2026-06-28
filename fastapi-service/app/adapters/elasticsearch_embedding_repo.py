@@ -10,7 +10,7 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
 
     def __init__(self) -> None:
         settings = get_settings()
-        kwargs = {"hosts": [settings.resolved_elasticsearch_url]}
+        kwargs = {"hosts": [settings.resolved_elasticsearch_url], "verify_certs": False}
         if settings.elasticsearch_api_key:
             kwargs["api_key"] = settings.elasticsearch_api_key
         self._client = AsyncElasticsearch(**kwargs)
