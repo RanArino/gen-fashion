@@ -51,7 +51,7 @@ gcloud run deploy adk-agent-service \
   --region="${REGION}" \
   --service-account="adk-sa@${PROJECT}.iam.gserviceaccount.com" \
   --no-allow-unauthenticated \
-  --min-instances=1 \
+  --min-instances=0 \
   --max-instances=5 \
   --memory=2Gi \
   --cpu=1 \
