@@ -962,9 +962,9 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **Alternatives:** (a) Serverless VPC Access connector（当初案）。機能は同等だが connector インスタンス（最小 e2-micro×2）の**アイドルでも発生する固定費**がかかる。(b) ADL-013 が挙げた VPC Peering / Cloud NAT。Cloud NAT は egress のみで Cloud Run → 私設 VM の ingress 経路にはならず、Peering は単一 VPC では過剰。
 - **Rationale:** Direct VPC egress は connector の後継機能（GA）で、Google も推奨する。connector のような常時課金インスタンスを持たず**ゼロにスケール**し、egress 課金レートは connector と同一なので、**閉域網の姿勢（ES は公開せず内部 IP のみ）を維持したまま固定費を実質ゼロ**にできる。ハッカソンの短期・低コスト要件に最も適合し、終了後は VM ごと削除して廃止できる（ADL-013 の使い捨て方針と整合）。
 - **Trade-off:** Direct VPC egress はサブネットの IP を消費する（小規模なので問題なし）。ES URL には VM 名でなく**静的内部 IP** を使う。`--vpc-egress` を `private-ranges-only` にしないとプライベート到達が成立しない点とファイアウォール source range の不一致が、接続失敗の二大要因。
-- **Cost note（ハッカソン最適化）:** ES VM は **`pd-standard` 30GB**（SSD 不要）で停止中コストを最小化。開発中はこまめに VM を停止（停止中はディスク代のみ）。提出後の常時公開ウィンドウでは、必要に応じて Compute Engine の**インスタンススケジュール（resource policy、`Asia/Tokyo` cron）で深夜自動停止**を ON/OFF できるようにする（可用性とのトレードオフは利用者タイムゾーン次第で判断）。
+- **Cost note（ハッカソン最適化）:** ES VM は **`pd-balanced` 30GB**（SSD 不要）で停止中コストを最小化。開発中はこまめに VM を停止（停止中はディスク代のみ）。提出後の常時公開ウィンドウでは、必要に応じて Compute Engine の**インスタンススケジュール（resource policy、`Asia/Tokyo` cron）で深夜自動停止**を ON/OFF できるようにする（可用性とのトレードオフは利用者タイムゾーン次第で判断）。
 - **影響:** feature-matrix `M1-3` の "Cloud Run プライベート接続" を本決定で具体化。MD デプロイ ExecPlan（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-3/MD-4）が実装する。
-- **Date/Author:** 2026-06-15 / Ran（デプロイ ExecPlan 起票時に提案）。**2026-06-27 改訂:** connector → Direct VPC egress（ハッカソン低コスト化）。`pd-standard` + 停止運用 + 深夜停止スケジュールを追記。
+- **Date/Author:** 2026-06-15 / Ran（デプロイ ExecPlan 起票時に提案）。**2026-06-27 改訂:** connector → Direct VPC egress（ハッカソン低コスト化）。`pd-balanced` + 停止運用 + 深夜停止スケジュールを追記。
 
 ### ADL-024: 本番の `/internal/*` ワーカールート保護は OIDC + 共有シークレット（`fastapi-service` の ingress=internal は不採用）
 
