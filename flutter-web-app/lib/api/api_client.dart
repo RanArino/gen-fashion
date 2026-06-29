@@ -136,6 +136,17 @@ class ApiClient {
         .toList();
   }
 
+  Future<SessionHistoryItem> getSession(String sessionId) async {
+    final uri = Uri.parse('$_baseUrl/sessions/$sessionId');
+    final res = await _http.get(uri, headers: await _authHeaders());
+    if (res.statusCode != 200) {
+      throw ApiException(res.statusCode, res.body);
+    }
+    return SessionHistoryItem.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
   Future<StyleSessionResponse> selectSource({
     required String sessionId,
     required String source,
