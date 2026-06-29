@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "target": "gen-fashion-app",
     "public": "flutter-web-app/build/web",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [{"source": "**", "destination": "/index.html"}]

@@ -97,7 +97,7 @@ gcloud run deploy fastapi-service \
   --max-instances=10 \
   --memory=1Gi \
   --cpu=1 \
-  --timeout=60 \
+  --timeout=300 \
   --network="${VPC_NETWORK}" \
   --subnet="${VPC_SUBNET}" \
   --vpc-egress=private-ranges-only \

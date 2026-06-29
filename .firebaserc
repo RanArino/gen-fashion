@@ -1,5 +1,12 @@
 {
   "projects": {
     "default": "animation-agent"
+  },
+  "targets": {
+    "animation-agent": {
+      "hosting": {
+        "gen-fashion-app": ["gen-fashion-app"]
+      }
+    }
   }
 }
