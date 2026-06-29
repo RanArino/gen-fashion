@@ -34,6 +34,7 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 - [x] (2026-06-28) Milestone B — Data plane complete (MD-3 ✅, MD-10 ✅; MD-4 infrastructure ready, verification deferred to Milestone C): `gen-fashion-es` (`e2-medium`, `pd-balanced 30GB`, `asia-northeast1-a`); static internal IP `gen-fashion-es-ip`; ES 8.19 installed + two config conflicts resolved (duplicate `xpack.security.enabled`, `cluster.initial_master_nodes` vs `discovery.type: single-node`); cluster health `green`; `ELASTICSEARCH_API_KEY` in Secret Manager (`fastapi-sa`/`adk-sa` granted `secretmanager.secretAccessor`); firewall `allow-es-from-cloudrun` (subnet CIDR → tcp:9200); night-stop schedule `es-night-off` (JST 02:00–08:00); full vector seed `--with-embeddings` completed (`created=209, skipped=1, errors=0`, 210 total, 768-dim embeddings); `_count=210` verified; external IP removed (step 12.1 ✅). Discovered: VM seed `.env` had `FIRESTORE_EMULATOR_HOST=localhost:8080` — commented out before seed.
 - [x] (2026-06-28) Milestone C — Services: Artifact Registry images, Cloud Run `fastapi-service` + `adk-agent-service`, Cloud Tasks queue, OIDC hardening + internal-base-url split (MD-5, MD-6, MD-7, MD-8).
 - [x] (2026-06-28) Milestone D — Generation + frontend: production Nano Banana image generation on Vertex AI, Flutter Web build + Firebase Hosting (MD-11, MD-12).
+- [ ] Milestone D.5 — Pre-acceptance bug fixes + Firebase URL rename: increase fastapi-service Cloud Run timeout (SSE fix), add Flutter post-SSE session-state recovery, create `gen-fashion` Firebase Hosting site.
 - [ ] Milestone E — Acceptance + ops: production E2E smoke, Cloud Logging verification, documented teardown (MD-13, MD-14).
 
 
@@ -54,6 +55,18 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
   Evidence: `find scripts -maxdepth 3 -type f` shows smoke and seed scripts only; no `scripts/deploy/*`.
 - Observation: There is a documented count tension for the shared closet. `req-phase01.md` §15 Phase 1a #7 originally said "2,000件以上"; the M3/ME re-scope (`feature-matrix-phase01.md` M3-2, ADL-010) uses 3 curated closets with 70 items each. The deployment seed therefore produces **210 demo-closet items with 768-dim embeddings**; "full vector seed" means embeddings present + hybrid/kNN search working, not a raw count of 2,000.
   Evidence: `scripts/seed_shared_closet/README.md` documents `adult-01`, `adult-02`, and `child-01` at 70 items each; `scripts/seed_shared_closet/run_seed.py` uses `gemini-embedding-001`.
+- Observation (2026-06-29): **Cloud Run 60-second request timeout kills the SSE stream mid-session, causing three user-visible failures**: (a) the Accordion stops updating after 60 s ("agent stops midway"), (b) the Coordinate result image is never shown, and (c) the user gets a 409 "Cannot select candidates from Completed" if they press Generate again.
+  Root cause chain:
+  1. `fastapi-service` is deployed with `--timeout=60`. Cloud Run enforces this limit on **every** HTTP request, including the long-lived `GET /sessions/{id}/stream` SSE connection.
+  2. The ADK agent runs asynchronously in `adk-agent-service` (BackgroundTasks, up to `adk_run_timeout_seconds=90`). `POST /internal/run-session` returns 202 immediately, so the httpx 60-second timeout in `adk_agent_run.py` is not the bottleneck. The bottleneck is the SSE stream.
+  3. The `event_generator()` in `session_routes.py` is designed to run for up to `STREAM_MAX_SECONDS=150` and to send `session.proposed` (Phase 1) or `session.completed` (Phase 2) before closing. But Cloud Run kills the connection at 60 s, so those terminal events are never delivered to Flutter.
+  4. Flutter's `streamSessionEvents()` is a Dart `async*` generator over `response.stream`. When Cloud Run closes the connection, the stream ends naturally; Flutter's `await for` loop exits. The `finally` block in `_start()` / `_generateSelected()` sets `_running = false` — re-enabling the Generate button.
+  5. `_coordinateImageUrl` is only set when an `agent.event` SSE message containing `toolResult.coordinateImageUrl` is received. The `session.completed` SSE event does **not** carry the URL. If the stream is killed before the `style_synthesizer` tool_result event is delivered, `_coordinateImageUrl` remains null; the Result panel shows "Coordinate image will appear here."
+  6. The `adk-agent-service` background task keeps running after the fastapi SSE dies. It eventually completes the session (COMPLETED in Firestore), which is why the image appears in History (fetched via `GET /sessions` REST endpoint) but not in the Coordinate screen.
+  7. With `_running=false` and candidates visible (if Phase 1 completed within 60 s), the user can press Generate again. `POST /select` is sent; `SelectCandidatesUseCase` checks `session.state != PROPOSING` → raises `ValueError("Cannot select candidates from Completed")` → HTTP 409.
+  Evidence: `fastapi-service/app/handlers/session_routes.py` STREAM_MAX_SECONDS=150; `STREAM_POLL_SECONDS=1`; terminal events only at PROPOSING/COMPLETED/ERROR/TIMEOUT state. Cloud Run deploy in Milestone C used `--timeout=60` for `fastapi-service`.
+- Observation (2026-06-29): **Firebase Hosting URL `animation-agent.web.app` uses the GCP project ID which cannot be changed; however Firebase Hosting supports multiple sites per project with independent `<site-name>.web.app` URLs.** Creating a site named `gen-fashion` within the `animation-agent` project yields `gen-fashion.web.app` if that site name is globally available (Firebase site names are a worldwide flat namespace). No backend, Firestore, Auth, or Vertex AI changes are required — only Hosting redeploy, R2 CORS, and Firebase Auth authorized-domain additions.
+  Evidence: Firebase Hosting multi-site docs; `gcloud projects describe animation-agent` confirms project ID is immutable; the existing hosting site is named `animation-agent` (default = project ID).
 
 
 ## Decision Log
@@ -532,6 +545,126 @@ Milestone D — Generation + frontend
     Add `<PROJECT_ID>.web.app` to Firebase Auth → Authorized domains, and confirm it is in the R2 CORS allowlist (MD-9).
 
 
+Milestone D.5 — Pre-acceptance bug fixes + Firebase URL rename
+
+
+**Context.** Three user-visible failures were observed after Milestone D deployment (2026-06-29):
+(a) the agent Accordion stops updating at ~60 s; (b) the generated coordinate image does not appear in the Coordinate screen even though it is visible in History; (c) a 409 "Cannot select candidates from Completed" appears if the user presses Generate again after the stream dies.
+Root cause: `fastapi-service` is deployed with Cloud Run `--timeout=60`, which kills the SSE stream before Phase 1 (`session.proposed`) or Phase 2 (`session.completed`) terminal events are delivered to Flutter. All three failures trace back to this single misconfiguration. A secondary Flutter-side gap: `_coordinateImageUrl` is only set from SSE `agent.event` messages; no recovery path exists when the stream closes before the image URL arrives.
+Additionally, the user requested renaming the public hosting URL from `animation-agent.web.app` to `gen-fashion.web.app`.
+
+
+**D.5-1. Increase fastapi-service Cloud Run request timeout (primary fix, no code change).**
+
+
+The SSE `event_generator()` runs for up to `STREAM_MAX_SECONDS=150`. Phase 1 and Phase 2 each need up to `adk_run_timeout_seconds=90` plus poll intervals. 300 s covers both phases with headroom; no code change is needed.
+
+
+    gcloud run services update fastapi-service \
+      --region=asia-northeast1 \
+      --timeout=300
+
+Update `scripts/deploy/deploy_fastapi.sh` to use `--timeout=300` instead of `--timeout=60` so future redeploys keep this value.
+
+Verify: `gcloud run services describe fastapi-service --region=asia-northeast1 --format='value(spec.template.spec.timeoutSeconds)'` must print `300`.
+
+
+**D.5-2. Add Flutter post-SSE session-state recovery (defensive fix, Flutter code change).**
+
+
+After the `await for` SSE loop in `_generateSelected()` (and optionally `_start()`) exits without receiving a terminal state, the Flutter app has no way to know whether the session completed in the background. Add a fallback `GET /sessions/{sessionId}` call:
+
+In `flutter-web-app/lib/coordination/coordination_screen.dart`, after the `await for` loop in `_generateSelected()` (before the `finally` block), add:
+
+    // After SSE loop: query current session state in case stream closed early.
+    if (_coordinateImageUrl == null) {
+      final sessions = await _api.listSessions();
+      final match = sessions.firstWhereOrNull((s) => s.sessionId == sessionId);
+      if (match?.styleResult?.coordinateImageUrl != null) {
+        setState(() {
+          _coordinateImageUrl = match!.styleResult!.coordinateImageUrl;
+          _status = 'COMPLETED';
+        });
+      }
+    }
+
+Alternatively, add a `GET /sessions/{sessionId}` endpoint (currently only `GET /sessions` list exists) and call it directly. The list endpoint caps at 20 sessions and is sorted by completedAt desc, so using it is acceptable for the hackathon; a direct GET-by-id would be cleaner.
+
+Similarly, after the `_start()` SSE loop exits without candidates (`_candidates.isEmpty`), query the session status: if PROPOSING, repopulate candidates from the session's `proposedCandidates` field; if COMPLETED, set `_coordinateImageUrl` from the style result.
+
+Note: Fix D.5-1 (increase timeout to 300 s) is the primary fix. D.5-2 is a defensive fallback for future network drops or edge cases. Implement in order; verify D.5-1 resolves the user-visible issue before spending time on D.5-2.
+
+Verify (D.5-2): run a SHARED_CLOSET session in the browser; simulate SSE disconnect by throttling the network after candidates appear; confirm the Coordinate image is still displayed after reconnect.
+
+
+**D.5-3. Firebase Hosting URL rename: `animation-agent.web.app` → `gen-fashion.web.app`.**
+
+
+The GCP project ID `animation-agent` is permanent and cannot be changed. Firebase Hosting supports multiple sites per project; each site gets its own `<site-name>.web.app` URL. The site name `gen-fashion` is in a global namespace — check availability before creating.
+
+
+Step 1 — Check availability and create the new hosting site:
+
+
+    firebase hosting:sites:create gen-fashion --project animation-agent
+
+
+If the command succeeds, `gen-fashion.web.app` is now owned by the `animation-agent` project. If it fails with "already exists", that site name is taken globally; choose an alternative (e.g., `gen-fashion-app`) and update all references below.
+
+
+Step 2 — Update `.firebaserc` to target the new site:
+
+
+    {
+      "projects": {
+        "default": "animation-agent"
+      },
+      "targets": {
+        "animation-agent": {
+          "hosting": {
+            "gen-fashion": ["gen-fashion"]
+          }
+        }
+      }
+    }
+
+
+Update `firebase.json` to add a `target` field:
+
+
+    "hosting": {
+      "target": "gen-fashion",
+      "public": "flutter-web-app/build/web",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [{"source": "**", "destination": "/index.html"}]
+    }
+
+
+Step 3 — Add `gen-fashion.web.app` to Firebase Auth authorized domains (in Firebase console: Authentication → Settings → Authorized domains → Add domain).
+
+
+Step 4 — Add `gen-fashion.web.app` to R2 CORS (Cloudflare dashboard or `wrangler r2 bucket cors put gen-fashion-images`; keep `animation-agent.web.app` in the list until the old URL is decommissioned).
+
+
+Step 5 — Rebuild and deploy Flutter Web to the new site (same `--dart-define` values; `FIREBASE_AUTH_DOMAIN` remains `animation-agent.firebaseapp.com` because that is the Firebase project's auth domain, not the hosting URL):
+
+
+    cd flutter-web-app
+    flutter build web --release \
+      --dart-define=API_BASE_URL=https://fastapi-service-hvwhpzcehq-an.a.run.app \
+      --dart-define=USE_EMULATORS=false \
+      --dart-define=FIREBASE_PROJECT_ID=animation-agent \
+      --dart-define=FIREBASE_API_KEY=<same key> \
+      --dart-define=FIREBASE_APP_ID=<same app id> \
+      --dart-define=FIREBASE_MESSAGING_SENDER_ID=789766161934 \
+      --dart-define=FIREBASE_AUTH_DOMAIN=animation-agent.firebaseapp.com \
+      --dart-define=FIREBASE_STORAGE_BUCKET=animation-agent.firebasestorage.app
+    firebase deploy --only hosting:gen-fashion --project animation-agent
+
+
+Step 6 — Verify: `curl https://gen-fashion.web.app/` → 200; open in browser, sign in with Google, confirm login works (Auth domain still `animation-agent.firebaseapp.com`).
+
+
 Milestone E — Acceptance + ops
 
 
@@ -622,6 +755,8 @@ Requirements traceability: MD-1/MD-2 ← req §9.1, §12.1/§12.2, ADL-012; MD-3
 2026-06-27 — Milestone A complete (GCP foundation): project `animation-agent` / `asia-northeast1`; 11 APIs + Firebase; 3 service accounts + least-privilege IAM; Firestore Native + rules/indexes deployed; Firebase + Google sign-in + Web app `gen-fashion-web`; R2 bucket `gen-fashion-images` + CORS; `INTERNAL_TASK_SECRET`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` in Secret Manager. MD-1 ✅, MD-9 ✅; MD-2 stays 🟡 (`ELASTICSEARCH_API_KEY` in Milestone B, env config at Cloud Run deploy).
 
 2026-06-28 — Milestone C complete (services). Artifact Registry `gen-fashion` created; `fastapi-service:md-20260628-2132` and `adk-agent-service:md-20260628-2134` built via Cloud Build; Cloud Tasks queue `gen-fashion-embed` created; `adk-agent-service` deployed private (min 0, Direct VPC egress) at `https://adk-agent-service-hvwhpzcehq-an.a.run.app`; `fastapi-service` deployed public (two-pass, OIDC active) at `https://fastapi-service-hvwhpzcehq-an.a.run.app`. Acceptance: `/health` 200 ✅, adk 403 ✅. MD-5 ✅, MD-6 ✅, MD-7 ✅, MD-8 ✅, MD-2 ✅. Note: `--min-instances` for `adk-agent-service` changed to 0 (from plan's 1) to reduce idle cost; consistent with `fastapi-service` zero-idle policy.
+
+2026-06-29 — Milestone D.5 design plan added. Root-cause investigation (2026-06-29) identified three user-visible failures traceable to a single misconfiguration: `fastapi-service` Cloud Run `--timeout=60` kills the SSE stream before Phase 1/2 terminal events are delivered to Flutter. Three fixes planned: (D.5-1) increase Cloud Run timeout to 300 s (primary, no code change), (D.5-2) add Flutter post-SSE session-state recovery query (defensive), (D.5-3) Firebase Hosting URL rename to `gen-fashion.web.app` via multi-site feature. Added to Surprises & Discoveries. Milestone D.5 added to Progress and Concrete Steps.
 
 2026-06-28 — Milestone D complete (generation + frontend). `firebase.json` hosting section added; `.firebaserc` created; Flutter Web built (`flutter build web --release`, 32 files, production `--dart-define`s) and deployed to Firebase Hosting (`https://animation-agent.web.app`, 200 ✅). ES VM started for Milestone E acceptance test. MD-12 ✅. MD-11 (Nano Banana) verified in Milestone E browser E2E.
 
