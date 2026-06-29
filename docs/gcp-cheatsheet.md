@@ -135,6 +135,11 @@ gcloud run services describe adk-agent-service --region=asia-northeast1 --format
 FASTAPI_URL=$(gcloud run services describe fastapi-service --region=asia-northeast1 --format='value(status.url)')
 curl -f "$FASTAPI_URL/health"
 
+# SSE 用のリクエストタイムアウト確認（D.5 以降は 300 秒必須）
+gcloud run services describe fastapi-service \
+  --region=asia-northeast1 \
+  --format='value(spec.template.spec.timeoutSeconds)'
+
 # ログを確認（直近 20 件）
 gcloud logging read 'resource.labels.service_name="fastapi-service"' \
   --limit=20 --format='value(timestamp,textPayload)'
@@ -250,6 +255,38 @@ firebase deploy --only hosting --project animation-agent
 
 # デプロイ後の公開 URL
 # https://animation-agent.web.app
+# https://gen-fashion-app.web.app
+```
+
+Firebase Auth authorized domains are separate from `FIREBASE_AUTH_DOMAIN`.
+If Google sign-in fails with `unauthorized-domain` after adding a Hosting
+site, add the bare host name (no protocol or port) to Firebase Auth:
+
+```bash
+node - <<'NODE'
+const { requireAuth } = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/requireAuth');
+const firebaseAuth = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/auth');
+const { addAuthDomains } = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/hosting/api');
+const { getAuthDomains } = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/gcp/auth');
+const project = 'animation-agent';
+const projectRoot = process.cwd();
+const target = 'gen-fashion-app.web.app';
+(async () => {
+  const selected = firebaseAuth.selectAccount(undefined, projectRoot);
+  const options = { project, projectRoot };
+  if (selected) {
+    options.user = selected.user;
+    options.tokens = selected.tokens;
+  }
+  await requireAuth(options);
+  const updated = await addAuthDomains(project, [`https://${target}`]);
+  console.log(updated.includes(target) ? `authorized: ${target}` : `missing: ${target}`);
+  console.log((await getAuthDomains(project)).join('\n'));
+})().catch((err) => {
+  console.error(err.message || err);
+  process.exit(1);
+});
+NODE
 ```
 
 ---

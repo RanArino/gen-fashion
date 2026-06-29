@@ -34,7 +34,7 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 - [x] (2026-06-28) Milestone B — Data plane complete (MD-3 ✅, MD-10 ✅; MD-4 infrastructure ready, verification deferred to Milestone C): `gen-fashion-es` (`e2-medium`, `pd-balanced 30GB`, `asia-northeast1-a`); static internal IP `gen-fashion-es-ip`; ES 8.19 installed + two config conflicts resolved (duplicate `xpack.security.enabled`, `cluster.initial_master_nodes` vs `discovery.type: single-node`); cluster health `green`; `ELASTICSEARCH_API_KEY` in Secret Manager (`fastapi-sa`/`adk-sa` granted `secretmanager.secretAccessor`); firewall `allow-es-from-cloudrun` (subnet CIDR → tcp:9200); night-stop schedule `es-night-off` (JST 02:00–08:00); full vector seed `--with-embeddings` completed (`created=209, skipped=1, errors=0`, 210 total, 768-dim embeddings); `_count=210` verified; external IP removed (step 12.1 ✅). Discovered: VM seed `.env` had `FIRESTORE_EMULATOR_HOST=localhost:8080` — commented out before seed.
 - [x] (2026-06-28) Milestone C — Services: Artifact Registry images, Cloud Run `fastapi-service` + `adk-agent-service`, Cloud Tasks queue, OIDC hardening + internal-base-url split (MD-5, MD-6, MD-7, MD-8).
 - [x] (2026-06-28) Milestone D — Generation + frontend: production Nano Banana image generation on Vertex AI, Flutter Web build + Firebase Hosting (MD-11, MD-12).
-- [ ] Milestone D.5 — Pre-acceptance bug fixes + Firebase URL rename: increase fastapi-service Cloud Run timeout (SSE fix), add Flutter post-SSE session-state recovery, create `gen-fashion` Firebase Hosting site.
+- [x] (2026-06-29) Milestone D.5 — Pre-acceptance bug fixes + Firebase URL rename fallback: increased live `fastapi-service` Cloud Run timeout to 300 s and updated `scripts/deploy/deploy_fastapi.sh`; added `GET /sessions/{sessionId}` + Flutter post-SSE session-state recovery for proposed candidates / completed image URL; `gen-fashion.web.app` was unavailable globally, so created/deployed `gen-fashion-app.web.app` instead. R2 CORS update for the new origin was attempted via the existing R2 API keys but failed with `AccessDenied`; update that in Cloudflare before testing direct closet uploads from the new origin.
 - [ ] Milestone E — Acceptance + ops: production E2E smoke, Cloud Logging verification, documented teardown (MD-13, MD-14).
 
 
@@ -67,6 +67,10 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
   Evidence: `fastapi-service/app/handlers/session_routes.py` STREAM_MAX_SECONDS=150; `STREAM_POLL_SECONDS=1`; terminal events only at PROPOSING/COMPLETED/ERROR/TIMEOUT state. Cloud Run deploy in Milestone C used `--timeout=60` for `fastapi-service`.
 - Observation (2026-06-29): **Firebase Hosting URL `animation-agent.web.app` uses the GCP project ID which cannot be changed; however Firebase Hosting supports multiple sites per project with independent `<site-name>.web.app` URLs.** Creating a site named `gen-fashion` within the `animation-agent` project yields `gen-fashion.web.app` if that site name is globally available (Firebase site names are a worldwide flat namespace). No backend, Firestore, Auth, or Vertex AI changes are required — only Hosting redeploy, R2 CORS, and Firebase Auth authorized-domain additions.
   Evidence: Firebase Hosting multi-site docs; `gcloud projects describe animation-agent` confirms project ID is immutable; the existing hosting site is named `animation-agent` (default = project ID).
+- Observation (2026-06-29): `gen-fashion` is already reserved by another Firebase project, so `gen-fashion.web.app` cannot be created in project `animation-agent`. The fallback site `gen-fashion-app` was available, created, and deployed at `https://gen-fashion-app.web.app`.
+  Evidence: `firebase hosting:sites:create gen-fashion --project animation-agent` returned `Invalid name: gen-fashion is reserved by another project`; `firebase hosting:sites:create gen-fashion-app --project animation-agent` succeeded.
+- Observation (2026-06-29): Firebase Auth did **not** automatically authorize the fallback multisite domain. Google sign-in on `https://gen-fashion-app.web.app` failed with `unauthorized-domain` until `gen-fashion-app.web.app` was added to Firebase Auth authorized domains.
+  Evidence: live authorized domains changed from `localhost`, `animation-agent.firebaseapp.com`, `animation-agent.web.app` to include `gen-fashion-app.web.app`.
 
 
 ## Decision Log
@@ -551,7 +555,7 @@ Milestone D.5 — Pre-acceptance bug fixes + Firebase URL rename
 **Context.** Three user-visible failures were observed after Milestone D deployment (2026-06-29):
 (a) the agent Accordion stops updating at ~60 s; (b) the generated coordinate image does not appear in the Coordinate screen even though it is visible in History; (c) a 409 "Cannot select candidates from Completed" appears if the user presses Generate again after the stream dies.
 Root cause: `fastapi-service` is deployed with Cloud Run `--timeout=60`, which kills the SSE stream before Phase 1 (`session.proposed`) or Phase 2 (`session.completed`) terminal events are delivered to Flutter. All three failures trace back to this single misconfiguration. A secondary Flutter-side gap: `_coordinateImageUrl` is only set from SSE `agent.event` messages; no recovery path exists when the stream closes before the image URL arrives.
-Additionally, the user requested renaming the public hosting URL from `animation-agent.web.app` to `gen-fashion.web.app`.
+Additionally, the user requested renaming the public hosting URL from `animation-agent.web.app` to `gen-fashion.web.app`. That exact site ID was unavailable globally; use `gen-fashion-app.web.app` unless a custom domain is added later.
 
 
 **D.5-1. Increase fastapi-service Cloud Run request timeout (primary fix, no code change).**
@@ -597,7 +601,7 @@ Note: Fix D.5-1 (increase timeout to 300 s) is the primary fix. D.5-2 is a defen
 Verify (D.5-2): run a SHARED_CLOSET session in the browser; simulate SSE disconnect by throttling the network after candidates appear; confirm the Coordinate image is still displayed after reconnect.
 
 
-**D.5-3. Firebase Hosting URL rename: `animation-agent.web.app` → `gen-fashion.web.app`.**
+**D.5-3. Firebase Hosting URL rename: `animation-agent.web.app` → `gen-fashion-app.web.app` fallback.**
 
 
 The GCP project ID `animation-agent` is permanent and cannot be changed. Firebase Hosting supports multiple sites per project; each site gets its own `<site-name>.web.app` URL. The site name `gen-fashion` is in a global namespace — check availability before creating.
@@ -609,7 +613,7 @@ Step 1 — Check availability and create the new hosting site:
     firebase hosting:sites:create gen-fashion --project animation-agent
 
 
-If the command succeeds, `gen-fashion.web.app` is now owned by the `animation-agent` project. If it fails with "already exists", that site name is taken globally; choose an alternative (e.g., `gen-fashion-app`) and update all references below.
+If the command succeeds, `gen-fashion.web.app` is now owned by the `animation-agent` project. In practice it failed because `gen-fashion` is reserved by another project; `gen-fashion-app` was created instead.
 
 
 Step 2 — Update `.firebaserc` to target the new site:
@@ -622,7 +626,7 @@ Step 2 — Update `.firebaserc` to target the new site:
       "targets": {
         "animation-agent": {
           "hosting": {
-            "gen-fashion": ["gen-fashion"]
+            "gen-fashion-app": ["gen-fashion-app"]
           }
         }
       }
@@ -633,17 +637,17 @@ Update `firebase.json` to add a `target` field:
 
 
     "hosting": {
-      "target": "gen-fashion",
+      "target": "gen-fashion-app",
       "public": "flutter-web-app/build/web",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [{"source": "**", "destination": "/index.html"}]
     }
 
 
-Step 3 — Add `gen-fashion.web.app` to Firebase Auth authorized domains (in Firebase console: Authentication → Settings → Authorized domains → Add domain).
+Step 3 — Add `gen-fashion-app.web.app` to Firebase Auth authorized domains. Status: done 2026-06-29 after Google sign-in failed with `unauthorized-domain`.
 
 
-Step 4 — Add `gen-fashion.web.app` to R2 CORS (Cloudflare dashboard or `wrangler r2 bucket cors put gen-fashion-images`; keep `animation-agent.web.app` in the list until the old URL is decommissioned).
+Step 4 — Add `gen-fashion-app.web.app` to R2 CORS (Cloudflare dashboard or `wrangler r2 bucket cors put gen-fashion-images`; keep `animation-agent.web.app` in the list until the old URL is decommissioned). The existing R2 API keys returned `AccessDenied` on `PutBucketCors`, so this still requires a Cloudflare token/role with bucket-CORS permission.
 
 
 Step 5 — Rebuild and deploy Flutter Web to the new site (same `--dart-define` values; `FIREBASE_AUTH_DOMAIN` remains `animation-agent.firebaseapp.com` because that is the Firebase project's auth domain, not the hosting URL):
@@ -659,10 +663,10 @@ Step 5 — Rebuild and deploy Flutter Web to the new site (same `--dart-define` 
       --dart-define=FIREBASE_MESSAGING_SENDER_ID=789766161934 \
       --dart-define=FIREBASE_AUTH_DOMAIN=animation-agent.firebaseapp.com \
       --dart-define=FIREBASE_STORAGE_BUCKET=animation-agent.firebasestorage.app
-    firebase deploy --only hosting:gen-fashion --project animation-agent
+    firebase deploy --only hosting:gen-fashion-app --project animation-agent
 
 
-Step 6 — Verify: `curl https://gen-fashion.web.app/` → 200; open in browser, sign in with Google, confirm login works (Auth domain still `animation-agent.firebaseapp.com`).
+Step 6 — Verify: `curl https://gen-fashion-app.web.app/` → 200; Firebase Auth authorized domains include `gen-fashion-app.web.app`; open in browser, sign in with Google, confirm login works (Auth domain still `animation-agent.firebaseapp.com`).
 
 
 Milestone E — Acceptance + ops
@@ -757,6 +761,8 @@ Requirements traceability: MD-1/MD-2 ← req §9.1, §12.1/§12.2, ADL-012; MD-3
 2026-06-28 — Milestone C complete (services). Artifact Registry `gen-fashion` created; `fastapi-service:md-20260628-2132` and `adk-agent-service:md-20260628-2134` built via Cloud Build; Cloud Tasks queue `gen-fashion-embed` created; `adk-agent-service` deployed private (min 0, Direct VPC egress) at `https://adk-agent-service-hvwhpzcehq-an.a.run.app`; `fastapi-service` deployed public (two-pass, OIDC active) at `https://fastapi-service-hvwhpzcehq-an.a.run.app`. Acceptance: `/health` 200 ✅, adk 403 ✅. MD-5 ✅, MD-6 ✅, MD-7 ✅, MD-8 ✅, MD-2 ✅. Note: `--min-instances` for `adk-agent-service` changed to 0 (from plan's 1) to reduce idle cost; consistent with `fastapi-service` zero-idle policy.
 
 2026-06-29 — Milestone D.5 design plan added. Root-cause investigation (2026-06-29) identified three user-visible failures traceable to a single misconfiguration: `fastapi-service` Cloud Run `--timeout=60` kills the SSE stream before Phase 1/2 terminal events are delivered to Flutter. Three fixes planned: (D.5-1) increase Cloud Run timeout to 300 s (primary, no code change), (D.5-2) add Flutter post-SSE session-state recovery query (defensive), (D.5-3) Firebase Hosting URL rename to `gen-fashion.web.app` via multi-site feature. Added to Surprises & Discoveries. Milestone D.5 added to Progress and Concrete Steps.
+
+2026-06-29 — Milestone D.5 executed. Built and deployed `fastapi-service:md-d5-20260629-2044`; live revision `fastapi-service-00005-4s9` has timeout `300` and OpenAPI includes `GET /sessions/{session_id}`. Added direct session recovery and Flutter refresh after SSE closes; verified FastAPI 69 passed / 1 skipped, Flutter test 15 passed, Flutter analyze clean. `gen-fashion.web.app` was unavailable globally, so `gen-fashion-app.web.app` was created, configured in `.firebaserc`/`firebase.json`, built, deployed, and verified with `curl` 200. Incident follow-up: Google sign-in failed on the new domain until `gen-fashion-app.web.app` was added to Firebase Auth authorized domains; verified the live domain list includes it. R2 CORS update for `gen-fashion-app.web.app` is still pending because the existing R2 API keys returned `AccessDenied` on `PutBucketCors`.
 
 2026-06-28 — Milestone D complete (generation + frontend). `firebase.json` hosting section added; `.firebaserc` created; Flutter Web built (`flutter build web --release`, 32 files, production `--dart-define`s) and deployed to Firebase Hosting (`https://animation-agent.web.app`, 200 ✅). ES VM started for Milestone E acceptance test. MD-12 ✅. MD-11 (Nano Banana) verified in Milestone E browser E2E.
 
