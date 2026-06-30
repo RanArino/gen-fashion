@@ -1,0 +1,209 @@
+name: CI / CD
+
+on:
+  push:
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Tests (run on every push and PR) ── MF-2 ────────────────────────────────
+
+  test-fastapi:
+    name: Test fastapi-service
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fastapi-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: fastapi-service/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+
+  test-adk:
+    name: Test adk-agent-service
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: adk-agent-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: adk-agent-service/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+
+  test-flutter:
+    name: Test flutter-web-app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter-web-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.1'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  # ── Deploy to Production (main branch only, after all tests pass) ─ MF-3/4/5
+
+  deploy:
+    name: Deploy to Production
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test-fastapi, test-adk, test-flutter]
+    runs-on: ubuntu-latest
+    environment: production
+    # Required for WIF OIDC token (ADL-030: no stored SA JSON keys)
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PROJECT: animation-agent
+      REGION: asia-northeast1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # MF-1: Authenticate via Workload Identity Federation (no JSON key)
+      - name: Authenticate to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SA }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: animation-agent
+
+      - name: Configure Docker auth for Artifact Registry
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Set image tag and registry path
+        run: |
+          IMAGE_TAG="ci-$(date +%Y%m%d)-${GITHUB_SHA::7}"
+          REPO="${REGION}-docker.pkg.dev/${PROJECT}/gen-fashion"
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+          echo "REPO=${REPO}" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # MF-3: Build and push both service images
+      - name: Build and push fastapi-service image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./fastapi-service
+          tags: ${{ env.REPO }}/fastapi-service:${{ env.IMAGE_TAG }}
+          push: true
+          cache-from: type=gha,scope=fastapi
+          cache-to: type=gha,scope=fastapi,mode=max
+
+      - name: Build and push adk-agent-service image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./adk-agent-service
+          tags: ${{ env.REPO }}/adk-agent-service:${{ env.IMAGE_TAG }}
+          push: true
+          cache-from: type=gha,scope=adk
+          cache-to: type=gha,scope=adk,mode=max
+
+      - name: Get existing Cloud Run service URLs
+        # Cloud Run URLs are stable across revisions of the same named service.
+        # This avoids the two-pass bootstrap (only needed for first provision).
+        run: |
+          ADK_URL=$(gcloud run services describe adk-agent-service \
+            --region="${REGION}" --format='value(status.url)')
+          FASTAPI_URL=$(gcloud run services describe fastapi-service \
+            --region="${REGION}" --format='value(status.url)')
+          echo "ADK_URL=${ADK_URL}" >> $GITHUB_ENV
+          echo "FASTAPI_URL=${FASTAPI_URL}" >> $GITHUB_ENV
+
+      - name: Record pre-deploy fastapi revision (for rollback)
+        run: |
+          PREV_FASTAPI_REV=$(gcloud run revisions list \
+            --service=fastapi-service --region="${REGION}" \
+            --format='value(metadata.name)' \
+            --sort-by='~metadata.creationTimestamp' | head -1)
+          echo "PREV_FASTAPI_REV=${PREV_FASTAPI_REV}" >> $GITHUB_ENV
+
+      - name: Deploy adk-agent-service
+        run: |
+          bash scripts/deploy/deploy_adk.sh \
+            --project "${PROJECT}" \
+            --region "${REGION}" \
+            --image "${REPO}/adk-agent-service:${IMAGE_TAG}" \
+            --es-internal-ip "${{ secrets.ES_INTERNAL_IP }}" \
+            --r2-endpoint-url "${{ secrets.R2_ENDPOINT_URL }}" \
+            --r2-public-endpoint-url "${{ secrets.R2_PUBLIC_ENDPOINT_URL }}" \
+            --r2-bucket-name "${{ secrets.R2_BUCKET_NAME }}"
+
+      - name: Deploy fastapi-service
+        run: |
+          bash scripts/deploy/deploy_fastapi.sh \
+            --project "${PROJECT}" \
+            --region "${REGION}" \
+            --image "${REPO}/fastapi-service:${IMAGE_TAG}" \
+            --adk-url "${ADK_URL}" \
+            --fastapi-url "${FASTAPI_URL}" \
+            --es-internal-ip "${{ secrets.ES_INTERNAL_IP }}" \
+            --r2-endpoint-url "${{ secrets.R2_ENDPOINT_URL }}" \
+            --r2-public-endpoint-url "${{ secrets.R2_PUBLIC_ENDPOINT_URL }}" \
+            --r2-bucket-name "${{ secrets.R2_BUCKET_NAME }}"
+
+      # MF-4: Build Flutter and deploy to Firebase Hosting
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.1'
+          channel: stable
+          cache: true
+
+      - name: Build Flutter web (production)
+        working-directory: flutter-web-app
+        run: |
+          flutter pub get
+          flutter build web --release \
+            --dart-define=API_BASE_URL="${FASTAPI_URL}" \
+            --dart-define=USE_EMULATORS=false \
+            --dart-define=FIREBASE_PROJECT_ID="${PROJECT}" \
+            --dart-define=FIREBASE_API_KEY="${{ secrets.FIREBASE_API_KEY }}" \
+            --dart-define=FIREBASE_APP_ID="${{ secrets.FIREBASE_APP_ID }}" \
+            --dart-define=FIREBASE_MESSAGING_SENDER_ID="${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}" \
+            --dart-define=FIREBASE_AUTH_DOMAIN="${{ secrets.FIREBASE_AUTH_DOMAIN }}" \
+            --dart-define=FIREBASE_STORAGE_BUCKET="${{ secrets.FIREBASE_STORAGE_BUCKET }}"
+
+      - name: Deploy to Firebase Hosting
+        # Uses ADC set by WIF auth step above; github-deployer SA needs roles/firebasehosting.admin
+        run: |
+          npm install -g firebase-tools
+          firebase deploy --only hosting:gen-fashion-app --project "${PROJECT}"
+
+      # MF-5: Post-deploy smoke + auto-rollback on failure
+      - name: Post-deploy smoke check
+        run: |
+          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "${FASTAPI_URL}/health")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Smoke check failed: /health returned ${HTTP_CODE}. Rolling back fastapi-service..."
+            gcloud run services update-traffic fastapi-service \
+              --region="${REGION}" \
+              --to-revisions="${PREV_FASTAPI_REV}=100"
+            exit 1
+          fi
+          echo "Smoke check passed (/health → ${HTTP_CODE})"

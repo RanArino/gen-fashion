@@ -82,3 +82,9 @@ scripts/seed_shared_closet/.venv/
 # adk-agent-service local venv
 adk-agent-service/.venv/
 adk-agent-service/**/.adk/
+
+# Firebase
+.firebase/
+
+# ToDo
+ToDo

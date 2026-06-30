@@ -332,6 +332,93 @@ echo "fastapi: $(curl -sf $FASTAPI_URL/health)" && echo "adk (expect 403): $(cur
 
 ---
 
+## CI/CD — Workload Identity Federation 設定（MF-1）
+
+GitHub Actions が SA の JSON 鍵なしで GCP にデプロイするための WIF 設定手順。
+**一度だけ実行すれば OK。** `<GITHUB_ORG>/<GITHUB_REPO>` は実際のリポジトリ名に替えること。
+
+```bash
+PROJECT=animation-agent
+PROJECT_NUMBER=789766161934
+GITHUB_REPO="<GITHUB_ORG>/<GITHUB_REPO>"
+
+# 1. Workload Identity Pool を作成
+gcloud iam workload-identity-pools create github-pool \
+  --project=${PROJECT} --location=global \
+  --display-name="GitHub Actions Pool"
+
+# 2. GitHub OIDC プロバイダを追加
+gcloud iam workload-identity-pools providers create-oidc github-provider \
+  --project=${PROJECT} --location=global \
+  --workload-identity-pool=github-pool \
+  --display-name="GitHub Actions Provider" \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
+  --attribute-condition="assertion.repository=='${GITHUB_REPO}'"
+
+# 3. デプロイ用 SA を作成してロールを付与
+gcloud iam service-accounts create github-deployer \
+  --display-name="GitHub Actions Deployer" \
+  --project=${PROJECT}
+
+# Cloud Run デプロイ + IAM バインディング変更
+gcloud projects add-iam-policy-binding ${PROJECT} \
+  --member="serviceAccount:github-deployer@${PROJECT}.iam.gserviceaccount.com" \
+  --role=roles/run.admin
+
+# Artifact Registry へのイメージプッシュ
+gcloud projects add-iam-policy-binding ${PROJECT} \
+  --member="serviceAccount:github-deployer@${PROJECT}.iam.gserviceaccount.com" \
+  --role=roles/artifactregistry.writer
+
+# Firebase Hosting デプロイ（ADC 経由）
+gcloud projects add-iam-policy-binding ${PROJECT} \
+  --member="serviceAccount:github-deployer@${PROJECT}.iam.gserviceaccount.com" \
+  --role=roles/firebasehosting.admin
+
+# Cloud Run 各 SA として振る舞う権限（gcloud run deploy --service-account に必要）
+for SA in fastapi-sa adk-sa tasks-invoker-sa; do
+  gcloud iam service-accounts add-iam-policy-binding \
+    ${SA}@${PROJECT}.iam.gserviceaccount.com \
+    --member="serviceAccount:github-deployer@${PROJECT}.iam.gserviceaccount.com" \
+    --role=roles/iam.serviceAccountUser
+done
+
+# 4. WIF プロバイダから github-deployer SA へのバインド（このリポジトリ限定）
+gcloud iam service-accounts add-iam-policy-binding \
+  github-deployer@${PROJECT}.iam.gserviceaccount.com \
+  --project=${PROJECT} \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-pool/attribute.repository/${GITHUB_REPO}"
+
+# 5. WIF_PROVIDER の値を確認（GitHub Secrets に登録する）
+echo "WIF_PROVIDER: projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+echo "WIF_SA: github-deployer@${PROJECT}.iam.gserviceaccount.com"
+```
+
+### GitHub Secrets 登録リスト（Settings → Secrets and variables → Actions → Secrets）
+
+| Secret 名 | 値 |
+|---|---|
+| `WIF_PROVIDER` | `projects/789766161934/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| `WIF_SA` | `github-deployer@animation-agent.iam.gserviceaccount.com` |
+| `ES_INTERNAL_IP` | `10.146.0.2` |
+| `R2_ENDPOINT_URL` | `https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com` |
+| `R2_PUBLIC_ENDPOINT_URL` | `https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com` |
+| `R2_BUCKET_NAME` | `gen-fashion-images` |
+| `FIREBASE_API_KEY` | Firebase SDK config の `apiKey`（credentials/firebase-sdk.md 参照） |
+| `FIREBASE_APP_ID` | Firebase SDK config の `appId` |
+| `FIREBASE_MESSAGING_SENDER_ID` | `789766161934` |
+| `FIREBASE_AUTH_DOMAIN` | `animation-agent.firebaseapp.com` |
+| `FIREBASE_STORAGE_BUCKET` | `animation-agent.firebasestorage.app` |
+
+### GitHub Actions 環境（production）の設定（任意）
+
+GitHub repo → Settings → Environments → New environment → 名前: `production`
+Required reviewers を設定するとマニュアル承認フローになる。
+
+---
+
 ## トラブルシューティング
 
 ### Elasticsearch が起動しない
