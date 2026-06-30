@@ -88,3 +88,7 @@ adk-agent-service/**/.adk/
 
 # ToDo
 ToDo
+
+# ignore files
+.claude/
+.agents/skills/gh-pr-maintainer/
