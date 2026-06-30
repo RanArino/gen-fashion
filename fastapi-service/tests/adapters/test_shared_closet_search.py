@@ -33,7 +33,8 @@ def _make_es_response(hits: list[dict]) -> dict:
 
 @pytest.fixture
 def adapter():
-    with patch("app.adapters.shared_closet_search.AsyncElasticsearch") as mock_cls:
+    with patch("app.adapters.shared_closet_search.AsyncElasticsearch") as mock_cls, \
+         patch("app.adapters.shared_closet_search.firestore.AsyncClient"):
         mock_client = AsyncMock()
         mock_cls.return_value = mock_client
         inst = SharedClosetSearchAdapter(image_storage=FakeImageStorage())
