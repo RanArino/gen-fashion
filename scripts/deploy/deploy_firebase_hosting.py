@@ -23,14 +23,16 @@ UPLOAD_BASE = "https://upload.firebasehosting.googleapis.com/upload/v1beta1"
 # Rewrites for Flutter web SPA: all paths → /index.html
 HOSTING_CONFIG = {
     "rewrites": [{"glob": "**", "path": "/index.html"}],
+    # REST API expects `headers` as a string->string map (not the CLI's
+    # list-of-{key,value} format used in firebase.json).
     "headers": [
         {
             "glob": "**/*.@(js|css|wasm|map)",
-            "headers": [{"key": "Cache-Control", "value": "max-age=3600"}],
+            "headers": {"Cache-Control": "max-age=3600"},
         },
         {
             "glob": "index.html",
-            "headers": [{"key": "Cache-Control", "value": "no-cache"}],
+            "headers": {"Cache-Control": "no-cache"},
         },
     ],
 }
