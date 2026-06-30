@@ -9,7 +9,6 @@ and calls the Firebase Hosting REST API directly.
 import gzip
 import hashlib
 import json
-import os
 import subprocess
 import sys
 import urllib.request
@@ -18,13 +17,12 @@ from pathlib import Path
 
 
 BASE = "https://firebasehosting.googleapis.com/v1beta1"
-UPLOAD_BASE = "https://upload.firebasehosting.googleapis.com/upload/v1beta1"
 
 # Rewrites for Flutter web SPA: all paths → /index.html
+# REST API expects per-rule `headers` as a string→string map (not the
+# list-of-{key,value} format used in firebase.json / firebase-tools).
 HOSTING_CONFIG = {
     "rewrites": [{"glob": "**", "path": "/index.html"}],
-    # REST API expects `headers` as a string->string map (not the CLI's
-    # list-of-{key,value} format used in firebase.json).
     "headers": [
         {
             "glob": "**/*.@(js|css|wasm|map)",
@@ -55,17 +53,22 @@ def api(method: str, url: str, token: str, body=None, raw_body: bytes = None,
     )
     try:
         with urllib.request.urlopen(req) as resp:
-            return json.loads(resp.read())
+            raw = resp.read()
+            return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
         print(f"HTTP {e.code} {method} {url}: {e.read().decode()}", file=sys.stderr)
         raise
 
 
 def sha256_gz(path: Path) -> tuple[str, bytes]:
-    """Return (hex sha256, gzipped bytes) for a file."""
+    """Return (hex sha256 of gzipped content, gzipped bytes) for a file.
+
+    Firebase Hosting REST API requires the hash to be of the gzipped content,
+    not the raw file bytes.
+    """
     raw = path.read_bytes()
     gz = gzip.compress(raw, compresslevel=9)
-    digest = hashlib.sha256(raw).hexdigest()
+    digest = hashlib.sha256(gz).hexdigest()
     return digest, gz
 
 
@@ -84,9 +87,9 @@ def deploy(site: str, build_dir: str) -> None:
     version_id = version_name.split("/")[-1]
     print(f"Created version: {version_id}")
 
-    # 2. Collect files and compute hashes
-    files: dict[str, str] = {}  # hosting path → sha256
-    file_data: dict[str, bytes] = {}  # sha256 → gzipped bytes
+    # 2. Collect files and compute hashes (SHA256 of gzipped content)
+    files: dict[str, str] = {}  # hosting path → sha256(gz)
+    file_data: dict[str, bytes] = {}  # sha256(gz) → gzipped bytes
     for f in sorted(build_path.rglob("*")):
         if f.is_file():
             hosting_path = "/" + f.relative_to(build_path).as_posix()
@@ -96,15 +99,16 @@ def deploy(site: str, build_dir: str) -> None:
 
     print(f"Files to process: {len(files)}")
 
-    # 3. Populate files — API tells us which files need uploading
-    # populateFiles is a custom method → addressed with ':' not '/'.
+    # 3. Populate files — API tells us which hashes still need uploading.
+    # populateFiles is a Google API custom method: addressed as
+    # versions/{id}:populateFiles (colon), not versions/{id}/populateFiles.
     pop_resp = api("POST", f"{BASE}/sites/{site}/versions/{version_id}:populateFiles",
                    token, body={"files": files})
     upload_url = pop_resp.get("uploadUrl", "")
     required_hashes = set(pop_resp.get("uploadRequiredHashes", []))
     print(f"Files to upload: {len(required_hashes)}")
 
-    # 4. Upload missing files
+    # 4. Upload missing files (gzip-compressed bytes, keyed by sha256 of gz)
     for i, digest in enumerate(required_hashes, 1):
         gz_bytes = file_data[digest]
         api("POST", f"{upload_url}/{digest}", token,
@@ -120,7 +124,7 @@ def deploy(site: str, build_dir: str) -> None:
     # 6. Create release
     rel = api("POST", f"{BASE}/sites/{site}/releases?versionName={version_name}", token)
     print(f"Release created: {rel.get('name', '?')}")
-    print(f"✅ Firebase Hosting deploy complete: https://{site}.web.app")
+    print(f"Deploy complete: https://{site}.web.app")
 
 
 if __name__ == "__main__":
