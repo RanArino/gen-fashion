@@ -75,7 +75,6 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 | **ME** | Pre-Deployment Experience & Domain Hardening | 1a | M5 | Close six user-facing / domain gaps found before deploy (`ToDo` §1–6): closet gallery + metadata incl. shared closets, a gender/age dimension threaded end-to-end (child closet → child imagery), shared-closet gender data, Agent-Trace curation, candidate result UI + mandatory user-selection gate, and agent run history. |
 | **MD** | Phase 1a Production Deployment & Hardening | 1a | M5, ME | Deploy the verified Phase 1a stack to Google Cloud: Compute Engine ES + private connectivity, full vector seed, Cloud Run ×2, Secret Manager + OIDC, Nano Banana on Vertex AI, Firebase Hosting. |
 | **MF** | CI/CD (Continuous Delivery) | 1a | MD | Automate MD's manual deploy: GitHub Actions CI gate (per-service tests + image build) + CD (Artifact Registry → Cloud Run ×2 + Firebase Hosting) over Workload Identity Federation, with post-deploy smoke + revision rollback. The hackathon's CI/CD-after-deployment axis. |
-| **M6** | LINE Channel Integration | 1b | M5 | LINE users get the full coordination experience; Rakuten search added. |
 
 > Phase 1a = **M0–M5** (local-verified) **+ ME** (pre-deploy UX / domain hardening) **+ MD** (production cutover) **+ MF** (CI/CD automation over MD). Phase 1b = **M6**. **ME precedes MD** — MD's must-fix gate is the two requirement violations it found (the `child-01` → adult-image defect **ME-3** and the missing user-selection step **ME-6**); the rest of ME is strongly recommended before cutover. **MD** completes Phase 1a in the cloud and is independent of M6; LINE work (M6) must not start until M5 is complete (`req-phase01.md` §14).
 
@@ -289,26 +288,7 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 
 ---
 
-## M6 — LINE Channel Integration (Phase 1b)
 
-**Scope:** Bring the coordination experience to LINE; add Rakuten search. **Do not start before M5 is complete** (`req-phase01.md` §14). Reference: `req-phase01.md` §6.4, §6.6, §7.3, §7.4, §10.2, ADL-006, ADL-009.
-
-| ID | Feature | Status | Description | Req ref |
-|---|---|---|---|---|
-| M6-1 | LINE Webhook endpoint | ❌ Not yet implemented | Signature verification; immediate `200 OK`. | §7.4, §15 Phase 1b #1, ADL-006 |
-| M6-2 | Cloud Tasks async agent execution | ❌ Not yet implemented | Webhook → `CLOUD_TASKS_QUEUE_AGENT` → async ADK agent run. | §7.4, §15 Phase 1b #2 |
-| M6-3 | `LineReplyAdapter` (Reply + Push) | ❌ Not yet implemented | Reply API with Push API fallback when `replyToken` expires. | §6.6, §7.4, ADL-006, ADL-009 |
-| M6-4 | `ReplyCoordinateToLineUseCase` | ❌ Not yet implemented | Sends final coordinate image + text to LINE. | §6.6 |
-| M6-5 | `search_rakuten` tool + adapter | ❌ Not yet implemented | `RakutenItemAdapter`; calls routed via Cloud Tasks. | §6.3, §7.2 |
-| M6-6 | Rakuten rate-limit enforcement | ❌ Not yet implemented | `CLOUD_TASKS_QUEUE_RAKUTEN` with `maxConcurrentDispatches: 1` (1 req/sec). | §7.3, §15 Phase 1b #4, ADL-002 |
-| M6-7 | `AskUserPreferenceUseCase` (LINE) | ❌ Not yet implemented | LINE interactive message variant of preference collection. | §6.4 |
-| M6-8 | LIFF account linking flow | ❌ Not yet implemented | `POST /auth/line-link` — verify LINE token, mint Firebase Custom Token, write `users`/`lineUsers`. | §10.2 |
-| M6-9 | `lineUserId` → `userId` resolution | ❌ Not yet implemented | `resolve_user` lookup; unregistered users routed to LIFF signup. | §10.3, §8.1 |
-| M6-10 | LINE session flow E2E | ❌ Not yet implemented | LINE image upload → analysis → source/candidate selection → coordinate image reply. | §1 Phase 1b, §15 Phase 1b #3 |
-
-**Exit criteria:** A LINE user completes the full coordination flow and receives a coordinate image in the LINE chat.
-
----
 
 ## Out of scope (Phase 1)
 

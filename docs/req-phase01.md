@@ -22,16 +22,6 @@
 4. ユーザーが選択後、最終コーディネート画像を生成・表示する。
 5. クローゼット管理（画像アップロード、上限: `MAX_CLOSET_IMAGES_PER_USER` = 20）。
 
-**Phase 1b — LINE チャネル（後続実装）:**
-
-1. ユーザーが LINE でアップロードした服の画像をエージェントが受信する。
-2. エージェントが画像を分析し、服のメタデータを構造化出力として生成する。
-3. エージェントが選択肢を提示する：
-   - 「自分の持っている服からコーディネートする（クローゼットデータがある場合のみ）」
-   - 「楽天で検索した服からコーディネートする」
-4. ユーザーが選択後、エージェントがコーディネート候補を提示し、ユーザーが選択する。
-5. 最終的にコーディネート画像を生成し、LINE のトーク画面に返信する。
-
 ---
 
 ## 2. Technology Stack
@@ -1038,6 +1028,7 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **Trade-off:** ステージング環境は持たない（単一環境）。品質の最後の砦はデプロイ後スモークであり、本番へ自動反映するぶん CI ゲートの厳格さが重要。
 - **Date/Author:** 2026-06-26 / Ran（CI/CD 計画起票時に提案）
 
+
 ---
 
 ## 14. Out of Scope (Phase 1)
@@ -1215,3 +1206,30 @@ CC BY-SA 4.0 に基づき、以下を実装する：
 - **文書化:** パイプラインのランブック（トリガー、必要権限、ロールバック手順、秘密の扱い）を記載する。
 - **同期:** CI/CD ExecPlan の着手・完了時に feature-matrix（MF-*）と ExecPlan を同期する（本リポジトリの sync ルール）。
 - **受け入れ:** 新規参加者がランブックだけで CI/CD を運用できること。
+
+---
+
+## 20. Client-Side Routing & Browser Navigation (MG)
+
+> Flutter Web のナビゲーションを URL アドレス可能にし、ブラウザの戻る/進む・ディープリンク・リロード時のビュー復元を機能させる（`ToDo`「アプリにページパスの概念が無く、Chrome の戻るボタンが効かない＝UX 不良」）。feature-matrix の **MG-1…MG-4** に対応。現状（2026-06-30）の起点は、`flutter-web-app/lib/main.dart` が `MaterialApp(home: AuthGate())`、`AuthGate` が `authStateChanges` で `LoginScreen` ↔ `HomeScreen` を出し分け、`HomeScreen`（`lib/home/home_screen.dart`）が `int _index` + `NavigationBar` の状態だけで Closet / Coordinate / History / Shared の 4 ビューを切り替える構成で、URL は常に `/` のまま変わらない（go_router / ルーティング依存は未導入、`pubspec.yaml` に無し）。本節は §11（フロントエンド）への差分を定義し、アプリの振る舞い（各画面の機能）は変えず、**遷移の URL 表現と履歴連携のみ**を追加する。実装方針は **ADL-033**。**「one ExecPlan at a time」: 本節は req レベルの追跡のみで、ExecPlan は未起票**（アクティブな ExecPlan は MD。MG は MD 完了後に起票する別 ExecPlan で実装する）。
+
+### 20.1 ルーティング基盤（path URL strategy + Router、MG-1）
+
+- **依存とエントリ:** `go_router` を `pubspec.yaml` に追加し、`main()` で `usePathUrlStrategy()`（`flutter_web_plugins`）を呼んでハッシュ無しパスにする。`MaterialApp(home:)` を `MaterialApp.router(routerConfig: ...)` に置き換える。
+- **受け入れ:** ビュー切り替えでブラウザの URL がそれぞれのパスに変わり、リロードしても同じビューが復元される。
+
+### 20.2 認証連動ルーティング（MG-2）
+
+- **redirect:** 現 `AuthGate` の `authStateChanges` 判定を go_router の `redirect` + `refreshListenable`（Firebase Auth のストリームを購読）へ移す。未認証はすべて `/login` にリダイレクトし、認証済みで `/login` に来たらアプリのトップ（`/closet` 等）へ戻す。E2E 用の自動サインイン（`AppConfig.e2eAutoSignIn`）の挙動は維持する。
+- **受け入れ:** 未認証で保護パスを直接開くと `/login` に飛び、サインイン後は元の（または既定の）アプリパスに入る。サインイン直後に画面のフリッカが出ない。
+
+### 20.3 トップレベルビューのルート化（ブラウザ戻る/進む、MG-3）
+
+- **ルート:** `HomeScreen` の `int _index` + `NavigationBar` を go_router の **ShellRoute** に置き換え、`/closet` `/coordinate` `/history` `/shared` の各ルートに割り当てる。`NavigationBar` は ShellRoute で永続表示し、選択タブは現在のルートから導出する。既定リダイレクト（`/` → `/closet`）を設定する。
+- **受け入れ:** タブ切り替えで URL が変わり、**Chrome の戻る/進むボタンで直前/次のビューに移動できる**。各パスを直接開く / リロードすると対応ビューが表示される（Firebase Hosting の SPA fallback ＝ `firebase.json` の `rewrites` 既設で 404 にならない、ADL-033）。
+- **受け入れ:** `flutter analyze` クリーン、`flutter test`（ルーティング込みのウィジェット/ナビゲーションテスト）green、ブラウザ E2E で戻るボタン遷移が観測できる。
+
+### 20.4 詳細ディープリンク（将来拡張、MG-4）
+
+- **パスパラメータ:** コーディネートセッション（例: `/coordinate/{sessionId}`）や履歴詳細（例: `/history/{sessionId}`）へのディープリンクを将来拡張として扱う。**Phase 1a の必須範囲外**（トップレベルのビュールート化＝MG-1…MG-3 が UX 改善の本体）。
+- **受け入れ:** （将来）特定セッション/履歴項目の URL を共有・リロードでき、その項目が直接開く。
