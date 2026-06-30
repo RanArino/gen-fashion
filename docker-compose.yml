@@ -8,7 +8,7 @@ services:
       - xpack.security.enabled=false
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
@@ -33,7 +33,7 @@ services:
     environment:
       - FIRESTORE_EMULATOR_HOST=0.0.0.0:8080
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - gen-fashion_firestore-data:/firestore-data
     healthcheck:
@@ -47,7 +47,7 @@ services:
     working_dir: /workspace
     command: sh -c "npm install -g firebase-tools@latest && firebase emulators:start --only auth --project gen-fashion-local"
     ports:
-      - "9099:9099"
+      - "127.0.0.1:9099:9099"
     volumes:
       - ./firebase.json:/workspace/firebase.json:ro
     healthcheck:
@@ -67,8 +67,8 @@ services:
       # Production R2 uses the §8.4 bucket CORS rule instead.
       - MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:8088
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
@@ -80,7 +80,7 @@ services:
       context: ./fastapi-service
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - FIRESTORE_EMULATOR_HOST=firestore-emulator:8080
       - FIREBASE_AUTH_EMULATOR_HOST=firebase-auth-emulator:9099
@@ -125,7 +125,7 @@ services:
       context: ./adk-agent-service
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-gen-fashion-local}
       # Firestore data uses the Firebase project (matches fastapi + frontend),
