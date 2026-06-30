@@ -3,6 +3,7 @@ class SessionHistoryItem {
     required this.sessionId,
     required this.status,
     required this.selectedItems,
+    this.proposedCandidates = const [],
     this.createdAt,
     this.completedAt,
     this.source,
@@ -17,6 +18,7 @@ class SessionHistoryItem {
   final String? source;
   final String? sharedClosetId;
   final List<HistorySelectedItem> selectedItems;
+  final List<Map<String, dynamic>> proposedCandidates;
   final String? coordinateImageUrl;
 
   factory SessionHistoryItem.fromJson(Map<String, dynamic> json) {
@@ -35,6 +37,10 @@ class SessionHistoryItem {
             ),
           )
           .toList(),
+      proposedCandidates:
+          (json['proposed_candidates'] as List<dynamic>? ?? const [])
+              .map((item) => (item as Map).cast<String, dynamic>())
+              .toList(),
       coordinateImageUrl: styleResult?['coordinate_image_url'] as String?,
     );
   }

@@ -45,9 +45,14 @@ class Settings(BaseSettings):
     # Shared secret guarding the /internal/* worker routes. Sent by the task
     # producers (LocalHttpTaskQueueAdapter / CloudTasksAdapter) and verified by
     # require_internal_secret. Unset => the internal routes are locked (503).
-    # Deployment hardening (OIDC + Cloud Run internal ingress) is a separate,
-    # BLOCKING deploy gate — see the M2 ExecPlan Decision Log.
     internal_task_secret: str | None = None
+
+    # Production OIDC hardening (Milestone 0 / MD-8).
+    # Service account email that Cloud Tasks uses to mint OIDC tokens for the
+    # fastapi worker route. When set, CloudTasksAdapter attaches an OIDC token
+    # and require_internal_secret also verifies it. Unset locally → shared-secret
+    # only (backward-compatible with make dev).
+    internal_invoker_sa: str | None = None
 
     @property
     def project_id(self) -> str:

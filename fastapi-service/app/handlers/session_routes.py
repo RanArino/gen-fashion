@@ -85,6 +85,7 @@ class SessionHistoryItem(BaseModel):
     source: str | None = None
     shared_closet_id: str | None = None
     selected_items: list[SelectedItemResponse] = Field(default_factory=list)
+    proposed_candidates: list[dict] = Field(default_factory=list)
     style_result: StyleResultResponse | None = None
 
 
@@ -105,6 +106,7 @@ def _session_to_history_item(session: StyleSession) -> SessionHistoryItem:
             )
             for item in session.selected_items
         ],
+        proposed_candidates=session.proposed_candidates,
         style_result=(
             StyleResultResponse(
                 coordinate_image_url=session.final_result.coordinate_image_url
@@ -127,6 +129,22 @@ async def list_sessions(
 ):
     sessions = await styling_repo.list_completed(user_id, limit=limit)
     return [_session_to_history_item(session) for session in sessions]
+
+
+@router.get("/{session_id}", response_model=SessionHistoryItem)
+async def get_session(
+    session_id: str,
+    user_id: str = Depends(verify_firebase_token),
+    styling_repo: StylingRepositoryPort = Depends(get_styling_repository),
+):
+    try:
+        style_session_id = StyleSessionId(UUID(session_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid session id") from exc
+    session = await styling_repo.get_by_id(user_id, style_session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Style session not found")
+    return _session_to_history_item(session)
 
 
 @router.post("")

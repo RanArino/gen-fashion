@@ -142,6 +142,35 @@ void main() {
     expect(sessions.single.selectedItems.single.itemId, 'item-1');
   });
 
+  test('getSession parses current session state and proposed candidates',
+      () async {
+    final mock = MockClient((req) async {
+      expect(req.url.path, '/sessions/session-1');
+      expect(req.headers['Authorization'], 'Bearer fake-token');
+      return http.Response(
+        jsonEncode({
+          'session_id': 'session-1',
+          'status': 'PROPOSING',
+          'source': 'SHARED_CLOSET',
+          'proposed_candidates': [
+            {'item_id': 'item-1', 'image_url': 'https://example.test/item.jpg'}
+          ],
+          'selected_items': const [],
+          'style_result': {
+            'coordinate_image_url': 'https://example.test/result.jpg',
+          },
+        }),
+        200,
+      );
+    });
+
+    final session = await _client(mock).getSession('session-1');
+
+    expect(session.status, 'PROPOSING');
+    expect(session.proposedCandidates.single['item_id'], 'item-1');
+    expect(session.coordinateImageUrl, 'https://example.test/result.jpg');
+  });
+
   test('streamSessionEvents parses SSE messages', () async {
     final mock = MockClient.streaming((req, bodyStream) async {
       expect(req.url.path, '/sessions/session-1/stream');

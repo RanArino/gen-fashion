@@ -119,6 +119,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           _reportE2eState();
         });
       }
+      await _recoverSessionState(selected.sessionId);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -171,11 +172,35 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           _reportE2eState();
         });
       }
+      await _recoverSessionState(sessionId);
     } catch (e) {
       if (mounted) setState(() => _error = e);
     } finally {
       if (mounted) setState(() => _running = false);
     }
+  }
+
+  Future<void> _recoverSessionState(String sessionId) async {
+    if (!mounted) return;
+    final session = await _api.getSession(sessionId);
+    if (!mounted) return;
+    setState(() {
+      _status = session.status;
+      if (_candidates.isEmpty && session.proposedCandidates.isNotEmpty) {
+        _candidates
+          ..clear()
+          ..addAll(session.proposedCandidates);
+        if (_selectedCandidateIds.isEmpty) {
+          _selectedCandidateIds.add(_candidateId(_candidates.first));
+        }
+      }
+      if (_coordinateImageUrl == null &&
+          session.coordinateImageUrl != null &&
+          session.coordinateImageUrl!.isNotEmpty) {
+        _coordinateImageUrl = session.coordinateImageUrl;
+      }
+      _reportE2eState();
+    });
   }
 
   String _candidateId(Map<String, dynamic> candidate) =>

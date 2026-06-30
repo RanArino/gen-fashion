@@ -117,15 +117,22 @@ class HistoryRepo:
         self.sessions = sessions
         self.request = None
 
+    async def get_by_id(self, user_id, session_id):
+        self.request = (user_id, session_id)
+        for session in self.sessions:
+            if session.id == session_id and session.user_id == user_id:
+                return session
+        return None
+
     async def list_completed(self, user_id, limit=20):
         self.request = (user_id, limit)
         return self.sessions
 
 
-def _completed_session(image_url: str) -> StyleSession:
+def _completed_session(image_url: str, session_id: StyleSessionId | None = None) -> StyleSession:
     completed_at = datetime(2026, 6, 24, 10, 32)
     return StyleSession(
-        id=StyleSessionId(uuid4()),
+        id=session_id or StyleSessionId(uuid4()),
         user_id="user-123",
         state=StyleSessionState.COMPLETED,
         clothing_source=ClothingSource.SHARED_CLOSET,
@@ -202,6 +209,38 @@ def test_list_sessions_empty_when_no_completed():
 
     assert response.status_code == 200
     assert response.json() == []
+    reset_overrides()
+
+
+def test_get_session_returns_current_session_state():
+    reset_overrides()
+    session_id = StyleSessionId(uuid4())
+    session = _completed_session("https://example.test/result.jpg", session_id)
+    session.proposed_candidates = [{"item_id": "candidate-1"}]
+    repo = HistoryRepo([session])
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_styling_repository] = lambda: repo
+
+    response = TestClient(app).get(f"/sessions/{session_id}")
+
+    assert response.status_code == 200
+    assert response.json()["session_id"] == str(session_id)
+    assert response.json()["proposed_candidates"] == [{"item_id": "candidate-1"}]
+    assert (
+        response.json()["style_result"]["coordinate_image_url"]
+        == "https://example.test/result.jpg"
+    )
+    reset_overrides()
+
+
+def test_get_session_returns_404_for_missing_or_unowned_session():
+    reset_overrides()
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_styling_repository] = lambda: HistoryRepo([])
+
+    response = TestClient(app).get(f"/sessions/{uuid4()}")
+
+    assert response.status_code == 404
     reset_overrides()
 
 
