@@ -207,6 +207,40 @@ async def test_select_source_accepts_ready_closet_item():
 
 
 @pytest.mark.asyncio
+async def test_select_source_rejects_when_daily_generation_limit_reached_before_agent_run():
+    repo = FakeStylingRepo()
+    repo.completed_today_count = 5
+    session_id = uuid4()
+    await repo.create(
+        StyleSession(
+            id=StyleSessionId(session_id),
+            user_id="user-123",
+            state=StyleSessionState.SOURCE_SELECTING,
+        )
+    )
+    agent_run = FakeAgentRun()
+
+    with pytest.raises(DailyGenerationLimitExceeded, match="Daily generation limit of 5"):
+        await SelectClothingSourceUseCase(
+            repo,
+            FakeClosetRepo(),
+            agent_run,
+            Settings(max_daily_generations_per_user=5),
+        ).execute(
+            "user-123",
+            str(session_id),
+            ClothingSource.SHARED_CLOSET,
+            UserPreference(),
+            "adult-01",
+        )
+
+    session = await repo.get_by_id("user-123", StyleSessionId(session_id))
+    assert session.state == StyleSessionState.SOURCE_SELECTING
+    assert len(repo.count_completed_today_calls) == 1
+    assert agent_run.requests == []
+
+
+@pytest.mark.asyncio
 async def test_select_source_rejects_non_owner_or_missing_session():
     with pytest.raises(StyleSessionNotFound):
         await SelectClothingSourceUseCase(

@@ -73,6 +73,13 @@ class DailyLimitSelectCandidatesRouteUseCase:
         )
 
 
+class DailyLimitSelectSourceRouteUseCase:
+    async def execute(self, **kwargs):
+        raise DailyGenerationLimitExceeded(
+            "Daily generation limit of 5 reached. Limit resets at midnight UTC."
+        )
+
+
 class StreamRepo:
     def __init__(self, session=None):
         self.session = session
@@ -315,6 +322,27 @@ def test_select_source_maps_agent_trigger_failure():
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Failed to start styling run"
+    reset_overrides()
+
+
+def test_select_source_returns_429_when_daily_generation_limit_reached():
+    reset_overrides()
+    session_id = str(uuid4())
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_select_source_use_case] = (
+        lambda: DailyLimitSelectSourceRouteUseCase()
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        f"/sessions/{session_id}/source",
+        json={"source": "SHARED_CLOSET", "userPreference": {}},
+    )
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == (
+        "Daily generation limit of 5 reached. Limit resets at midnight UTC."
+    )
     reset_overrides()
 
 
