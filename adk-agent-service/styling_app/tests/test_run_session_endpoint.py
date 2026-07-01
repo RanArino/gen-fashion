@@ -245,6 +245,7 @@ async def test_generate_phase_runs_agent_with_selection_gender_and_child_age(mon
         "style_description": "clean blue and white",
         "gender": "female",
         "wearer_age": "child",
+        "language": "ja",
     }
     runner = FakeRunner(
         [
@@ -302,6 +303,7 @@ async def test_generate_phase_runs_agent_with_selection_gender_and_child_age(mon
     message = runner.kwargs["new_message"].parts[0].text
     assert '"gender":"female"' in message
     assert '"wearerAge":"child"' in message
+    assert '"language":"ja"' in message
     assert repo.errors == []
 
 
@@ -367,6 +369,7 @@ async def test_generate_phase_falls_back_only_after_explicit_selection(monkeypat
     assert captured["item_image_urls"] == ["http://image/top.jpg"]
     assert captured["gender"] == "common"
     assert captured["wearer_age"] == "child"
+    assert captured["language"] == "ja"
     assert repo.results[0][1]["coordinateImageUrl"] == "http://coordinate"
 
 
@@ -390,7 +393,7 @@ def test_generate_style_tool_exposes_only_style_description(monkeypatch):
         return {"coordinate_image_url": "http://coordinate", "items": kwargs["item_image_urls"]}
 
     monkeypatch.setattr("styling_app.server.style_synthesizer", fake_synthesizer)
-    tool = _build_generate_style_tool(request, "female", "child")
+    tool = _build_generate_style_tool(request, "female", "child", "en")
 
     params = list(inspect.signature(tool).parameters)
     assert params == ["style_description"]
@@ -402,6 +405,7 @@ def test_generate_style_tool_exposes_only_style_description(monkeypatch):
     assert captured["style_description"] == "breezy summer look"
     assert captured["gender"] == "female"
     assert captured["wearer_age"] == "child"
+    assert captured["language"] == "en"
 
 
 def test_generate_style_tool_defaults_empty_style_to_preference(monkeypatch):
@@ -421,11 +425,12 @@ def test_generate_style_tool_defaults_empty_style_to_preference(monkeypatch):
         return {"coordinate_image_url": "http://coordinate", "items": kwargs["item_image_urls"]}
 
     monkeypatch.setattr("styling_app.server.style_synthesizer", fake_synthesizer)
-    tool = _build_generate_style_tool(request, "common", "adult")
+    tool = _build_generate_style_tool(request, "common", "adult", "ja")
 
     tool(style_description="   ")
 
     assert captured["style_description"] == "minimal earth tones"
+    assert captured["language"] == "ja"
 
 
 @pytest.mark.asyncio
@@ -487,6 +492,7 @@ async def test_generate_trace_and_result_normalize_to_server_values(monkeypatch)
         "style_description": "edgy",
         "gender": "female",
         "wearer_age": "child",
+        "language": "ja",
     }
     saved = repo.results[0][1]
     assert saved["items"] == ["http://image/top.jpg", "http://image/bottom.jpg"]
