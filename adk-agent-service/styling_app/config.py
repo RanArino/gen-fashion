@@ -31,6 +31,8 @@ class Settings(BaseSettings):
 
     elasticsearch_url: str = "http://localhost:9200"
     elasticsearch_api_key: str | None = None
+    elasticsearch_ca_certs: str | None = None
+    elasticsearch_ssl_assert_fingerprint: str | None = None
     clothing_items_index: str = "clothing_items"
 
     firestore_database_id: str = "(default)"

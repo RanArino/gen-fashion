@@ -151,7 +151,7 @@ From `fastapi-service` (`app/handlers/closet_routes.py`, mounted at prefix `/clo
 - `DELETE /closet/items/{item_id}` → `204`; `404` if the item is missing.
 - **New in this plan:** `GET /closet/items/{item_id}/download-url` → `200 {"download_url": "..."}`; a 1-hour signed GET URL for the caller's own object `{uid}/closet/{itemId}.jpg`. Read-only; the key is derived from the token's `uid` (no cross-user access).
 
-FastAPI runs at `http://localhost:8000` with permissive CORS (`allow_origins=["*"]`).
+FastAPI runs at `http://localhost:8000`; current CORS origins are configured through `CORS_ALLOW_ORIGINS`.
 
 The Firestore document the client reads (`users/{uid}/closet/{itemId}`, §8.1): `status` (`PROCESSING`|`READY`|`ERROR`), `imageUrl` (key `"/{uid}/closet/{itemId}.jpg"`), and after `READY`: `category`, `tags[]`, `season`, `colors[]`, `embeddingId`, plus `createdAt`.
 
