@@ -96,7 +96,7 @@
 | `StyleSession` | Aggregate Root | LINE セッションを表現。ステートマシン（画像受信→分析→選択→提案→生成→完了） |
 | `StyleSessionId` | Value Object | UUID |
 | `CoordinateProposal` | Entity | 提案されたコーディネートアイテムのリスト |
-| `UserPreference` | Value Object | ユーザーの好み情報（テキスト入力から収集）。`gender`（`male` / `female` / `common`）を含む（§18.1、ADL-026） |
+| `UserPreference` | Value Object | ユーザーの好み情報（テキスト入力から収集）。`gender`（`male` / `female` / `common`）を含む（§18.1、ADL-026）。`language`（`ja` / `en`、生成時の言語）を含む（§22、ADL-035） |
 | `StyleResult` | Value Object | 生成されたコーディネート画像の URL + 構成アイテムのリスト |
 | `ClothingSource` | Value Object (Enum) | `CLOSET` / `SHARED_CLOSET` / `RAKUTEN` |
 
@@ -185,7 +185,7 @@ class CandidateItem(BaseModel):
 ### 6.4 AskUserPreferenceUseCase
 
 - **Input:** `sessionId`, `analysisResult`
-- **Output:** `UserPreference { style, colors, occasion, budget, gender }`（`gender`: `male` / `female` / `common`、§18.1）
+- **Output:** `UserPreference { style, colors, occasion, budget, gender, language }`（`gender`: `male` / `female` / `common`、§18.1。`language`: `ja` / `en`、生成時の言語、§22 / ADL-035）
 - **Agent Tool:** `ask_preference`（LINE インタラクティブメッセージで選択肢を提示）
 - **Web GUI（Phase 1a）の方式:** Accordion のマルチターン対話ではなく、**エージェント実行の起動前に Flutter で好み入力フォームを表示**し、収集した `UserPreference` を `runner.run_async()` の初期コンテキストとして渡す（Web では `ask_preference` のインタラクティブツール・マルチターン ADK セッションは使わない）。LINE（Phase 1b）は従来どおり `ask_preference` のインタラクティブメッセージを使用する。
 
@@ -194,6 +194,7 @@ class CandidateItem(BaseModel):
 - **Input:** `sessionId`, `selectedItems: List<CandidateItem>`
 - **Precondition:** `selectedItems` はユーザーが `PROPOSING` 状態で選択・承認した候補。空のまま呼び出してはならない（§4.3 / §18.2、ADL-027）。
 - **着用者属性:** `UserPreference.gender` と対象クローゼットの `closetKind`（adult / child）を画像生成プロンプトに渡し、生成画像を着用者に一致させる（§18.1、ADL-026）。
+- **言語:** `UserPreference.language`（生成時に確定）を `style_synthesizer` に渡し、生成されるコーディネート説明・reasoning・final answer を当該言語で出力する。生成後は再翻訳しない（§22、ADL-035）。
 - **Output:** `StyleResult { coordinateImageUrl, items }`
 - **Agent Tool:** `style_synthesizer`
 - **モデル制約:** コーディネート画像生成（複数服画像をインプットとした合成・仮想着用）は **Imagen 4** または **Nano Banana 2** でのみ実現可能。Gemini 2.0 Flash は画像分析専用とし、画像生成には使用しない。
@@ -328,6 +329,7 @@ StylingOrchestratorAgent
 users/{userId}                        # Firebase UID をドキュメント ID とする
   - displayName: string
   - lineUserId: string                # LINE ユーザー ID（紐付け後に書き込み）
+  - language: string                  # "ja" | "en"。UI 表示言語のユーザー設定。初回ログイン時に "ja" 既定で作成、言語スイッチャで更新（§22、ADL-035）
   - createdAt: timestamp
 
 lineUsers/{lineUserId}                # lineUserId → Firebase UID の逆引きマッピング
@@ -372,7 +374,7 @@ sessions/{sessionId}
   - status: enum (IMAGE_RECEIVED | ANALYZING | SOURCE_SELECTING | SEARCHING | PROPOSING | GENERATING | COMPLETED | ERROR)
   - source: enum (CLOSET | SHARED_CLOSET | RAKUTEN | UNSET)
   - analysisResult: map
-  - userPreference: map               # gender（male/female/common）を含む（§18.1）
+  - userPreference: map               # gender（male/female/common）を含む（§18.1）。language（ja/en、生成時に確定・非再翻訳）を含む（§22、ADL-035）
   - selectedItems: array              # ユーザーが PROPOSING 状態で選択・承認した候補（§18.2、ADL-027）。空のまま GENERATING へ遷移してはならない
   - styleResult: map
   - createdAt: timestamp
@@ -700,6 +702,8 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **性別・年代の指定（§18.1 / ADL-026）:** コーディネート起動前の好み入力フォームで `gender`（male / female / common）を選べる。これと対象クローゼットの `closetKind`（adult / child）が検索・生成画像に反映される。
 - **候補選択（§18.2 / ADL-027）:** 検索後に候補カード（上位数件 ＋ 推薦）を提示し、ユーザーが選択・承認するまで画像生成しない（同意なき自動生成禁止、§4.3）。
 - **実行履歴ギャラリー（§18.5 / ADL-029、将来拡張）:** 過去の実行（選択アイテム ＋ 生成画像 ＋ 日時）を時系列ギャラリーで再確認できる。
+- **言語設定（§22 / ADL-035）:** ヘッダの言語スイッチャで `日本語` / `English` を切り替えると UI クロム（ナビ・ボタン・フォームラベル・ダイアログ・トースト）が即時に切り替わる。設定は `users/{uid}.language` に永続化する。生成コンテンツ（reasoning・アイテム説明・最終回答）は生成時の言語で確定し、履歴では**再翻訳せず生成時の言語で表示**する。実装は Flutter 公式の `flutter_localizations` + `gen-l10n`（ARB）、既定 `ja`。
+- **デザインシステム（§23 / ADL-036）:** UI は `temp-ui/` の Claude Design（アースカラーのベージュ背景 ＋ オフホワイトカード ＋ テラコッタアクセント、`Instrument Serif` 見出し / `Space Mono` アイブロー / `Archivo` 本文）を中央 `ThemeData`（`google_fonts`）で適用する。4 タブ構成（Closet / Coordinate / History / Shared）は不変で、表示のみを刷新する。
 
 ---
 
@@ -1037,6 +1041,22 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **Trade-off:** ステージング環境は持たない（単一環境）。品質の最後の砦はデプロイ後スモークであり、本番へ自動反映するぶん CI ゲートの厳格さが重要。
 - **Date/Author:** 2026-06-26 / Ran（CI/CD 計画起票時に提案）
 
+### ADL-035: 多言語対応は flutter_localizations + gen-l10n、生成コンテンツは生成時の言語で確定・非再翻訳
+
+- **Decision:** UI クロムの多言語化は Flutter 公式の `flutter_localizations` + `gen-l10n`（ARB `app_ja.arb` / `app_en.arb`、既定ロケール `ja`、対応 `[ja, en]`）で実装する。言語設定は `users/{uid}.language` に永続化し、`MaterialApp.locale` を駆動する `LocaleController` で即時に UI へ反映する。エージェントが**生成する**自然言語コンテンツ（reasoning・アイテム説明・final answer）は**生成時の言語で確定**し、履歴や結果パネルでは**再翻訳しない**。生成時の言語は各セッションの `userPreference.language` に凍結する。
+- **Alternatives:** (a) サードパーティ i18n ランタイム（不要な依存）、(b) 過去データを表示時に自動翻訳（システム負荷・課金増、ユーザー要件で明示的に不採用）、(c) UI クロムのみ多言語化し生成コンテンツはモデル任せ（言語が一貫しない）。
+- **Rationale:** first-party i18n はランタイム依存ゼロで `MaterialApp` に自然統合し、型付き `AppLocalizations` を生成する。日本主対象・既存文字列が日本語のため既定は `ja`。生成コンテンツを生成時の言語で凍結することで「処理時に言語適用、過去データは非再翻訳（不要なシステム負荷回避）」というユーザー要件を満たす。`language` は既存 `userPreference` map（`gender` と同経路）に載るため新規リクエストフィールド不要。
+- **Trade-off:** UI 言語切替時、過去セッションは生成時の言語のまま表示される（意図どおり）。全ユーザー向け文字列を ARB に外部化する初期コストが発生する。既定言語のためのデプロイ設定（env var）は持たない（クライアント定数）。
+- **Date/Author:** 2026-07-01 / Ran
+
+### ADL-036: UI/UX は temp-ui の Claude Design を中央 ThemeData で適用
+
+- **Decision:** UI/UX は `temp-ui/`（`flutter_ui_design_spec.md` ＋ `Gen-Fashion.dc.html`）の Claude Design システムを、中央 `lib/theme/app_theme.dart`（`ThemeData` ＋ `google_fonts`）と最小限の再利用ウィジェット（`lib/theme/components.dart`）で適用する。パレット（scaffold `#ECE8DF` / card `#FBF9F4` / accent `#B0563C` ほか）とタイポグラフィ（`Archivo` 本文 / `Instrument Serif` 見出し / `Space Mono` アイブロー）を定義し、各画面はテーマを消費する。4 タブ構成は不変で表示のみ刷新し、URL ルーティング（MG / §20）は本作業に含めない。
+- **Alternatives:** (a) 各ウィジェットを個別にハードスタイル（重複・非一貫・保守困難）、(b) 情報設計ごと作り替え（スコープ過大・回帰リスク）。
+- **Rationale:** `flutter_ui_design_spec.md` が既にデザイントークンを `ThemeData`/`google_fonts` にマッピング済み。中央テーマは変更を外科的に保ち（画面はテーマ参照）、将来画面も自動的にブランド整合する。Material に無い数パターン（mono アイブロー、グラスヘッダ、テラコッタ pill ボタン）のみ再利用ウィジェットで補う。
+- **Trade-off:** `google_fonts` はランタイム取得（オフライン時はシステムフォントにフォールバック）。必要なら将来アセット同梱に切替。
+- **Date/Author:** 2026-07-01 / Ran
+
 
 ---
 
@@ -1285,3 +1305,59 @@ Vertex AI（Nano Banana / `gemini-2.5-flash-image`）の API 呼び出しは課�
 - ローカル `make dev` でも同条件で 429 が発生すること。`MAX_DAILY_GENERATIONS_PER_USER=0` を明示した場合のみ 429 が発生しないこと。
 - `ERROR` / `TIMEOUT` で終了したセッションはカウントされないこと。
 - 翌 UTC 日（JST 09:00 以降）には制限がリセットされ、同ユーザーが再び生成できること。
+
+---
+
+## 22. Localization — Configurable Language (JP/EN) (MI, localization portion)
+
+> Flutter Web クライアントの表示言語を `日本語` / `English` で切り替え可能にする。**言語は処理時に適用し、生成済みの過去データは自動翻訳しない（生成時の言語のまま。不要なシステム負荷を避けるため）。** feature-matrix の **MI-1 … MI-3** に対応。実装方針は ADL-035。ExecPlan: `docs/plans/20260701-mi-localization-and-ui-redesign.md`。本節は §4.2 / §6.4 / §6.5 / §8.1 / §11 への差分を定義する。
+
+### 22.1 概要
+
+- ヘッダの言語スイッチャで `日本語`（既定）/ `English` を選ぶと、UI クロム（ナビラベル・アプリバー・ボタン・フォームラベル/ヒント・ダイアログ・スナックバー・帰属表示・エラー文言）が**即時**に切り替わる。
+- 選択は `users/{uid}.language` に永続化し、リロード後も復元する（初回ログイン時に `ja` 既定で作成）。
+- エージェントが**生成する**自然言語コンテンツ（reasoning・アイテム説明・final answer・コーディネート説明）は、**実行開始時に確定した言語**で生成する。生成後は再翻訳しない。
+
+### 22.2 言語の凍結と非再翻訳（ADL-035）
+
+- **凍結:** コーディネート実行の開始時点で `LocaleController` の現在言語を `userPreference.language` に載せ、`sessions/{id}` に永続化する。以後そのセッションの生成コンテンツ言語は不変。
+- **非再翻訳:** 履歴ギャラリー（§18.5）・結果パネルは、保存済みテキストをそのまま表示する。UI 言語を切り替えても過去の生成コンテンツは翻訳しない。
+- **UI クロムのみライブ:** ボタン・ラベル等の静的コピーは現在の言語選択に追従する（過去/現在を問わず即時再描画）。
+
+### 22.3 実装方式（ADL-035）
+
+- Flutter 公式 `flutter_localizations` + `gen-l10n`（`lib/l10n/app_ja.arb` / `app_en.arb`、`l10n.yaml`、生成物 `AppLocalizations`）。
+- `LocaleController`（`ValueNotifier<Locale>`）＋ `LocaleScope` で `MaterialApp.locale` を駆動。`localizationsDelegates` に `AppLocalizations.delegate` ＋ `Global*Localizations.delegate`、`supportedLocales` に `[ja, en]`。
+- `language` は既存 `userPreference` map（`gender` と同経路：Flutter → FastAPI → adk-agent-service）に載せ、`adk-agent-service/styling_app/server.py` が読み取り、`_message_context` の指示文と `style_synthesizer` に渡す。
+- 既定言語のための環境変数は設けない（クライアント定数、ADL-035）。
+
+### 22.4 受け入れ条件
+
+- `English` 選択で全 UI クロムが即時英語化し、リロード後も英語が復元されること（`users/{uid}.language` から読み戻し）。
+- `English` で開始した実行の reasoning / アイテム説明 / final answer が英語で生成・永続化されること。`日本語` では日本語。
+- UI を `日本語` に戻しても、直前に英語で生成した実行が履歴で英語のまま表示されること（再翻訳しない）。新規実行は日本語で表示されること。
+- `flutter analyze` クリーン、`flutter test` green、`fastapi-service` / `adk-agent-service` の `pytest` green。
+
+---
+
+## 23. UI/UX Redesign — Claude Design System (MI, redesign portion)
+
+> Flutter Web クライアントの UI/UX を `temp-ui/` の Claude Design システムで刷新する。feature-matrix の **MI-4 … MI-7** に対応。実装方針は ADL-036。ExecPlan: `docs/plans/20260701-mi-localization-and-ui-redesign.md`。デザインの正典は `temp-ui/flutter_ui_design_spec.md`（トークン ＋ Flutter マッピング）と `temp-ui/Gen-Fashion.dc.html`（ビジュアルモック）。本節は §11 への差分を定義する。
+
+### 23.1 概要
+
+- アースカラー基調（scaffold `#ECE8DF` ベージュ、card `#FBF9F4` オフホワイト、accent `#B0563C` テラコッタ、success `#6F7D5A`、error `#A2463A`）と 3 フォント体系（本文 `Archivo`、見出し `Instrument Serif`、アイブロー `Space Mono` 大文字・広トラッキング）を採用する。
+- 4 タブ構成（Closet / Coordinate / History / Shared）と各画面のフローは**不変**。表示（テーマ・コンポーネント）のみを刷新する。
+
+### 23.2 実装方式（ADL-036）
+
+- 中央 `lib/theme/app_theme.dart`（`ThemeData` ＋ `google_fonts`）でパレット・タイポ・コンポーネントテーマ（button / card / input / navigationBar）を定義し、`MaterialApp.theme` に適用（既存の `ColorScheme.fromSeed(indigo)` を置換）。
+- Material に無いパターンのみ `lib/theme/components.dart` に最小の再利用ウィジェット（`EyebrowLabel`、`SectionCard`、`PrimaryActionButton` / `SecondaryActionButton`、`GlassAppBar`）として実装。
+- 対象画面: Login / Home シェル＋ナビ / Closet / Shared ギャラリー / Coordinate（アコーディオン・候補カード・結果パネル）/ History。
+- URL ルーティング（MG / §20）は本作業に含めない（表示刷新のみ）。
+
+### 23.3 受け入れ条件
+
+- 5 画面（Login / Closet / Coordinate / History / Shared）が Claude Design（ベージュ背景・ヘアライン枠のオフホワイトカード・テラコッタ主ボタン・`Instrument Serif` 見出し・`Space Mono` アイブロー・`Archivo` 本文）で描画され、既存フローと 4 タブ identity が保たれること。
+- レイアウトがレスポンシブ（広幅で内容幅を制約、テキスト重なりなし、十分なタップ領域）で、両言語で崩れないこと。
+- `flutter analyze` クリーン、`flutter test` green。
