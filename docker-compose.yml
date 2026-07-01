@@ -9,6 +9,8 @@ services:
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
       - "127.0.0.1:9200:9200"
+    volumes:
+      - gen-fashion_elasticsearch-data:/usr/share/elasticsearch/data
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
@@ -28,12 +30,27 @@ services:
           import_arg="";
           echo "Starting Firestore emulator with empty persistent storage";
         fi &&
-        exec gcloud beta emulators firestore start --host-port=0.0.0.0:8080 $$import_arg
+        export_firestore() {
+          export_dir="/firestore-data/snapshot-$$(date +%s)";
+          mkdir -p "$$export_dir";
+          curl -fsS -X POST \
+            "http://localhost:8080/emulator/v1/projects/$${FIREBASE_PROJECT_ID:-gen-fashion-local}:export" \
+            -H "Content-Type: application/json" \
+            -d "{\"database\":\"projects/$${FIREBASE_PROJECT_ID:-gen-fashion-local}/databases/(default)\",\"export_directory\":\"$$export_dir\"}" \
+            >/dev/null &&
+          echo "Firestore emulator data exported to $$export_dir";
+        };
+        trap "export_firestore; kill $$pid; wait $$pid" TERM INT;
+        gcloud beta emulators firestore start --host-port=0.0.0.0:8080 $$import_arg &
+        pid=$$!;
+        wait $$pid
       '
     environment:
       - FIRESTORE_EMULATOR_HOST=0.0.0.0:8080
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-gen-fashion-local}
     ports:
       - "127.0.0.1:8080:8080"
+    stop_grace_period: 30s
     volumes:
       - gen-fashion_firestore-data:/firestore-data
     healthcheck:
@@ -69,6 +86,8 @@ services:
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
+    volumes:
+      - gen-fashion_minio-data:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
@@ -94,6 +113,7 @@ services:
       - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY:-}
       - GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI:-false}
       - IMAGE_ANALYSIS_MODEL=gemini-2.5-flash
+      - MAX_DAILY_GENERATIONS_PER_USER=${MAX_DAILY_GENERATIONS_PER_USER:-5}
       - R2_ENDPOINT_URL=http://minio:9000
       - R2_PUBLIC_ENDPOINT_URL=http://localhost:9000
       - R2_ACCESS_KEY_ID=minioadmin
@@ -162,3 +182,7 @@ services:
 volumes:
   gen-fashion_firestore-data:
     name: gen-fashion_firestore-data
+  gen-fashion_elasticsearch-data:
+    name: gen-fashion_elasticsearch-data
+  gen-fashion_minio-data:
+    name: gen-fashion_minio-data
