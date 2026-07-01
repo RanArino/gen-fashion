@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../l10n/app_localizations.dart';
 import 'history_item.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -44,14 +45,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
-      return Center(child: Text('Failed to load history: $_error'));
+      return Center(child: Text(l10n.historyLoadFailed('$_error')));
     }
     if (_sessions.isEmpty) {
-      return const Center(child: Text('No completed coordinates yet.'));
+      return Center(child: Text(l10n.historyEmpty));
     }
     return GridView.builder(
       padding: const EdgeInsets.all(16),
@@ -74,10 +76,11 @@ class _HistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final imageUrl = session.coordinateImageUrl;
     final timestamp = session.completedAt ?? session.createdAt;
     final sourceLabel = session.sharedClosetId ??
-        (session.source == 'CLOSET' ? 'My Closet' : session.source);
+        (session.source == 'CLOSET' ? l10n.myCloset : session.source);
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -105,7 +108,9 @@ class _HistoryCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    timestamp == null ? 'Date unavailable' : _format(timestamp),
+                    timestamp == null
+                        ? l10n.dateUnavailable
+                        : _format(timestamp),
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),

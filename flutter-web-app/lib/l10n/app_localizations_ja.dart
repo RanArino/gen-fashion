@@ -1,0 +1,281 @@
+// ignore: unused_import
+import 'package:intl/intl.dart' as intl;
+import 'app_localizations.dart';
+
+// ignore_for_file: type=lint
+
+/// The translations for Japanese (`ja`).
+class AppLocalizationsJa extends AppLocalizations {
+  AppLocalizationsJa([String locale = 'ja']) : super(locale);
+
+  @override
+  String get appTitle => 'gen-fashion';
+
+  @override
+  String get navCloset => 'クローゼット';
+
+  @override
+  String get navCoordinate => 'コーディネート';
+
+  @override
+  String get navHistory => '履歴';
+
+  @override
+  String get navShared => '共有';
+
+  @override
+  String get sharedClosetAbout => '共有クローゼットについて';
+
+  @override
+  String get signOut => 'サインアウト';
+
+  @override
+  String get language => '言語';
+
+  @override
+  String get languageJapanese => '日本語';
+
+  @override
+  String get languageEnglish => 'English';
+
+  @override
+  String get loginEyebrow => 'パーソナルスタイリング';
+
+  @override
+  String get loginSubtitle => 'サインインしてクローゼットを管理しましょう。';
+
+  @override
+  String get signInLocal => 'ローカルでサインイン';
+
+  @override
+  String get signInGoogle => 'Google でサインイン';
+
+  @override
+  String get signingIn => 'サインイン中...';
+
+  @override
+  String signInFailed(Object error) {
+    return 'サインインに失敗しました: $error';
+  }
+
+  @override
+  String get closetTitle => 'クローゼット';
+
+  @override
+  String get addItem => 'アイテムを追加';
+
+  @override
+  String get uploading => 'アップロード中...';
+
+  @override
+  String get uploadQueued => 'アップロードを受け付けました。解析中です...';
+
+  @override
+  String get closetFull => 'クローゼットは上限です（20アイテム）。';
+
+  @override
+  String uploadFailed(Object error) {
+    return 'アップロードに失敗しました: $error';
+  }
+
+  @override
+  String get deleteItemQuestion => 'アイテムを削除しますか？';
+
+  @override
+  String get deleteItemBody => 'このアイテムをクローゼットから削除します。';
+
+  @override
+  String get cancel => 'キャンセル';
+
+  @override
+  String get delete => '削除';
+
+  @override
+  String deleteFailed(Object error) {
+    return '削除に失敗しました: $error';
+  }
+
+  @override
+  String get editMetadata => 'アイテム情報を編集';
+
+  @override
+  String get category => 'カテゴリ';
+
+  @override
+  String get colorsComma => '色（カンマ区切り）';
+
+  @override
+  String get season => '季節';
+
+  @override
+  String get tagsComma => 'タグ（カンマ区切り）';
+
+  @override
+  String get gender => '性別';
+
+  @override
+  String get genderCommon => '共通';
+
+  @override
+  String get genderFemale => '女性';
+
+  @override
+  String get genderMale => '男性';
+
+  @override
+  String get save => '保存';
+
+  @override
+  String updateFailed(Object error) {
+    return '更新に失敗しました: $error';
+  }
+
+  @override
+  String get emptyCloset => '最初のアイテムを追加しましょう。';
+
+  @override
+  String get unknown => '不明';
+
+  @override
+  String get analyzing => '解析中...';
+
+  @override
+  String get analysisFailed => '解析に失敗しました';
+
+  @override
+  String get statusProcessing => 'PROCESSING';
+
+  @override
+  String get statusReady => 'READY';
+
+  @override
+  String get statusError => 'ERROR';
+
+  @override
+  String get statusUnknown => 'UNKNOWN';
+
+  @override
+  String get deleteTooltip => '削除';
+
+  @override
+  String get editMetadataTooltip => 'メタデータを編集';
+
+  @override
+  String get coordinationTitle => 'コーディネート';
+
+  @override
+  String get sourceShared => '共有';
+
+  @override
+  String get sourceMine => '自分';
+
+  @override
+  String get sharedCloset => '共有クローゼット';
+
+  @override
+  String get occasion => '用途';
+
+  @override
+  String get style => 'スタイル';
+
+  @override
+  String get colors => '色';
+
+  @override
+  String selectedGenerationLanguage(Object language) {
+    return '生成言語: $language';
+  }
+
+  @override
+  String get running => '実行中';
+
+  @override
+  String get start => '開始';
+
+  @override
+  String get agentTrace => 'エージェントの流れ';
+
+  @override
+  String errorWithMessage(Object error) {
+    return 'エラー: $error';
+  }
+
+  @override
+  String get noSessionEvents => 'まだセッションイベントはありません。';
+
+  @override
+  String get chooseItems => 'アイテムを選択';
+
+  @override
+  String get generateSelected => '選択したアイテムで生成';
+
+  @override
+  String get recommended => 'おすすめ';
+
+  @override
+  String get item => 'アイテム';
+
+  @override
+  String get result => '結果';
+
+  @override
+  String get coordinatePlaceholder => 'ここにコーディネート画像が表示されます。';
+
+  @override
+  String traceSearchedCloset(Object agentName, Object count) {
+    return '$agentName がクローゼットを検索しました - $count 件';
+  }
+
+  @override
+  String traceSearchingCloset(Object agentName) {
+    return '$agentName がクローゼットを検索中';
+  }
+
+  @override
+  String traceGeneratedCoordinate(Object agentName) {
+    return '$agentName がコーディネートを生成しました';
+  }
+
+  @override
+  String traceGeneratingCoordinate(Object agentName) {
+    return '$agentName がコーディネートを生成中';
+  }
+
+  @override
+  String historyLoadFailed(Object error) {
+    return '履歴の読み込みに失敗しました: $error';
+  }
+
+  @override
+  String get historyEmpty => '完了したコーディネートはまだありません。';
+
+  @override
+  String get dateUnavailable => '日付不明';
+
+  @override
+  String get myCloset => '自分のクローゼット';
+
+  @override
+  String sharedGalleryError(Object error) {
+    return 'エラー: $error';
+  }
+
+  @override
+  String get sharedAttribution =>
+      '共有クローゼットの画像は Clothing Dataset (CC BY-SA 4.0) を使用しています';
+
+  @override
+  String get sharedAboutBody => '共有クローゼットでは、アップロードなしにコーディネートを試すことができます。';
+
+  @override
+  String get sharedAboutDataset => '画像素材: Clothing Dataset (CC BY-SA 4.0)';
+
+  @override
+  String get sharedAboutAuthor => '著作者: Alexey Grigorev';
+
+  @override
+  String get viewDataset => 'Kaggle でデータセットを見る';
+
+  @override
+  String get close => '閉じる';
+}

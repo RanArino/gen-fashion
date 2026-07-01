@@ -4,6 +4,8 @@ import 'package:gen_fashion_web/api/api_client.dart';
 import 'package:gen_fashion_web/history/history_item.dart';
 import 'package:gen_fashion_web/history/history_screen.dart';
 
+import 'test_app.dart';
+
 class FakeApiClient extends ApiClient {
   FakeApiClient(this.sessions);
 
@@ -35,11 +37,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: HistoryScreen(apiClient: FakeApiClient([session])),
-        ),
-      ),
+      localizedTestApp(HistoryScreen(apiClient: FakeApiClient([session]))),
     );
     await tester.pump();
 

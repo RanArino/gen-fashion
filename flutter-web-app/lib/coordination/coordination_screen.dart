@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../config.dart';
 import '../e2e_probe_stub.dart' if (dart.library.html) '../e2e_probe_web.dart';
+import '../l10n/app_localizations.dart';
+import '../locale/locale_controller.dart';
 import '../shared/attribution.dart';
+import '../theme/components.dart';
 
 const List<String> _sharedClosets = ['adult-01', 'adult-02', 'child-01'];
 
@@ -61,6 +64,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
 
   Future<void> _start() async {
     if (_running) return;
+    final languageCode = LocaleScope.of(context).languageCode;
     setState(() {
       _running = true;
       _error = null;
@@ -81,6 +85,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           'season': _season.text,
           'colorPreference': _color.text,
           'gender': _gender,
+          'language': languageCode,
         },
       );
       setState(() {
@@ -237,6 +242,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           season: _season,
           color: _color,
           gender: _gender,
+          languageCode: LocaleScope.of(context).languageCode,
           onSourceChanged: (value) => setState(() => _source = value),
           onSharedClosetChanged: (value) =>
               setState(() => _sharedClosetId = value),
@@ -322,6 +328,7 @@ class _Controls extends StatelessWidget {
     required this.season,
     required this.color,
     required this.gender,
+    required this.languageCode,
     required this.onSourceChanged,
     required this.onSharedClosetChanged,
     required this.onGenderChanged,
@@ -336,6 +343,7 @@ class _Controls extends StatelessWidget {
   final TextEditingController season;
   final TextEditingController color;
   final String gender;
+  final String languageCode;
   final ValueChanged<String> onSourceChanged;
   final ValueChanged<String> onSharedClosetChanged;
   final ValueChanged<String> onGenderChanged;
@@ -343,25 +351,33 @@ class _Controls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final l10n = AppLocalizations.of(context)!;
+    final languageLabel =
+        languageCode == 'en' ? l10n.languageEnglish : l10n.languageJapanese;
+    return SectionCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Coordination', style: Theme.of(context).textTheme.titleLarge),
+            const EyebrowLabel('Studio'),
+            const SizedBox(height: 6),
+            Text(
+              l10n.coordinationTitle,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 16),
             SegmentedButton<String>(
-              segments: const [
+              segments: [
                 ButtonSegment(
                   value: 'SHARED_CLOSET',
-                  icon: Icon(Icons.groups_outlined),
-                  label: Text('Shared'),
+                  icon: const Icon(Icons.groups_outlined),
+                  label: Text(l10n.sourceShared),
                 ),
                 ButtonSegment(
                   value: 'CLOSET',
-                  icon: Icon(Icons.checkroom_outlined),
-                  label: Text('Mine'),
+                  icon: const Icon(Icons.checkroom_outlined),
+                  label: Text(l10n.sourceMine),
                 ),
               ],
               selected: {source},
@@ -372,9 +388,8 @@ class _Controls extends StatelessWidget {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: sharedClosetId,
-                decoration: const InputDecoration(
-                  labelText: 'Shared closet',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.sharedCloset,
                 ),
                 items: _sharedClosets
                     .map((id) => DropdownMenuItem(value: id, child: Text(id)))
@@ -387,20 +402,25 @@ class _Controls extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            _TextField(controller: occasion, label: 'Occasion'),
-            _TextField(controller: style, label: 'Style'),
-            _TextField(controller: season, label: 'Season'),
-            _TextField(controller: color, label: 'Colors'),
+            _TextField(controller: occasion, label: l10n.occasion),
+            _TextField(controller: style, label: l10n.style),
+            _TextField(controller: season, label: l10n.season),
+            _TextField(controller: color, label: l10n.colors),
             DropdownButtonFormField<String>(
               initialValue: gender,
-              decoration: const InputDecoration(
-                labelText: 'Gender',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.gender,
               ),
-              items: const [
-                DropdownMenuItem(value: 'common', child: Text('Common')),
-                DropdownMenuItem(value: 'female', child: Text('Female')),
-                DropdownMenuItem(value: 'male', child: Text('Male')),
+              items: [
+                DropdownMenuItem(
+                  value: 'common',
+                  child: Text(l10n.genderCommon),
+                ),
+                DropdownMenuItem(
+                  value: 'female',
+                  child: Text(l10n.genderFemale),
+                ),
+                DropdownMenuItem(value: 'male', child: Text(l10n.genderMale)),
               ],
               onChanged: running
                   ? null
@@ -408,6 +428,8 @@ class _Controls extends StatelessWidget {
                       if (value != null) onGenderChanged(value);
                     },
             ),
+            const SizedBox(height: 8),
+            EyebrowLabel(l10n.selectedGenerationLanguage(languageLabel)),
             const SizedBox(height: 8),
             FilledButton.icon(
               onPressed: running ? null : onStart,
@@ -418,7 +440,7 @@ class _Controls extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.play_arrow),
-              label: Text(running ? 'Running' : 'Start'),
+              label: Text(running ? l10n.running : l10n.start),
             ),
           ],
         ),
@@ -441,7 +463,6 @@ class _TextField extends StatelessWidget {
         controller: controller,
         decoration: InputDecoration(
           labelText: label,
-          border: const OutlineInputBorder(),
         ),
       ),
     );
@@ -465,9 +486,10 @@ class _TracePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final l10n = AppLocalizations.of(context)!;
+    return SectionCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -475,7 +497,7 @@ class _TracePanel extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Agent trace',
+                    l10n.agentTrace,
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
@@ -490,14 +512,17 @@ class _TracePanel extends StatelessWidget {
               ),
             const SizedBox(height: 12),
             if (error != null)
-              Text('Error: $error', style: const TextStyle(color: Colors.red))
+              Text(
+                l10n.errorWithMessage('$error'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              )
             else if (events.isEmpty)
               SizedBox(
                 height: 160,
                 child: Center(
                   child: running
                       ? const CircularProgressIndicator()
-                      : const Text('No session events yet.'),
+                      : Text(l10n.noSessionEvents),
                 ),
               )
             else
@@ -516,7 +541,7 @@ class AgentEventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = event.summary;
+    final title = event.summary(AppLocalizations.of(context)!);
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
       leading: Icon(_iconFor(event.eventKind)),
@@ -563,13 +588,15 @@ class _CandidatePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final l10n = AppLocalizations.of(context)!;
+    return SectionCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Choose items', style: Theme.of(context).textTheme.titleLarge),
+            Text(l10n.chooseItems,
+                style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             Wrap(
               spacing: 12,
@@ -589,7 +616,7 @@ class _CandidatePanel extends StatelessWidget {
             FilledButton.icon(
               onPressed: running || selectedIds.isEmpty ? null : onGenerate,
               icon: const Icon(Icons.auto_awesome),
-              label: const Text('Generate selected'),
+              label: Text(l10n.generateSelected),
             ),
           ],
         ),
@@ -617,6 +644,7 @@ class _CandidateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final imageUrl = candidate['image_url'] ?? candidate['imageUrl'];
+    final l10n = AppLocalizations.of(context)!;
     return SizedBox(
       width: 180,
       child: Card.outlined(
@@ -633,8 +661,8 @@ class _CandidateCard extends StatelessWidget {
               CheckboxListTile(
                 value: selected,
                 onChanged: (value) => onChanged(value ?? false),
-                title: Text(candidate['category'] as String? ?? 'Item'),
-                subtitle: recommended ? const Text('Recommended') : null,
+                title: Text(candidate['category'] as String? ?? l10n.item),
+                subtitle: recommended ? Text(l10n.recommended) : null,
                 controlAffinity: ListTileControlAffinity.leading,
                 dense: true,
               ),
@@ -657,19 +685,19 @@ class _ResultPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final l10n = AppLocalizations.of(context)!;
+    return SectionCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Result', style: Theme.of(context).textTheme.titleLarge),
+            Text(l10n.result, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             if (coordinateImageUrl == null)
-              const SizedBox(
+              SizedBox(
                 height: 220,
-                child:
-                    Center(child: Text('Coordinate image will appear here.')),
+                child: Center(child: Text(l10n.coordinatePlaceholder)),
               )
             else
               ClipRRect(
@@ -737,19 +765,19 @@ class AgentEvent {
     return parts.join('\n');
   }
 
-  String get summary {
+  String summary(AppLocalizations l10n) {
     if (toolName == 'search_closet' && eventKind == 'tool_result') {
       final raw = toolResult?['result'];
       final count = raw is List ? raw.length : 0;
-      return '$agentName searched closet — $count candidates';
+      return l10n.traceSearchedCloset(agentName, count);
     }
     if (toolName == 'search_closet') {
-      return '$agentName is searching the closet';
+      return l10n.traceSearchingCloset(agentName);
     }
     if (toolName == 'style_synthesizer') {
       return eventKind == 'tool_result'
-          ? '$agentName generated the coordinate'
-          : '$agentName is generating the coordinate';
+          ? l10n.traceGeneratedCoordinate(agentName)
+          : l10n.traceGeneratingCoordinate(agentName);
     }
     return text ?? '$agentName · $eventKind';
   }

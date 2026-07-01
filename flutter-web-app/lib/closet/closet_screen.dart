@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_service.dart';
+import '../l10n/app_localizations.dart';
 import '../shared/attribution.dart';
+import '../theme/app_theme.dart';
 import 'closet_item.dart';
 import 'thumbnail.dart';
 import 'upload_service.dart';
@@ -43,18 +45,21 @@ class _ClosetScreenState extends State<ClosetScreen> {
       final id = await _uploads.upload();
       if (!mounted) return;
       if (id == null) return;
+      final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Upload queued; analyzing…')),
+        SnackBar(content: Text(l10n.uploadQueued)),
       );
     } on ClosetFullException {
       if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Closet is full (20 items).')),
+        SnackBar(content: Text(l10n.closetFull)),
       );
     } catch (e) {
       if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
+        SnackBar(content: Text(l10n.uploadFailed('$e'))),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -62,19 +67,20 @@ class _ClosetScreenState extends State<ClosetScreen> {
   }
 
   Future<void> _onDelete(ClosetItem item) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete item?'),
-        content: const Text('This removes the item from your closet.'),
+        title: Text(l10n.deleteItemQuestion),
+        content: Text(l10n.deleteItemBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
+            child: Text(l10n.delete),
           ),
         ],
       ),
@@ -86,12 +92,13 @@ class _ClosetScreenState extends State<ClosetScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Delete failed: $e')),
+        SnackBar(content: Text(l10n.deleteFailed('$e'))),
       );
     }
   }
 
   Future<void> _onEdit(ClosetItem item) async {
+    final l10n = AppLocalizations.of(context)!;
     final category = TextEditingController(text: item.category ?? '');
     final colors = TextEditingController(text: item.colors.join(', '));
     final season = TextEditingController(text: item.season ?? '');
@@ -101,32 +108,37 @@ class _ClosetScreenState extends State<ClosetScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Edit item metadata'),
+          title: Text(l10n.editMetadata),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                     controller: category,
-                    decoration: const InputDecoration(labelText: 'Category')),
+                    decoration: InputDecoration(labelText: l10n.category)),
                 TextField(
                     controller: colors,
-                    decoration: const InputDecoration(
-                        labelText: 'Colors (comma separated)')),
+                    decoration: InputDecoration(labelText: l10n.colorsComma)),
                 TextField(
                     controller: season,
-                    decoration: const InputDecoration(labelText: 'Season')),
+                    decoration: InputDecoration(labelText: l10n.season)),
                 TextField(
                     controller: tags,
-                    decoration: const InputDecoration(
-                        labelText: 'Tags (comma separated)')),
+                    decoration: InputDecoration(labelText: l10n.tagsComma)),
                 DropdownButtonFormField<String>(
                   initialValue: gender,
-                  decoration: const InputDecoration(labelText: 'Gender'),
-                  items: const [
-                    DropdownMenuItem(value: 'common', child: Text('Common')),
-                    DropdownMenuItem(value: 'female', child: Text('Female')),
-                    DropdownMenuItem(value: 'male', child: Text('Male')),
+                  decoration: InputDecoration(labelText: l10n.gender),
+                  items: [
+                    DropdownMenuItem(
+                      value: 'common',
+                      child: Text(l10n.genderCommon),
+                    ),
+                    DropdownMenuItem(
+                      value: 'female',
+                      child: Text(l10n.genderFemale),
+                    ),
+                    DropdownMenuItem(
+                        value: 'male', child: Text(l10n.genderMale)),
                   ],
                   onChanged: (value) {
                     if (value != null) setDialogState(() => gender = value);
@@ -138,10 +150,10 @@ class _ClosetScreenState extends State<ClosetScreen> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
+                child: Text(l10n.cancel)),
             FilledButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Save')),
+                child: Text(l10n.save)),
           ],
         ),
       ),
@@ -163,7 +175,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Update failed: $e')),
+        SnackBar(content: Text(l10n.updateFailed('$e'))),
       );
     } finally {
       category.dispose();
@@ -175,6 +187,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final content = Column(
       children: [
         Expanded(child: _buildBody()),
@@ -191,7 +204,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
             child: FloatingActionButton.extended(
               onPressed: _busy ? null : _onUploadPressed,
               icon: const Icon(Icons.add_a_photo),
-              label: _busy ? const Text('Uploading…') : const Text('Add item'),
+              label: Text(_busy ? l10n.uploading : l10n.addItem),
             ),
           ),
         ],
@@ -199,7 +212,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
     }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Closet'),
+        title: Text(l10n.closetTitle),
         actions: [
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: _stream(),
@@ -212,12 +225,12 @@ class _ClosetScreenState extends State<ClosetScreen> {
             },
           ),
           IconButton(
-            tooltip: '共有クローゼットについて',
+            tooltip: l10n.sharedClosetAbout,
             onPressed: () => showSharedClosetAboutDialog(context),
             icon: const Icon(Icons.info_outline),
           ),
           IconButton(
-            tooltip: 'Sign out',
+            tooltip: l10n.signOut,
             onPressed: () => _auth.signOut(),
             icon: const Icon(Icons.logout),
           ),
@@ -232,7 +245,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _busy ? null : _onUploadPressed,
         icon: const Icon(Icons.add_a_photo),
-        label: _busy ? const Text('Uploading…') : const Text('Add item'),
+        label: Text(_busy ? l10n.uploading : l10n.addItem),
       ),
     );
   }
@@ -245,7 +258,11 @@ class _ClosetScreenState extends State<ClosetScreen> {
           return const Center(child: CircularProgressIndicator());
         }
         if (snap.hasError) {
-          return Center(child: Text('Error: ${snap.error}'));
+          return Center(
+            child: Text(
+              AppLocalizations.of(context)!.errorWithMessage('${snap.error}'),
+            ),
+          );
         }
         final docs = snap.data?.docs ?? const [];
         if (docs.isEmpty) {
@@ -269,14 +286,14 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      key: ValueKey('empty-state'),
+    return Center(
+      key: const ValueKey('empty-state'),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.checkroom, size: 64, color: Colors.grey),
-          SizedBox(height: 12),
-          Text('Add your first item to get started.'),
+          const Icon(Icons.checkroom, size: 64, color: AppColors.muted),
+          const SizedBox(height: 12),
+          Text(AppLocalizations.of(context)!.emptyCloset),
         ],
       ),
     );
@@ -349,6 +366,7 @@ class ClosetCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -368,7 +386,7 @@ class ClosetCard extends StatelessWidget {
                     top: 4,
                     right: 4,
                     child: IconButton(
-                      tooltip: 'Delete',
+                      tooltip: l10n.deleteTooltip,
                       iconSize: 20,
                       onPressed: onDelete,
                       icon:
@@ -380,7 +398,7 @@ class ClosetCard extends StatelessWidget {
                     top: 4,
                     right: 44,
                     child: IconButton(
-                      tooltip: 'Edit metadata',
+                      tooltip: l10n.editMetadataTooltip,
                       iconSize: 20,
                       onPressed: onEdit,
                       icon:
@@ -397,7 +415,7 @@ class ClosetCard extends StatelessWidget {
               children: [
                 if (item.status == ItemStatus.ready) ...[
                   Text(
-                    item.category ?? 'Unknown',
+                    item.category ?? l10n.unknown,
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   if (item.tags.isNotEmpty)
@@ -416,9 +434,9 @@ class ClosetCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ] else if (item.status == ItemStatus.processing)
-                  const Text('Analyzing…')
+                  Text(l10n.analyzing)
                 else if (item.status == ItemStatus.error)
-                  const Text('Analysis failed'),
+                  Text(l10n.analysisFailed),
               ],
             ),
           ),
@@ -434,13 +452,14 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     late final Color bg;
     late final String label;
     late final Widget icon;
     switch (status) {
       case ItemStatus.processing:
-        bg = Colors.amber.shade700;
-        label = 'PROCESSING';
+        bg = AppColors.accent;
+        label = l10n.statusProcessing;
         icon = const SizedBox(
           width: 12,
           height: 12,
@@ -451,18 +470,18 @@ class StatusBadge extends StatelessWidget {
         );
         break;
       case ItemStatus.ready:
-        bg = Colors.green.shade600;
-        label = 'READY';
+        bg = AppColors.success;
+        label = l10n.statusReady;
         icon = const Icon(Icons.check_circle, size: 14, color: Colors.white);
         break;
       case ItemStatus.error:
-        bg = Colors.red.shade600;
-        label = 'ERROR';
+        bg = AppColors.error;
+        label = l10n.statusError;
         icon = const Icon(Icons.error, size: 14, color: Colors.white);
         break;
       case ItemStatus.unknown:
-        bg = Colors.grey.shade600;
-        label = 'UNKNOWN';
+        bg = AppColors.tertiary;
+        label = l10n.statusUnknown;
         icon = const Icon(Icons.help, size: 14, color: Colors.white);
         break;
     }

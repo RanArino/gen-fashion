@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gen_fashion_web/coordination/coordination_screen.dart';
 
+import 'test_app.dart';
+
 void main() {
   testWidgets('renders coordination controls and event accordion',
       (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ListView(
-            children: const [CoordinationScreen(uid: 'user-123')],
-          ),
+      localizedTestApp(
+        ListView(
+          children: const [CoordinationScreen(uid: 'user-123')],
         ),
       ),
     );
@@ -23,16 +23,14 @@ void main() {
 
   testWidgets('renders event accordion tile', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: AgentEventTile(
-            event: AgentEvent(
-              seq: 1,
-              agentName: 'ClosetAgent',
-              eventKind: 'tool_call',
-              toolName: 'search_closet',
-              toolArgs: const {'source': 'SHARED_CLOSET'},
-            ),
+      localizedTestApp(
+        AgentEventTile(
+          event: AgentEvent(
+            seq: 1,
+            agentName: 'ClosetAgent',
+            eventKind: 'tool_call',
+            toolName: 'search_closet',
+            toolArgs: const {'source': 'SHARED_CLOSET'},
           ),
         ),
       ),
