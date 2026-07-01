@@ -60,7 +60,7 @@ After this change:
   Date/Author: 2026-07-01 / ExecPlan
 
 - Decision: Read at most `max_daily + 1` documents when counting.
-  Rationale: We only need to know whether `count >= limit`; reading more than `limit + 1` is wasteful. With the default limit of 5, the query reads at most 6 Firestore documents per `/select` call. This is negligible cost.
+  Rationale: We only need to know whether `count >= limit`; reading more than `limit + 1` is wasteful. With the default limit of 5, each quota check reads at most 6 Firestore documents. This is negligible cost.
   Date/Author: 2026-07-01 / ExecPlan
 
 - Decision: Count only `COMPLETED` sessions, not `ERROR` / `TIMEOUT` / in-flight sessions.
@@ -92,10 +92,19 @@ The gen-fashion app uses a hexagonal architecture split across two Cloud Run con
 - `fastapi-service` — REST API; handles authentication and all client-facing endpoints.
 - `adk-agent-service` — ADK agent runner; performs search and image generation.
 
-Image generation is triggered when the user calls `POST /sessions/{id}/select` after the agent pauses at `PROPOSING` state. This call flows through:
+The first paid-risk workflow begins when the user calls `POST /sessions/{id}/source`. This is where the propose ADK run can start and search Elasticsearch, so the daily cap is checked before that run is launched:
+
+    session_routes.py → select_source handler
+      → SelectClothingSourceUseCase.execute()
+        → enforce_daily_generation_limit(...)
+        → styling_repo.update(session)            (write source/preference, transition to SEARCHING)
+        → agent_run.start_session_run(phase="propose")  ← ADK searches/proposes here
+
+The cap is checked again when the user calls `POST /sessions/{id}/select` after the agent pauses at `PROPOSING` state:
 
     session_routes.py → select_candidates handler
       → SelectCandidatesUseCase.execute()
+        → enforce_daily_generation_limit(...)
         → styling_repo.update(session)            (write selectedItems, transition to GENERATING)
         → agent_run.start_session_run(phase="generate")  ← ADK runs style_synthesizer here
 
@@ -167,9 +176,9 @@ Implement the new method. Import `datetime` at the top of the file (alongside th
 The `cap` is `max_daily_generations_per_user + 1` so the query reads no more than 6 documents for the default limit of 5. The `max(..., 2)` guard prevents a zero cap when the limit is `0` (which should never reach this path, but is safe).
 
 
-**A-5: use-case enforcement** (`fastapi-service/app/use_cases/styling/select_candidates.py`)
+**A-5: use-case enforcement** (`fastapi-service/app/use_cases/styling/select_source.py`, `fastapi-service/app/use_cases/styling/select_candidates.py`)
 
-Inject `Settings` and check the limit before triggering the agent run.
+Inject `Settings` and check the limit before triggering either agent run. The current implementation factors the shared logic into `fastapi-service/app/use_cases/styling/daily_generation_limit.py`.
 
 Add imports:
 
@@ -189,7 +198,9 @@ Change the constructor signature:
         self.agent_run = agent_run
         self._settings = settings or get_settings()
 
-In `execute()`, after the existing validation block (unknown candidate ids check) and before `session.select_candidates(selected)`, insert the daily limit check:
+In `SelectClothingSourceUseCase.execute()`, after source/session validation and before `session.select_source(...)`, call the shared limit helper. In `SelectCandidatesUseCase.execute()`, after candidate validation and before `session.select_candidates(selected)`, call the same helper.
+
+The helper implements:
 
     if self._settings.max_daily_generations_per_user > 0:
         today_start = datetime.now(timezone.utc).replace(
@@ -206,7 +217,15 @@ In `execute()`, after the existing validation block (unknown candidate ids check
 
 **A-6: dependency wiring** (`fastapi-service/app/dependencies.py`)
 
-Pass `get_settings()` to `SelectCandidatesUseCase`:
+Pass `get_settings()` to both session use cases:
+
+    def get_select_source_use_case() -> SelectClothingSourceUseCase:
+        return SelectClothingSourceUseCase(
+            get_styling_repository(),
+            get_closet_repository(),
+            get_agent_run(),
+            get_settings(),
+        )
 
     def get_select_candidates_use_case() -> SelectCandidatesUseCase:
         return SelectCandidatesUseCase(get_styling_repository(), get_agent_run(), get_settings())
@@ -218,7 +237,7 @@ Import the new exception at the top:
 
     from app.domain.styling.exceptions import DailyGenerationLimitExceeded
 
-In the `select_candidates` handler, add a catch clause before the `AgentRunStartFailed` catch:
+In both `select_source` and `select_candidates`, add a catch clause before the `AgentRunStartFailed` catch:
 
     except DailyGenerationLimitExceeded as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -244,8 +263,8 @@ Add to `fastapi-service/tests/test_session_routes.py`:
 
 Add after the `MAX_CLOSET_IMAGES_PER_USER` line:
 
-    # 0 = unlimited (local dev default). Set to 5 in production via --set-env-vars.
-    MAX_DAILY_GENERATIONS_PER_USER=0
+    # 5 enables local quota testing. Set to 0 only when intentionally disabling the limit.
+    MAX_DAILY_GENERATIONS_PER_USER=5
 
 
 **B-2: deploy script** (`scripts/deploy/deploy_fastapi.sh`)
@@ -295,11 +314,11 @@ Step 3 — Edit `fastapi-service/app/ports/styling_repository.py`: add `from dat
 
 Step 4 — Edit `fastapi-service/app/adapters/firestore_styling_repo.py`: add `from datetime import datetime` to imports, add `count_completed_today` implementation at the bottom of the class.
 
-Step 5 — Edit `fastapi-service/app/use_cases/styling/select_candidates.py`: add imports, extend constructor, add daily limit check inside `execute()`.
+Step 5 — Edit `fastapi-service/app/use_cases/styling/daily_generation_limit.py`, `select_source.py`, and `select_candidates.py`: add shared limit helper, inject settings, and check before each agent run.
 
-Step 6 — Edit `fastapi-service/app/dependencies.py`: pass `get_settings()` as third argument to `SelectCandidatesUseCase(...)`.
+Step 6 — Edit `fastapi-service/app/dependencies.py`: pass `get_settings()` to `SelectClothingSourceUseCase(...)` and `SelectCandidatesUseCase(...)`.
 
-Step 7 — Edit `fastapi-service/app/handlers/session_routes.py`: import `DailyGenerationLimitExceeded`, add 429 catch in `select_candidates`.
+Step 7 — Edit `fastapi-service/app/handlers/session_routes.py`: import `DailyGenerationLimitExceeded`, add 429 catch in `select_source` and `select_candidates`.
 
 Step 8 — Write/extend tests in `fastapi-service/tests/`.
 
@@ -310,9 +329,9 @@ Step 9 — Run tests:
     .venv312/bin/pip install -q -r requirements.txt
     .venv312/bin/pytest -q
 
-Observed: 73 passed, 1 skipped. The temporary `.venv312` directory was removed after verification.
+Observed after local hardening: 76 passed.
 
-Step 10 — Edit `.env.example`: add `MAX_DAILY_GENERATIONS_PER_USER=0`.
+Step 10 — Edit `.env.example`: set `MAX_DAILY_GENERATIONS_PER_USER=5` for local quota testing.
 
 Step 11 — Edit `scripts/deploy/deploy_fastapi.sh`: add `ENV_VARS+="|MAX_DAILY_GENERATIONS_PER_USER=5"`.
 
@@ -321,9 +340,10 @@ Step 12 — Build and push updated `fastapi-service` image; run deploy script (M
 Step 13 — Smoke test production limit:
 
     # Sign in and get a Firebase ID token (use the browser or scripts/m5_coordination_smoke.py helper)
-    # After 5 completed sessions, the next POST /sessions/{id}/select must return 429.
+    # After 5 completed sessions, the next POST /sessions/{id}/source must return 429
+    # before ADK launch. Existing PROPOSING sessions must also get 429 on /select.
     # Alternatively: set MAX_DAILY_GENERATIONS_PER_USER=1 temporarily, complete one session,
-    # then verify the next /select returns 429.
+    # then verify the next /source and /select return 429.
 
 
 ## Validation and Acceptance
@@ -334,10 +354,11 @@ Step 13 — Smoke test production limit:
     cd fastapi-service
     .venv312/bin/pytest -q
 
-Observed: 73 passed, 1 skipped. New tests exercise:
+Observed after local hardening: 76 passed. Tests exercise:
 - `DailyGenerationLimitExceeded` raised when `count >= limit` and `limit > 0`.
 - No exception raised when `limit == 0` (unlimited mode; `count_completed_today` is never called).
-- HTTP 429 with `DailyGenerationLimitExceeded` detail returned by the route handler.
+- `SelectClothingSourceUseCase` leaves the session in `SOURCE_SELECTING` and does not call `agent_run.start_session_run(...)` when the limit is reached.
+- HTTP 429 with `DailyGenerationLimitExceeded` detail returned by both route handlers.
 
 ### Production (deployment smoke)
 
@@ -353,7 +374,8 @@ Not run:
 
 Expected behavior:
 - A user who completes their 5th generation today can still see the result.
-- The same user's next `POST /sessions/{id}/select` (after starting a new session) returns HTTP `429 Too Many Requests` with a JSON body containing `"Daily generation limit of 5 reached. Limit resets at midnight UTC."`.
+- The same user's next `POST /sessions/{id}/source` returns HTTP `429 Too Many Requests` before ADK launch, with a JSON body containing `"Daily generation limit of 5 reached. Limit resets at midnight UTC."`.
+- If the user already has a `PROPOSING` session, the next `POST /sessions/{id}/select` also returns the same HTTP 429 before the generate agent run.
 - A different user who has 0 completions today is unaffected.
 - The next UTC calendar day, the first user's limit is cleared (no code change; the query window shifts forward).
 
@@ -389,6 +411,8 @@ Files touched:
     fastapi-service/app/domain/styling/exceptions.py
     fastapi-service/app/ports/styling_repository.py
     fastapi-service/app/adapters/firestore_styling_repo.py
+    fastapi-service/app/use_cases/styling/daily_generation_limit.py
+    fastapi-service/app/use_cases/styling/select_source.py
     fastapi-service/app/use_cases/styling/select_candidates.py
     fastapi-service/app/dependencies.py
     fastapi-service/app/handlers/session_routes.py
@@ -400,11 +424,13 @@ Files touched:
 Verification artifacts:
 
     cd fastapi-service
-    .venv312/bin/pytest -q
-    # 73 passed, 1 skipped
+    pytest -q
+    # 76 passed
 
-    bash -n scripts/deploy/deploy_fastapi.sh
-    # exit 0
+    docker-compose exec -T fastapi-service python -m pytest -q \
+      tests/use_cases/test_styling_use_cases.py::test_select_source_rejects_when_daily_generation_limit_reached_before_agent_run \
+      tests/test_session_routes.py::test_select_source_returns_429_when_daily_generation_limit_reached
+    # 2 passed
 
     gcloud builds submit fastapi-service --tag asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion/fastapi-service:mh-20260701-083153 --project animation-agent
     # Build 43eec9cd-a686-41e3-bcf8-70e261280292 SUCCESS
@@ -417,7 +443,7 @@ Verification artifacts:
 
 `adk-agent-service` is not touched — it executes generation but never decides whether to permit it.
 
-Flutter client note: the current error handling for `/select` displays a generic error dialog/snackbar on non-202 responses. A 429 will surface as a generic error to the user in the current Flutter code. A follow-up improvement would catch 429 specifically and show "今日の生成上限（5回）に達しました。明日またお試しください。" but that Flutter UX change is out of scope for this ExecPlan.
+Flutter client note: the current error handling for `/source` and `/select` displays a generic error on non-202 responses. A 429 will surface as a generic error to the user in the current Flutter code. A follow-up improvement would catch 429 specifically and show "今日の生成上限（5回）に達しました。明日またお試しください。" but that Flutter UX change is out of scope for this ExecPlan.
 
 
 ## Interfaces and Dependencies
