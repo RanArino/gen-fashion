@@ -739,6 +739,7 @@ async def resolve_user(line_user_id: str) -> str | None:
 | `LIFF_ID` | — | env var | LINE LIFF アプリ ID（LINE Developers Console で発行） |
 | `LINE_LOGIN_CHANNEL_ID` | — | env var | LINE Login チャネル ID（LIFF 用、Messaging API チャネルとは別） |
 | `AGENT_MODEL` | `gemini-2.0-flash` | env var | 全 Agent の LLM モデル ID。デモ中のモデル切り替えに使用 |
+| `MAX_DAILY_GENERATIONS_PER_USER` | `5` | env var | 1ユーザーあたりの1日（UTC 0時起算）の画像生成完了上限。ローカル Docker と本番の既定は `5`。`0` は明示的な無制限モード（§21、ADL-034） |
 
 ---
 
@@ -1020,6 +1021,14 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **Trade-off:** CI 上での統合テスト環境（Emulator / ES）の用意が必要。`make test` は docker-compose 前提のため CI 用に分離する。
 - **Date/Author:** 2026-06-26 / Ran（CI/CD 計画起票時に提案）
 
+### ADL-034: 日次画像生成上限は `COMPLETED` セッション数でカウント、`0` = 無制限
+
+- **Decision:** 日次上限のカウント対象を `status == COMPLETED` かつ `completedAt >= 今日の UTC 0時` のセッション数とする。`MAX_DAILY_GENERATIONS_PER_USER = 0` は明示的な無制限モードを意味する。強制ポイントは `SelectClothingSourceUseCase.execute()`（`POST /sessions/{id}/source`、propose/search agent run 起動前）と `SelectCandidatesUseCase.execute()`（`POST /sessions/{id}/select`、generate agent run 起動前）のユースケース層。
+- **Alternatives:** (a) `/select` 呼び出し時点でカウント（生成失敗でも消費 — ユーザーフレンドリーでない）、(b) `styleResult.coordinateImageUrl` 存在時のみカウント（Firestore のネストフィールド存在チェックが複雑）。
+- **Rationale:** `COMPLETED` のみカウントすることで、ADK エラー・タイムアウト・ネット切断起因の失敗はユーザーの消費に算入しない。Flutter の SSE 切断後に ADK がバックグラウンドで完走して `COMPLETED` になった場合はカウントする（Vertex AI API コールが実際に発生し、履歴ギャラリーで画像確認できるため）。`0` = 無制限パターンは `MAX_CLOSET_IMAGES_PER_USER` と統一。既存の `(userId, status, completedAt DESC)` Firestore 複合インデックスをそのまま流用し、`limit(cap)` で1リクエストあたり最大 `limit + 1`（デフォルト 6）ドキュメント読み取りに抑える。
+- **Trade-off:** COMPLETED でも Flutter 画面に表示されていないケースがある（SSE 切断）が、Vertex AI 課金が発生しているため消費扱いとする。Flutter 側での 429 専用メッセージ（「本日の上限に達しました」）は本 ADL のスコープ外（将来の UI 改善）。
+- **Date/Author:** 2026-07-01 / Ran
+
 ### ADL-032: CD は main マージで Artifact Registry → Cloud Run / Firebase Hosting に自動デプロイ、失敗時はリビジョンロールバック
 
 - **Decision:** `main` マージで、両イメージを **Artifact Registry** にビルド/プッシュ → 両 **Cloud Run** サービスをデプロイ → **Flutter Web** をビルドし **Firebase Hosting** にデプロイ → **デプロイ後スモーク**（`GET /health` ＋ deployed URL に対する認証付き coordination smoke）を実行する。スモーク失敗時は Cloud Run のトラフィックを直前のリビジョンへ戻す（`gcloud run services update-traffic --to-revisions=<prev>=100`）。デプロイ処理は MD が定義する `scripts/deploy/deploy_fastapi.sh` / `deploy_adk.sh` をワークフローから呼ぶ薄いラッパとし、アプリの振る舞いは変えない。秘密は Secret Manager（`--set-secrets`）経由でのみ注入し、ワークフローログに出さない。
@@ -1233,3 +1242,46 @@ CC BY-SA 4.0 に基づき、以下を実装する：
 
 - **パスパラメータ:** コーディネートセッション（例: `/coordinate/{sessionId}`）や履歴詳細（例: `/history/{sessionId}`）へのディープリンクを将来拡張として扱う。**Phase 1a の必須範囲外**（トップレベルのビュールート化＝MG-1…MG-3 が UX 改善の本体）。
 - **受け入れ:** （将来）特定セッション/履歴項目の URL を共有・リロードでき、その項目が直接開く。
+
+---
+
+## 21. Production Daily Image Generation Rate Limit (MH)
+
+> ローカルと本番で、1ユーザーあたりの1日の画像生成完了数を上限で制限し、Vertex AI 課金を抑制する。feature-matrix の **MH-1…MH-4** に対応。ExecPlan: `docs/plans/20260701-mh-daily-generation-rate-limit.md`。実装方針は ADL-034。2026-07-01 に実装済み（FastAPI 76 passed; local container targeted tests passed; local/container `MAX_DAILY_GENERATIONS_PER_USER=5`）。
+
+### 21.1 概要
+
+Vertex AI（Nano Banana / `gemini-2.5-flash-image`）の API 呼び出しは課金コストが発生する。無制限の場合、単一ユーザーによるクォータ枯渇や意図しない高額課金のリスクがある。本制限は以下を保証する：
+
+- 1ユーザーあたり1日（UTC 0時起算）に完了できる画像生成は **`MAX_DAILY_GENERATIONS_PER_USER` 件**まで（本番デフォルト: 5）。
+- 上限に達した場合は `POST /sessions/{id}/source`（source 選択・propose/search agent 起動トリガー）が **HTTP 429 Too Many Requests** を返し、ADK agent run を開始しない。
+- `POST /sessions/{id}/select`（候補選択・generate agent 起動トリガー）でも同じチェックを行い、二重のガードとして **HTTP 429 Too Many Requests** を返す。
+- `MAX_DAILY_GENERATIONS_PER_USER=0` の場合のみ制限なし。
+
+### 21.2 カウント対象と方針（ADL-034）
+
+- **カウント対象:** `sessions` コレクション内の `userId == user_id` かつ `status == "COMPLETED"` かつ `completedAt >= 今日の UTC 0時` のセッション数。
+- **カウントされない:** `status` が `ERROR` / `TIMEOUT` / `GENERATING` のセッション（生成失敗・タイムアウト・未完了）はカウントしない。システム障害・ADK エラー・ネット切断起因の失敗はユーザーの消費に算入しない。
+- **SSE 途中断の扱い:** Flutter の SSE が切断されても `adk-agent-service` がバックグラウンドで完走し `COMPLETED` になった場合は **カウントする**。Vertex AI API コールが実際に発生し、履歴ギャラリーで画像を確認できるため（§18.5 / ME-7）。
+
+### 21.3 強制ポイント
+
+`POST /sessions/{id}/source` の `SelectClothingSourceUseCase.execute()` で、エージェント実行（`AgentRunPort.start_session_run(phase="propose")`）を開始する前にカウントチェックを行う。これにより、上限到達後は候補検索・提案用の ADK run も Elasticsearch 検索も開始しない。
+
+加えて、`POST /sessions/{id}/select` の `SelectCandidatesUseCase.execute()` でも、エージェント実行（`AgentRunPort.start_session_run(phase="generate")`）を開始する前に同じカウントチェックを行う。これは、既存の `PROPOSING` セッションや並行操作から generate run が起動されることを防ぐ二重ガードである。
+
+### 21.4 設定
+
+| 変数名 | 本番値 | ローカルデフォルト | 管理方法 | 説明 |
+|---|---|---|---|---|
+| `MAX_DAILY_GENERATIONS_PER_USER` | `5` | `5` | env var | 1ユーザーあたりの1日（UTC 0時起算）の画像生成完了上限。`0` = 明示的な無制限 |
+
+**管理方法:** `--set-env-vars` で Cloud Run に設定する（非機密）。`scripts/deploy/deploy_fastapi.sh` の `ENV_VARS` ブロックに追加する。`adk-agent-service` の deploy script は変更不要（制限チェックは `fastapi-service` のみ）。
+
+### 21.5 受け入れ条件
+
+- 5回の生成を完了したユーザーの次の `POST /sessions/{id}/source` が、ADK run 起動前に HTTP 429 と `"Daily generation limit of 5 reached. Limit resets at midnight UTC."` を返すこと。
+- 5回の生成を完了したユーザーの `POST /sessions/{id}/select` も、generate ADK run 起動前に同じ HTTP 429 を返すこと。
+- ローカル `make dev` でも同条件で 429 が発生すること。`MAX_DAILY_GENERATIONS_PER_USER=0` を明示した場合のみ 429 が発生しないこと。
+- `ERROR` / `TIMEOUT` で終了したセッションはカウントされないこと。
+- 翌 UTC 日（JST 09:00 以降）には制限がリセットされ、同ユーザーが再び生成できること。
