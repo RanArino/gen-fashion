@@ -156,6 +156,21 @@ class FirestoreStylingRepository(StylingRepositoryPort):
                 sessions.append(session)
         return sessions
 
+    async def count_completed_today(self, user_id: str, since: datetime) -> int:
+        settings = get_settings()
+        cap = max(settings.max_daily_generations_per_user + 1, 2)
+        query = (
+            self._collection()
+            .where("userId", "==", user_id)
+            .where("status", "==", StyleSessionState.COMPLETED.value)
+            .where("completedAt", ">=", since)
+            .limit(cap)
+        )
+        count = 0
+        async for _ in query.stream():
+            count += 1
+        return count
+
     async def list_events(
         self, user_id: str, session_id: StyleSessionId, after_seq: int = 0
     ) -> list[dict[str, Any]]:
