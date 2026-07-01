@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     max_closet_images_per_user: int = 20
+    max_daily_generations_per_user: int = 0
 
     google_cloud_project: str | None = None
     firebase_project_id: str | None = None
