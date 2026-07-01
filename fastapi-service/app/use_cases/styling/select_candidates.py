@@ -1,7 +1,10 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import UUID
 
+from app.config import Settings, get_settings
 from app.domain.styling import StyleSessionId, StyleSessionNotFound, StyleSessionState
+from app.domain.styling.exceptions import DailyGenerationLimitExceeded
 from app.ports import AgentRunPort, AgentRunRequest, StylingRepositoryPort
 from app.use_cases.styling.select_source import AgentRunStartFailed
 
@@ -16,9 +19,15 @@ class SelectCandidatesResult:
 class SelectCandidatesUseCase:
     """Persist explicit candidate consent and trigger generation."""
 
-    def __init__(self, styling_repo: StylingRepositoryPort, agent_run: AgentRunPort):
+    def __init__(
+        self,
+        styling_repo: StylingRepositoryPort,
+        agent_run: AgentRunPort,
+        settings: Settings | None = None,
+    ):
         self.styling_repo = styling_repo
         self.agent_run = agent_run
+        self._settings = settings or get_settings()
 
     async def execute(
         self, user_id: str, session_id: str, selected_item_ids: list[str]
@@ -41,6 +50,17 @@ class SelectCandidatesUseCase:
         if unknown:
             raise ValueError(f"Unknown candidate ids: {', '.join(unknown)}")
         selected = [by_id[item_id] for item_id in selected_item_ids]
+        if self._settings.max_daily_generations_per_user > 0:
+            today_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            count = await self.styling_repo.count_completed_today(user_id, today_start)
+            if count >= self._settings.max_daily_generations_per_user:
+                raise DailyGenerationLimitExceeded(
+                    f"Daily generation limit of "
+                    f"{self._settings.max_daily_generations_per_user} reached. "
+                    f"Limit resets at midnight UTC."
+                )
         session.select_candidates(selected)
         await self.styling_repo.update(session)
         preference = session.user_preference
