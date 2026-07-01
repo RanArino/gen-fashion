@@ -48,6 +48,7 @@ class FirestoreStylingRepository(StylingRepositoryPort):
             "style": preference.style,
             "colorPreference": preference.color_preference,
             "gender": preference.gender,
+            "language": preference.language,
         }
 
     @staticmethod
@@ -60,6 +61,7 @@ class FirestoreStylingRepository(StylingRepositoryPort):
             style=data.get("style"),
             color_preference=data.get("colorPreference"),
             gender=data.get("gender"),
+            language=data.get("language"),
         )
 
     @staticmethod

@@ -66,6 +66,7 @@ class SelectCandidatesUseCase:
                         "style": preference.style if preference else None,
                         "colorPreference": preference.color_preference if preference else None,
                         "gender": preference.gender if preference else None,
+                        "language": preference.language if preference else None,
                     },
                     phase="generate",
                     selected_items=selected,

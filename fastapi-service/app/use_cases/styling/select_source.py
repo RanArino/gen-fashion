@@ -82,6 +82,7 @@ class SelectClothingSourceUseCase:
                         "style": preference.style,
                         "colorPreference": preference.color_preference,
                         "gender": preference.gender,
+                        "language": preference.language,
                     },
                     phase="propose",
                 )
