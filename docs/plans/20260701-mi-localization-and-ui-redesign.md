@@ -29,7 +29,8 @@ This ExecPlan is authored at the user's explicit request. It corresponds to feat
 - [x] (2026-07-02 JST) Milestone A — Localization foundation: `flutter_localizations` + `gen-l10n` (ARB `ja`/`en`), `LocaleController`/`LocaleScope` wired into `MaterialApp`, a header language switcher, and per-user persistence to `users/{uid}.language`. Verified with `flutter analyze` and `flutter test`.
 - [x] (2026-07-02 JST) Milestone B — Localized generated content: `UserPreference.language` in the domain, Flutter sends `userPreference.language` at run start, `adk-agent-service` injects language into run context/tool args, `style_synthesizer` includes it in the prompt/result, and History/result rendering remains verbatim. Verified with ADK pytest.
 - [x] (2026-07-02 JST) Milestone C — Design system theme: central `lib/theme/app_theme.dart` and `lib/theme/components.dart` implement the `temp-ui` palette/typography/components and are wired into `MaterialApp.theme`.
-- [x] (2026-07-02 JST) Milestone D implementation — Login, Home shell/nav, Closet, Coordinate, History, Shared gallery, attribution, dialogs, snackbars, and test wrappers were localized/restyled with the theme/components. Automated verification passed; manual browser screenshots/checks remain to be captured.
+- [x] (2026-07-02 JST) Milestone D implementation — Login, Home shell/nav, Closet, Coordinate, History, Shared gallery, attribution, dialogs, snackbars, and test wrappers were localized/restyled with the theme/components.
+- [x] (2026-07-02 JST) Milestone D verification (MI-7) — Full E2E against `make dev`: FastAPI 77 passed (incl. two new `language` regression tests), ADK 41, `flutter analyze` clean, `flutter test` 15. Scripted `en`+`ja` `SHARED_CLOSET` coordinations proved language freeze at `PROPOSING` + final-session persistence + `style_synthesizer` propagation + `COMPLETED`. Rendered browser E2E captured the redesigned UI in both locales via persisted `users/{uid}.language`. Verification found and fixed a four-site FastAPI language-drop bug (see Surprises + Outcomes).
 
 
 ## Surprises & Discoveries
@@ -40,6 +41,10 @@ This ExecPlan is authored at the user's explicit request. It corresponds to feat
 
 - Observation: FastAPI's local `.venv` exists but does not include `pytest`, so the FastAPI suite could not be run without modifying the environment.
   Evidence: from `fastapi-service`, `./.venv/bin/python -m pytest -q` exits with `No module named pytest`. The touched FastAPI file was still checked with `./.venv/bin/python -m py_compile app/domain/styling/value_objects.py`.
+  Resolution (2026-07-02): the full FastAPI suite runs inside the container (the same path `make test` uses): `docker-compose exec -T fastapi-service python -m pytest -q` → 77 passed. The `.venv` gap is a host-only limitation, not a real coverage gap.
+
+- Observation (real bug, caught only by E2E): FastAPI silently dropped `userPreference.language` at the request boundary, so the chosen language never reached Firestore or the ADK and `style_synthesizer` always defaulted to `ja` — even though the domain VO, the Flutter sender, and the ADK reader were each individually correct.
+  Evidence: the first `verify_language_persistence.py --language en` run returned `language_frozen_at_proposing=null`, `language_persisted_final=null`, `style_synthesizer_language_arg="ja"` (yet `status=COMPLETED`). Root cause: four hard-coded preference field lists omitted `language` — `UserPreferenceRequest` (`handlers/session_routes.py`), `_to_document`/`_from_document` (`adapters/firestore_styling_repo.py`), and the ADK payloads in `use_cases/styling/select_source.py` (propose) and `select_candidates.py` (generate). Adding `language` to all four fixed it; the re-run returned `en`/`en`/`en` + `COMPLETED`, and a `ja` control returned `ja`/`ja`/`ja`. Lesson: per-side unit tests pass while a boundary that re-lists fields quietly drops new ones — an end-to-end assertion (persisted value == requested value) is what catches it. Guarded now by a request-boundary test and an extended Firestore round-trip test.
 
 
 ## Decision Log
@@ -79,21 +84,27 @@ This ExecPlan is authored at the user's explicit request. It corresponds to feat
 
 Implementation landed for the code milestones. Static Flutter chrome across Login, Home/nav, Closet, Coordinate, History, Shared gallery, attribution dialog/footer, snackbars, and edit/delete dialogs is externalized into `app_en.arb` / `app_ja.arb`; generated content language is frozen by sending `userPreference.language` at run start and passing it through ADK tool args to `style_synthesizer`.
 
-Verification completed:
+Verification completed (2026-07-02, against `make dev`):
 
-    cd flutter-web-app && flutter analyze
-    No issues found
+    flutter analyze            → No issues found
+    flutter test               → 15 passed
+    docker-compose exec -T adk-agent-service python -m pytest -q      → 41 passed
+    docker-compose exec -T fastapi-service python -m pytest -q        → 77 passed (was 76; +1 language regression test)
 
-    cd flutter-web-app && flutter test
-    15 tests passed
+    # scripted language persistence proof (scratchpad verify_language_persistence.py), en and ja:
+    #   language_frozen_at_proposing == language_persisted_final == style_synthesizer_language_arg == requested
+    #   terminal_event = session.completed, status = COMPLETED   (en → en/en/en; ja → ja/ja/ja)
 
-    cd adk-agent-service && ./.venv/bin/pytest -q
-    41 passed, 1 warning
+    # rendered browser E2E (scripts/m5_coordination_browser_e2e.py) at each persisted users/{uid}.language:
+    #   ja screenshot: header "gen-fashion" (Instrument Serif) + "STUDIO" eyebrow + "コーディネート" + tabs 共有/自分 + 🌐 日本
+    #   en screenshot: same design + "Coordination" + tabs Shared/Mine + labels Shared closet/Occasion/Style/Season + 🌐 English
+    #   both runs: in-browser SHARED_CLOSET coordination reached COMPLETED with a rendered result
 
-    cd fastapi-service && ./.venv/bin/python -m py_compile app/domain/styling/value_objects.py
-    # passed
+The headline requirement — "language applied at processing time; past data not retranslated" — is proven by construction and by test: each session freezes its own `userPreference.language`, and the two independent `en`/`ja` coordinations each persisted and generated in their own language, with History/result surfaces rendering the stored text verbatim (no client-side re-localization path exists).
 
-Remaining verification: manual browser checks/screenshots in both languages and a real/emulated coordination run confirming persisted `users/{uid}.language` and `sessions/{id}.userPreference.language` in Firestore.
+Bug found and fixed during verification: FastAPI dropped `userPreference.language` at four hard-coded field lists (`UserPreferenceRequest`, the Firestore `_to_document`/`_from_document` mappers, and the propose/generate ADK payloads), so the language never left FastAPI and the ADK defaulted to `ja`. All four now include `language`; regression coverage added at the request boundary and in the Firestore round-trip test. This is the load-bearing lesson of the milestone: the feature looked complete (each layer correct in isolation) but was broken end-to-end until the boundary was exercised.
+
+Residual (not blocking): per-screen screenshots beyond Coordinate + Home/nav (Closet, History, Shared, Login) were not individually captured; those screens consume the same central `MaterialApp.theme` and localized catalog and are covered by `flutter analyze` / `flutter test`. Google Fonts load at runtime (offline fallback to system fonts is acceptable). Changes are committed on `feat/localization-and-ui-redesign` except the four-site language fix + regression tests, which are working-tree changes pending commit.
 
 
 ## Context and Orientation
