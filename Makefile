@@ -22,7 +22,17 @@ dev:
 web:
 	cd flutter-web-app && flutter run -d chrome --web-port 8088 \
 	  --dart-define=API_BASE_URL=http://localhost:8000 \
-	  --dart-define=USE_EMULATORS=true
+	  --dart-define=USE_EMULATORS=true \
+	  --dart-define=FIREBASE_PROJECT_ID=gen-fashion-local \
+	  --dart-define=FIREBASE_API_KEY=AIzaSyDLocalEmulatorOnlyKey00000000000 \
+	  --dart-define=FIREBASE_APP_ID=1:000000000000:web:0000000000000000 \
+	  --dart-define=FIREBASE_MESSAGING_SENDER_ID=000000000000 \
+	  --dart-define=FIREBASE_AUTH_DOMAIN=gen-fashion-local.firebaseapp.com \
+	  --dart-define=FIREBASE_STORAGE_BUCKET=gen-fashion-local.appspot.com \
+	  --dart-define=AUTH_EMULATOR_HOST=localhost \
+	  --dart-define=AUTH_EMULATOR_PORT=9099 \
+	  --dart-define=FIRESTORE_EMULATOR_HOST=localhost \
+	  --dart-define=FIRESTORE_EMULATOR_PORT=8080
 
 test:
 	docker-compose run --rm fastapi-service pytest
