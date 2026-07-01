@@ -22,6 +22,7 @@ from app.domain.styling import (
     StyleSessionNotFound,
     UserPreference,
 )
+from app.domain.styling.exceptions import DailyGenerationLimitExceeded
 from app.ports import StylingRepositoryPort
 from app.use_cases.styling import (
     AgentRunStartFailed,
@@ -176,6 +177,8 @@ async def select_candidates(
         message = str(exc)
         status_code = 409 if "Cannot select candidates" in message else 400
         raise HTTPException(status_code=status_code, detail=message) from exc
+    except DailyGenerationLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except AgentRunStartFailed as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {
