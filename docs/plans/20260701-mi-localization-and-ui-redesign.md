@@ -26,10 +26,10 @@ This ExecPlan is authored at the user's explicit request. It corresponds to feat
 ## Progress
 
 
-- [ ] Milestone A — Localization foundation: `flutter_localizations` + `gen-l10n` (ARB `ja`/`en`), a `Locale` controller wired into `MaterialApp`, an in-app language switcher, and per-user persistence to `users/{uid}.language`. (MI-1)
-- [ ] Milestone B — Localized generated content: `UserPreference.language` in the domain, propagation through `/sessions/{id}/source` → `adk-agent-service` context and `style_synthesizer`, generation instructed in the selected language, and the value persisted per session so History renders the stored language (no retro-translation). (MI-2, MI-3)
-- [ ] Milestone C — Design system theme: a central `theme.dart` built from the `temp-ui` spec (fonts via `google_fonts`, earthy palette, shapes), applied through `MaterialApp.theme`, plus a small set of reusable styled widgets (eyebrow label, styled card, primary/secondary buttons, glass app bar). (MI-4, MI-5)
-- [ ] Milestone D — Restyle screens + responsive + verification: apply the theme/components to Login, Home shell/nav, Closet, Coordinate (accordion + candidate cards + result), History, and Shared gallery; keep layouts responsive with no overlapping text; run `flutter analyze` / `flutter test` and a browser visual check. (MI-6, MI-7)
+- [x] (2026-07-02 JST) Milestone A — Localization foundation: `flutter_localizations` + `gen-l10n` (ARB `ja`/`en`), `LocaleController`/`LocaleScope` wired into `MaterialApp`, a header language switcher, and per-user persistence to `users/{uid}.language`. Verified with `flutter analyze` and `flutter test`.
+- [x] (2026-07-02 JST) Milestone B — Localized generated content: `UserPreference.language` in the domain, Flutter sends `userPreference.language` at run start, `adk-agent-service` injects language into run context/tool args, `style_synthesizer` includes it in the prompt/result, and History/result rendering remains verbatim. Verified with ADK pytest.
+- [x] (2026-07-02 JST) Milestone C — Design system theme: central `lib/theme/app_theme.dart` and `lib/theme/components.dart` implement the `temp-ui` palette/typography/components and are wired into `MaterialApp.theme`.
+- [x] (2026-07-02 JST) Milestone D implementation — Login, Home shell/nav, Closet, Coordinate, History, Shared gallery, attribution, dialogs, snackbars, and test wrappers were localized/restyled with the theme/components. Automated verification passed; manual browser screenshots/checks remain to be captured.
 
 
 ## Surprises & Discoveries
@@ -37,6 +37,9 @@ This ExecPlan is authored at the user's explicit request. It corresponds to feat
 
 - Observation: `userPreference` already flows end-to-end as an opaque `dict` from Flutter through FastAPI to `adk-agent-service`.
   Evidence: `flutter-web-app/lib/coordination/coordination_screen.dart:78-84` builds the `userPreference` map (including `gender`), `fastapi-service/app/adapters/adk_agent_run.py:27` forwards `"userPreference": request.user_preference`, and `adk-agent-service/styling_app/server.py:34` receives it. This means `language` rides the existing transport with no new request field — only producers/consumers of the value change. Mirror the `gender` plumbing exactly.
+
+- Observation: FastAPI's local `.venv` exists but does not include `pytest`, so the FastAPI suite could not be run without modifying the environment.
+  Evidence: from `fastapi-service`, `./.venv/bin/python -m pytest -q` exits with `No module named pytest`. The touched FastAPI file was still checked with `./.venv/bin/python -m py_compile app/domain/styling/value_objects.py`.
 
 
 ## Decision Log
@@ -74,7 +77,23 @@ This ExecPlan is authored at the user's explicit request. It corresponds to feat
 ## Outcomes & Retrospective
 
 
-To be completed as milestones land. Record: which strings were externalized, the final ARB coverage, verification output (`flutter analyze` / `flutter test`), and a browser screenshot per language and per redesigned screen.
+Implementation landed for the code milestones. Static Flutter chrome across Login, Home/nav, Closet, Coordinate, History, Shared gallery, attribution dialog/footer, snackbars, and edit/delete dialogs is externalized into `app_en.arb` / `app_ja.arb`; generated content language is frozen by sending `userPreference.language` at run start and passing it through ADK tool args to `style_synthesizer`.
+
+Verification completed:
+
+    cd flutter-web-app && flutter analyze
+    No issues found
+
+    cd flutter-web-app && flutter test
+    15 tests passed
+
+    cd adk-agent-service && ./.venv/bin/pytest -q
+    41 passed, 1 warning
+
+    cd fastapi-service && ./.venv/bin/python -m py_compile app/domain/styling/value_objects.py
+    # passed
+
+Remaining verification: manual browser checks/screenshots in both languages and a real/emulated coordination run confirming persisted `users/{uid}.language` and `sessions/{id}.userPreference.language` in Firestore.
 
 
 ## Context and Orientation
