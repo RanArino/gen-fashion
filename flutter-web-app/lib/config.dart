@@ -10,7 +10,7 @@ class AppConfig {
   );
   static const bool useEmulators = bool.fromEnvironment(
     'USE_EMULATORS',
-    defaultValue: true,
+    defaultValue: false,
   );
   static const bool e2eAutoSignIn = bool.fromEnvironment(
     'E2E_AUTO_SIGN_IN',
@@ -26,7 +26,7 @@ class AppConfig {
   );
   static const String firebaseApiKey = String.fromEnvironment(
     'FIREBASE_API_KEY',
-    defaultValue: 'demo-local-api-key',
+    defaultValue: 'AIzaSyDLocalEmulatorOnlyKey00000000000',
   );
   static const String firebaseAppId = String.fromEnvironment(
     'FIREBASE_APP_ID',

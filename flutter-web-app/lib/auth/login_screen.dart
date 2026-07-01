@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config.dart';
 import 'auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -46,7 +47,11 @@ class _LoginScreenState extends State<LoginScreen> {
               icon: const Icon(Icons.login),
               label: _busy
                   ? const Text('Signing in…')
-                  : const Text('Sign in with Google'),
+                  : const Text(
+                      AppConfig.useEmulators
+                          ? 'Sign in locally'
+                          : 'Sign in with Google',
+                    ),
             ),
           ],
         ),
