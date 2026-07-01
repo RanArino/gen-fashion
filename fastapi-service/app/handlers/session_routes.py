@@ -210,6 +210,8 @@ async def select_source(
         message = str(exc)
         status_code = 409 if "Cannot select source" in message else 400
         raise HTTPException(status_code=status_code, detail=message) from exc
+    except DailyGenerationLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except AgentRunStartFailed as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {
