@@ -1,13 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:uuid/uuid.dart';
-
 import '../config.dart';
 
 /// Encapsulates the Google popup sign-in and the first-login `users/{uid}`
 /// bootstrap (M2-1, Decision Log: client creates the profile doc).
 class AuthService {
-  static const _uuid = Uuid();
+  static const _localEmail = 'local@example.com';
+  static const _localPassword = 'Password123!';
 
   /// Pops the Google sign-in dialog (against the Auth Emulator's mock provider
   /// locally; the real provider in production) and ensures the `users/{uid}`
@@ -23,12 +22,21 @@ class AuthService {
     return cred;
   }
 
-  Future<UserCredential> _signInWithLocalEmulatorUser() {
-    final email = 'local-${_uuid.v4()}@example.com';
-    return FirebaseAuth.instance.createUserWithEmailAndPassword(
-      email: email,
-      password: 'Password123!',
-    );
+  Future<UserCredential> _signInWithLocalEmulatorUser() async {
+    try {
+      return await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _localEmail,
+        password: _localPassword,
+      );
+    } on FirebaseAuthException catch (e) {
+      if (e.code != 'user-not-found' && e.code != 'invalid-credential') {
+        rethrow;
+      }
+      return FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _localEmail,
+        password: _localPassword,
+      );
+    }
   }
 
   Future<void> _ensureUserDoc(User user) async {
