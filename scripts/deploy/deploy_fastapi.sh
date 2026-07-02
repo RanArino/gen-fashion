@@ -68,6 +68,10 @@ done
 : "${ES_INTERNAL_IP:?--es-internal-ip is required}"
 : "${R2_ENDPOINT_URL:?--r2-endpoint-url is required}"
 : "${R2_PUBLIC_ENDPOINT_URL:?--r2-public-endpoint-url is required}"
+# ELASTICSEARCH_URL is deployed as https://...:9200 against a self-signed cert.
+# An empty fingerprint disables pinning and falls back to default cert
+# verification, which fails at runtime — guard against a broken revision.
+: "${ES_SSL_FINGERPRINT:?--es-ssl-fingerprint is required}"
 
 # Build env-vars string. Use a custom delimiter for gcloud because
 # CORS_ALLOW_ORIGINS is a comma-separated value.
