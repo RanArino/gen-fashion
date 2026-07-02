@@ -55,7 +55,8 @@ def api(method: str, url: str, token: str, body=None, raw_body: bytes = None,
     )
     try:
         with urllib.request.urlopen(req) as resp:
-            return json.loads(resp.read())
+            response_body = resp.read()
+            return json.loads(response_body) if response_body else {}
     except urllib.error.HTTPError as e:
         print(f"HTTP {e.code} {method} {url}: {e.read().decode()}", file=sys.stderr)
         raise

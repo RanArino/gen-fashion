@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -10,6 +11,17 @@ SCRIPT_PATH = Path(__file__).resolve().parents[1] / "deploy_firebase_hosting.py"
 SPEC = importlib.util.spec_from_file_location("deploy_firebase_hosting", SCRIPT_PATH)
 deploy_firebase_hosting = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(deploy_firebase_hosting)
+
+
+class EmptyResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self):
+        return b""
 
 
 class FirebaseHostingHashTest(unittest.TestCase):
@@ -34,6 +46,22 @@ class FirebaseHostingHashTest(unittest.TestCase):
 
             self.assertEqual(second_digest, first_digest)
             self.assertEqual(second_gzip, first_gzip)
+
+    def test_api_accepts_empty_success_response(self):
+        with patch.object(
+            deploy_firebase_hosting.urllib.request,
+            "urlopen",
+            return_value=EmptyResponse(),
+        ):
+            response = deploy_firebase_hosting.api(
+                "POST",
+                "https://upload.example.test/file",
+                "token",
+                raw_body=b"gzipped content",
+                content_type="application/octet-stream",
+            )
+
+        self.assertEqual(response, {})
 
 
 if __name__ == "__main__":
