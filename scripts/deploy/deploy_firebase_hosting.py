@@ -97,7 +97,7 @@ def deploy(site: str, build_dir: str) -> None:
     print(f"Files to process: {len(files)}")
 
     # 3. Populate files — API tells us which files need uploading
-    pop_resp = api("POST", f"{BASE}/sites/{site}/versions/{version_id}/populateFiles",
+    pop_resp = api("POST", f"{BASE}/sites/{site}/versions/{version_id}:populateFiles",
                    token, body={"files": files})
     upload_url = pop_resp.get("uploadUrl", "")
     required_hashes = set(pop_resp.get("uploadRequiredHashes", []))
