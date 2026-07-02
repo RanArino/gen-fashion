@@ -30,6 +30,7 @@ class UserPreference(ValueObject):
     style: Optional[str] = None
     color_preference: Optional[str] = None
     gender: Optional[str] = None
+    language: Optional[str] = None
 
 
 @dataclass(frozen=True)

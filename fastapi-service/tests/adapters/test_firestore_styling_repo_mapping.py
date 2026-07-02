@@ -28,7 +28,7 @@ def test_session_document_mapping_round_trips_m5_fields():
         clothing_source=ClothingSource.SHARED_CLOSET,
         shared_closet_id="adult-01",
         user_preference=UserPreference(
-            occasion="work", color_preference="blue", gender="female"
+            occasion="work", color_preference="blue", gender="female", language="en"
         ),
         selected_items=[{"itemId": "item-1"}],
         proposed_candidates=[{"item_id": "item-2"}],
@@ -44,6 +44,7 @@ def test_session_document_mapping_round_trips_m5_fields():
     assert data["source"] == "SHARED_CLOSET"
     assert data["userPreference"]["colorPreference"] == "blue"
     assert data["userPreference"]["gender"] == "female"
+    assert data["userPreference"]["language"] == "en"
     assert restored.user_id == "user-123"
     assert restored.state == StyleSessionState.SEARCHING
     assert restored.clothing_source == ClothingSource.SHARED_CLOSET
@@ -51,6 +52,7 @@ def test_session_document_mapping_round_trips_m5_fields():
     assert restored.selected_items == [{"itemId": "item-1"}]
     assert restored.proposed_candidates == [{"item_id": "item-2"}]
     assert restored.user_preference.gender == "female"
+    assert restored.user_preference.language == "en"
     assert restored.completed_at == now
 
 

@@ -124,11 +124,12 @@ def get_select_source_use_case() -> SelectClothingSourceUseCase:
         get_styling_repository(),
         get_closet_repository(),
         get_agent_run(),
+        get_settings(),
     )
 
 
 def get_select_candidates_use_case() -> SelectCandidatesUseCase:
-    return SelectCandidatesUseCase(get_styling_repository(), get_agent_run())
+    return SelectCandidatesUseCase(get_styling_repository(), get_agent_run(), get_settings())
 
 
 def get_shared_closet_gallery_use_case() -> SharedClosetGalleryUseCase:

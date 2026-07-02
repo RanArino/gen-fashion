@@ -22,16 +22,6 @@
 4. ユーザーが選択後、最終コーディネート画像を生成・表示する。
 5. クローゼット管理（画像アップロード、上限: `MAX_CLOSET_IMAGES_PER_USER` = 20）。
 
-**Phase 1b — LINE チャネル（後続実装）:**
-
-1. ユーザーが LINE でアップロードした服の画像をエージェントが受信する。
-2. エージェントが画像を分析し、服のメタデータを構造化出力として生成する。
-3. エージェントが選択肢を提示する：
-   - 「自分の持っている服からコーディネートする（クローゼットデータがある場合のみ）」
-   - 「楽天で検索した服からコーディネートする」
-4. ユーザーが選択後、エージェントがコーディネート候補を提示し、ユーザーが選択する。
-5. 最終的にコーディネート画像を生成し、LINE のトーク画面に返信する。
-
 ---
 
 ## 2. Technology Stack
@@ -749,6 +739,7 @@ async def resolve_user(line_user_id: str) -> str | None:
 | `LIFF_ID` | — | env var | LINE LIFF アプリ ID（LINE Developers Console で発行） |
 | `LINE_LOGIN_CHANNEL_ID` | — | env var | LINE Login チャネル ID（LIFF 用、Messaging API チャネルとは別） |
 | `AGENT_MODEL` | `gemini-2.0-flash` | env var | 全 Agent の LLM モデル ID。デモ中のモデル切り替えに使用 |
+| `MAX_DAILY_GENERATIONS_PER_USER` | `5` | env var | 1ユーザーあたりの1日（UTC 0時起算）の画像生成完了上限。ローカル Docker と本番の既定は `5`。`0` は明示的な無制限モード（§21、ADL-034） |
 
 ---
 
@@ -1030,6 +1021,14 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **Trade-off:** CI 上での統合テスト環境（Emulator / ES）の用意が必要。`make test` は docker-compose 前提のため CI 用に分離する。
 - **Date/Author:** 2026-06-26 / Ran（CI/CD 計画起票時に提案）
 
+### ADL-034: 日次画像生成上限は `COMPLETED` セッション数でカウント、`0` = 無制限
+
+- **Decision:** 日次上限のカウント対象を `status == COMPLETED` かつ `completedAt >= 今日の UTC 0時` のセッション数とする。`MAX_DAILY_GENERATIONS_PER_USER = 0` は明示的な無制限モードを意味する。強制ポイントは `SelectClothingSourceUseCase.execute()`（`POST /sessions/{id}/source`、propose/search agent run 起動前）と `SelectCandidatesUseCase.execute()`（`POST /sessions/{id}/select`、generate agent run 起動前）のユースケース層。
+- **Alternatives:** (a) `/select` 呼び出し時点でカウント（生成失敗でも消費 — ユーザーフレンドリーでない）、(b) `styleResult.coordinateImageUrl` 存在時のみカウント（Firestore のネストフィールド存在チェックが複雑）。
+- **Rationale:** `COMPLETED` のみカウントすることで、ADK エラー・タイムアウト・ネット切断起因の失敗はユーザーの消費に算入しない。Flutter の SSE 切断後に ADK がバックグラウンドで完走して `COMPLETED` になった場合はカウントする（Vertex AI API コールが実際に発生し、履歴ギャラリーで画像確認できるため）。`0` = 無制限パターンは `MAX_CLOSET_IMAGES_PER_USER` と統一。既存の `(userId, status, completedAt DESC)` Firestore 複合インデックスをそのまま流用し、`limit(cap)` で1リクエストあたり最大 `limit + 1`（デフォルト 6）ドキュメント読み取りに抑える。
+- **Trade-off:** COMPLETED でも Flutter 画面に表示されていないケースがある（SSE 切断）が、Vertex AI 課金が発生しているため消費扱いとする。Flutter 側での 429 専用メッセージ（「本日の上限に達しました」）は本 ADL のスコープ外（将来の UI 改善）。
+- **Date/Author:** 2026-07-01 / Ran
+
 ### ADL-032: CD は main マージで Artifact Registry → Cloud Run / Firebase Hosting に自動デプロイ、失敗時はリビジョンロールバック
 
 - **Decision:** `main` マージで、両イメージを **Artifact Registry** にビルド/プッシュ → 両 **Cloud Run** サービスをデプロイ → **Flutter Web** をビルドし **Firebase Hosting** にデプロイ → **デプロイ後スモーク**（`GET /health` ＋ deployed URL に対する認証付き coordination smoke）を実行する。スモーク失敗時は Cloud Run のトラフィックを直前のリビジョンへ戻す（`gcloud run services update-traffic --to-revisions=<prev>=100`）。デプロイ処理は MD が定義する `scripts/deploy/deploy_fastapi.sh` / `deploy_adk.sh` をワークフローから呼ぶ薄いラッパとし、アプリの振る舞いは変えない。秘密は Secret Manager（`--set-secrets`）経由でのみ注入し、ワークフローログに出さない。
@@ -1037,6 +1036,7 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **Rationale:** 「デプロイ後の CI/CD」を満たす。MD がコマンドを既に確定しているため、CD はその自動化に集約できる。
 - **Trade-off:** ステージング環境は持たない（単一環境）。品質の最後の砦はデプロイ後スモークであり、本番へ自動反映するぶん CI ゲートの厳格さが重要。
 - **Date/Author:** 2026-06-26 / Ran（CI/CD 計画起票時に提案）
+
 
 ---
 
@@ -1215,3 +1215,73 @@ CC BY-SA 4.0 に基づき、以下を実装する：
 - **文書化:** パイプラインのランブック（トリガー、必要権限、ロールバック手順、秘密の扱い）を記載する。
 - **同期:** CI/CD ExecPlan の着手・完了時に feature-matrix（MF-*）と ExecPlan を同期する（本リポジトリの sync ルール）。
 - **受け入れ:** 新規参加者がランブックだけで CI/CD を運用できること。
+
+---
+
+## 20. Client-Side Routing & Browser Navigation (MG)
+
+> Flutter Web のナビゲーションを URL アドレス可能にし、ブラウザの戻る/進む・ディープリンク・リロード時のビュー復元を機能させる（`ToDo`「アプリにページパスの概念が無く、Chrome の戻るボタンが効かない＝UX 不良」）。feature-matrix の **MG-1…MG-4** に対応。現状（2026-06-30）の起点は、`flutter-web-app/lib/main.dart` が `MaterialApp(home: AuthGate())`、`AuthGate` が `authStateChanges` で `LoginScreen` ↔ `HomeScreen` を出し分け、`HomeScreen`（`lib/home/home_screen.dart`）が `int _index` + `NavigationBar` の状態だけで Closet / Coordinate / History / Shared の 4 ビューを切り替える構成で、URL は常に `/` のまま変わらない（go_router / ルーティング依存は未導入、`pubspec.yaml` に無し）。本節は §11（フロントエンド）への差分を定義し、アプリの振る舞い（各画面の機能）は変えず、**遷移の URL 表現と履歴連携のみ**を追加する。実装方針は **ADL-033**。**「one ExecPlan at a time」: 本節は req レベルの追跡のみで、ExecPlan は未起票**（アクティブな ExecPlan は MD。MG は MD 完了後に起票する別 ExecPlan で実装する）。
+
+### 20.1 ルーティング基盤（path URL strategy + Router、MG-1）
+
+- **依存とエントリ:** `go_router` を `pubspec.yaml` に追加し、`main()` で `usePathUrlStrategy()`（`flutter_web_plugins`）を呼んでハッシュ無しパスにする。`MaterialApp(home:)` を `MaterialApp.router(routerConfig: ...)` に置き換える。
+- **受け入れ:** ビュー切り替えでブラウザの URL がそれぞれのパスに変わり、リロードしても同じビューが復元される。
+
+### 20.2 認証連動ルーティング（MG-2）
+
+- **redirect:** 現 `AuthGate` の `authStateChanges` 判定を go_router の `redirect` + `refreshListenable`（Firebase Auth のストリームを購読）へ移す。未認証はすべて `/login` にリダイレクトし、認証済みで `/login` に来たらアプリのトップ（`/closet` 等）へ戻す。E2E 用の自動サインイン（`AppConfig.e2eAutoSignIn`）の挙動は維持する。
+- **受け入れ:** 未認証で保護パスを直接開くと `/login` に飛び、サインイン後は元の（または既定の）アプリパスに入る。サインイン直後に画面のフリッカが出ない。
+
+### 20.3 トップレベルビューのルート化（ブラウザ戻る/進む、MG-3）
+
+- **ルート:** `HomeScreen` の `int _index` + `NavigationBar` を go_router の **ShellRoute** に置き換え、`/closet` `/coordinate` `/history` `/shared` の各ルートに割り当てる。`NavigationBar` は ShellRoute で永続表示し、選択タブは現在のルートから導出する。既定リダイレクト（`/` → `/closet`）を設定する。
+- **受け入れ:** タブ切り替えで URL が変わり、**Chrome の戻る/進むボタンで直前/次のビューに移動できる**。各パスを直接開く / リロードすると対応ビューが表示される（Firebase Hosting の SPA fallback ＝ `firebase.json` の `rewrites` 既設で 404 にならない、ADL-033）。
+- **受け入れ:** `flutter analyze` クリーン、`flutter test`（ルーティング込みのウィジェット/ナビゲーションテスト）green、ブラウザ E2E で戻るボタン遷移が観測できる。
+
+### 20.4 詳細ディープリンク（将来拡張、MG-4）
+
+- **パスパラメータ:** コーディネートセッション（例: `/coordinate/{sessionId}`）や履歴詳細（例: `/history/{sessionId}`）へのディープリンクを将来拡張として扱う。**Phase 1a の必須範囲外**（トップレベルのビュールート化＝MG-1…MG-3 が UX 改善の本体）。
+- **受け入れ:** （将来）特定セッション/履歴項目の URL を共有・リロードでき、その項目が直接開く。
+
+---
+
+## 21. Production Daily Image Generation Rate Limit (MH)
+
+> ローカルと本番で、1ユーザーあたりの1日の画像生成完了数を上限で制限し、Vertex AI 課金を抑制する。feature-matrix の **MH-1…MH-4** に対応。ExecPlan: `docs/plans/20260701-mh-daily-generation-rate-limit.md`。実装方針は ADL-034。2026-07-01 に実装済み（FastAPI 76 passed; local container targeted tests passed; local/container `MAX_DAILY_GENERATIONS_PER_USER=5`）。
+
+### 21.1 概要
+
+Vertex AI（Nano Banana / `gemini-2.5-flash-image`）の API 呼び出しは課金コストが発生する。無制限の場合、単一ユーザーによるクォータ枯渇や意図しない高額課金のリスクがある。本制限は以下を保証する：
+
+- 1ユーザーあたり1日（UTC 0時起算）に完了できる画像生成は **`MAX_DAILY_GENERATIONS_PER_USER` 件**まで（本番デフォルト: 5）。
+- 上限に達した場合は `POST /sessions/{id}/source`（source 選択・propose/search agent 起動トリガー）が **HTTP 429 Too Many Requests** を返し、ADK agent run を開始しない。
+- `POST /sessions/{id}/select`（候補選択・generate agent 起動トリガー）でも同じチェックを行い、二重のガードとして **HTTP 429 Too Many Requests** を返す。
+- `MAX_DAILY_GENERATIONS_PER_USER=0` の場合のみ制限なし。
+
+### 21.2 カウント対象と方針（ADL-034）
+
+- **カウント対象:** `sessions` コレクション内の `userId == user_id` かつ `status == "COMPLETED"` かつ `completedAt >= 今日の UTC 0時` のセッション数。
+- **カウントされない:** `status` が `ERROR` / `TIMEOUT` / `GENERATING` のセッション（生成失敗・タイムアウト・未完了）はカウントしない。システム障害・ADK エラー・ネット切断起因の失敗はユーザーの消費に算入しない。
+- **SSE 途中断の扱い:** Flutter の SSE が切断されても `adk-agent-service` がバックグラウンドで完走し `COMPLETED` になった場合は **カウントする**。Vertex AI API コールが実際に発生し、履歴ギャラリーで画像を確認できるため（§18.5 / ME-7）。
+
+### 21.3 強制ポイント
+
+`POST /sessions/{id}/source` の `SelectClothingSourceUseCase.execute()` で、エージェント実行（`AgentRunPort.start_session_run(phase="propose")`）を開始する前にカウントチェックを行う。これにより、上限到達後は候補検索・提案用の ADK run も Elasticsearch 検索も開始しない。
+
+加えて、`POST /sessions/{id}/select` の `SelectCandidatesUseCase.execute()` でも、エージェント実行（`AgentRunPort.start_session_run(phase="generate")`）を開始する前に同じカウントチェックを行う。これは、既存の `PROPOSING` セッションや並行操作から generate run が起動されることを防ぐ二重ガードである。
+
+### 21.4 設定
+
+| 変数名 | 本番値 | ローカルデフォルト | 管理方法 | 説明 |
+|---|---|---|---|---|
+| `MAX_DAILY_GENERATIONS_PER_USER` | `5` | `5` | env var | 1ユーザーあたりの1日（UTC 0時起算）の画像生成完了上限。`0` = 明示的な無制限 |
+
+**管理方法:** `--set-env-vars` で Cloud Run に設定する（非機密）。`scripts/deploy/deploy_fastapi.sh` の `ENV_VARS` ブロックに追加する。`adk-agent-service` の deploy script は変更不要（制限チェックは `fastapi-service` のみ）。
+
+### 21.5 受け入れ条件
+
+- 5回の生成を完了したユーザーの次の `POST /sessions/{id}/source` が、ADK run 起動前に HTTP 429 と `"Daily generation limit of 5 reached. Limit resets at midnight UTC."` を返すこと。
+- 5回の生成を完了したユーザーの `POST /sessions/{id}/select` も、generate ADK run 起動前に同じ HTTP 429 を返すこと。
+- ローカル `make dev` でも同条件で 429 が発生すること。`MAX_DAILY_GENERATIONS_PER_USER=0` を明示した場合のみ 429 が発生しないこと。
+- `ERROR` / `TIMEOUT` で終了したセッションはカウントされないこと。
+- 翌 UTC 日（JST 09:00 以降）には制限がリセットされ、同ユーザーが再び生成できること。

@@ -1,0 +1,164 @@
+{
+  "@@locale": "en",
+  "appTitle": "gen-fashion",
+  "navCloset": "Closet",
+  "navCoordinate": "Coordinate",
+  "navHistory": "History",
+  "navShared": "Shared",
+  "sharedClosetAbout": "About shared closet",
+  "signOut": "Sign out",
+  "language": "Language",
+  "languageJapanese": "Japanese",
+  "languageEnglish": "English",
+  "loginEyebrow": "Personal styling studio",
+  "loginSubtitle": "Sign in to manage your closet.",
+  "signInLocal": "Sign in locally",
+  "signInGoogle": "Sign in with Google",
+  "signingIn": "Signing in...",
+  "signInFailed": "Sign-in failed: {error}",
+  "@signInFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "closetTitle": "Closet",
+  "addItem": "Add item",
+  "uploading": "Uploading...",
+  "uploadQueued": "Upload queued; analyzing...",
+  "closetFull": "Closet is full (20 items).",
+  "uploadFailed": "Upload failed: {error}",
+  "@uploadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "deleteItemQuestion": "Delete item?",
+  "deleteItemBody": "This removes the item from your closet.",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "deleteFailed": "Delete failed: {error}",
+  "@deleteFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "editMetadata": "Edit item metadata",
+  "category": "Category",
+  "colorsComma": "Colors (comma separated)",
+  "season": "Season",
+  "tagsComma": "Tags (comma separated)",
+  "gender": "Gender",
+  "genderCommon": "Common",
+  "genderFemale": "Female",
+  "genderMale": "Male",
+  "save": "Save",
+  "updateFailed": "Update failed: {error}",
+  "@updateFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "emptyCloset": "Add your first item to get started.",
+  "unknown": "Unknown",
+  "analyzing": "Analyzing...",
+  "analysisFailed": "Analysis failed",
+  "statusProcessing": "PROCESSING",
+  "statusReady": "READY",
+  "statusError": "ERROR",
+  "statusUnknown": "UNKNOWN",
+  "deleteTooltip": "Delete",
+  "editMetadataTooltip": "Edit metadata",
+  "coordinationTitle": "Coordination",
+  "sourceShared": "Shared",
+  "sourceMine": "Mine",
+  "sharedCloset": "Shared closet",
+  "occasion": "Occasion",
+  "style": "Style",
+  "colors": "Colors",
+  "selectedGenerationLanguage": "Generation language: {language}",
+  "@selectedGenerationLanguage": {
+    "placeholders": {
+      "language": {}
+    }
+  },
+  "running": "Running",
+  "start": "Start",
+  "agentTrace": "Agent trace",
+  "errorWithMessage": "Error: {error}",
+  "@errorWithMessage": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "noSessionEvents": "No session events yet.",
+  "chooseItems": "Choose items",
+  "generateSelected": "Generate selected",
+  "recommended": "Recommended",
+  "item": "Item",
+  "result": "Result",
+  "coordinatePlaceholder": "Coordinate image will appear here.",
+  "traceSearchedCloset": "{agentName} searched closet - {count} candidates",
+  "@traceSearchedCloset": {
+    "placeholders": {
+      "agentName": {},
+      "count": {}
+    }
+  },
+  "traceSearchingCloset": "{agentName} is searching the closet",
+  "@traceSearchingCloset": {
+    "placeholders": {
+      "agentName": {}
+    }
+  },
+  "traceGeneratedCoordinate": "{agentName} generated the coordinate",
+  "@traceGeneratedCoordinate": {
+    "placeholders": {
+      "agentName": {}
+    }
+  },
+  "traceGeneratingCoordinate": "{agentName} is generating the coordinate",
+  "@traceGeneratingCoordinate": {
+    "placeholders": {
+      "agentName": {}
+    }
+  },
+  "tracePreview": "Preview",
+  "traceRaw": "Raw",
+  "traceDescription": "Description",
+  "traceStyleDirection": "Style",
+  "traceWearer": "Wearer",
+  "traceItemCount": "Items",
+  "traceModelUsed": "Model",
+  "traceGenerationPrompt": "Prompt",
+  "traceTags": "Tags",
+  "traceTargetAgent": "Agent",
+  "traceItemsFound": "{count} items found",
+  "@traceItemsFound": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "historyLoadFailed": "Failed to load history: {error}",
+  "@historyLoadFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "historyEmpty": "No completed coordinates yet.",
+  "dateUnavailable": "Date unavailable",
+  "myCloset": "My Closet",
+  "sharedGalleryError": "Error: {error}",
+  "@sharedGalleryError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "sharedAttribution": "Shared closet images use the Clothing Dataset (CC BY-SA 4.0)",
+  "sharedAboutBody": "Shared closet lets you try coordination without uploading clothes.",
+  "sharedAboutDataset": "Image material: Clothing Dataset (CC BY-SA 4.0)",
+  "sharedAboutAuthor": "Author: Alexey Grigorev",
+  "viewDataset": "View dataset on Kaggle",
+  "close": "Close"
+}

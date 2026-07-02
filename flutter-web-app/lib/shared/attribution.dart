@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const _kAttributionText =
-    '共有クローゼットの画像は Clothing Dataset (CC BY-SA 4.0) を使用しています';
+import '../l10n/app_localizations.dart';
+
 const _kKaggleUrl =
     'https://www.kaggle.com/datasets/agrigorev/clothing-dataset-full';
 
@@ -12,6 +12,7 @@ class AttributionFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return InkWell(
       onTap: () => showSharedClosetAboutDialog(context),
       child: Container(
@@ -29,7 +30,7 @@ class AttributionFooter extends StatelessWidget {
             const SizedBox(width: 6),
             Flexible(
               child: Text(
-                _kAttributionText,
+                l10n.sharedAttribution,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -45,36 +46,35 @@ class AttributionFooter extends StatelessWidget {
 
 /// Shows a dialog explaining the shared closet and its CC BY-SA 4.0 licence.
 void showSharedClosetAboutDialog(BuildContext context) {
+  final l10n = AppLocalizations.of(context)!;
   showDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('共有クローゼットについて'),
+      title: Text(l10n.sharedClosetAbout),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '共有クローゼットでは、アップロードなしにコーディネートを試すことができます。',
-          ),
+          Text(l10n.sharedAboutBody),
           const SizedBox(height: 12),
-          const Text(
-            '画像素材: Clothing Dataset (CC BY-SA 4.0)',
-            style: TextStyle(fontWeight: FontWeight.bold),
+          Text(
+            l10n.sharedAboutDataset,
+            style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
-          const Text('著作者: Alexey Grigorev'),
+          Text(l10n.sharedAboutAuthor),
           const SizedBox(height: 8),
           TextButton.icon(
             onPressed: () => _launchUrl(_kKaggleUrl),
             icon: const Icon(Icons.open_in_new, size: 16),
-            label: const Text('Kaggle でデータセットを見る'),
+            label: Text(l10n.viewDataset),
           ),
         ],
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('閉じる'),
+          child: Text(l10n.close),
         ),
       ],
     ),

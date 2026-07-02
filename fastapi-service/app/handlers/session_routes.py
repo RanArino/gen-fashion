@@ -22,6 +22,7 @@ from app.domain.styling import (
     StyleSessionNotFound,
     UserPreference,
 )
+from app.domain.styling.exceptions import DailyGenerationLimitExceeded
 from app.ports import StylingRepositoryPort
 from app.use_cases.styling import (
     AgentRunStartFailed,
@@ -45,6 +46,7 @@ class UserPreferenceRequest(BaseModel):
     style: str | None = None
     color_preference: str | None = Field(default=None, alias="colorPreference")
     gender: str | None = None
+    language: str | None = None
 
     def to_domain(self) -> UserPreference:
         return UserPreference(
@@ -53,6 +55,7 @@ class UserPreferenceRequest(BaseModel):
             style=self.style,
             color_preference=self.color_preference,
             gender=self.gender,
+            language=self.language,
         )
 
 
@@ -176,6 +179,8 @@ async def select_candidates(
         message = str(exc)
         status_code = 409 if "Cannot select candidates" in message else 400
         raise HTTPException(status_code=status_code, detail=message) from exc
+    except DailyGenerationLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except AgentRunStartFailed as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {
@@ -207,6 +212,8 @@ async def select_source(
         message = str(exc)
         status_code = 409 if "Cannot select source" in message else 400
         raise HTTPException(status_code=status_code, detail=message) from exc
+    except DailyGenerationLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except AgentRunStartFailed as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.config import Settings, get_settings
 from app.domain.closet import ClothingItemStatus
 from app.domain.styling import (
     ClothingSource,
@@ -10,6 +11,7 @@ from app.domain.styling import (
     UserPreference,
 )
 from app.ports import AgentRunPort, AgentRunRequest, ClosetRepositoryPort, StylingRepositoryPort
+from app.use_cases.styling.daily_generation_limit import enforce_daily_generation_limit
 
 
 @dataclass(frozen=True)
@@ -31,10 +33,12 @@ class SelectClothingSourceUseCase:
         styling_repo: StylingRepositoryPort,
         closet_repo: ClosetRepositoryPort,
         agent_run: AgentRunPort,
+        settings: Settings | None = None,
     ):
         self.styling_repo = styling_repo
         self.closet_repo = closet_repo
         self.agent_run = agent_run
+        self._settings = settings or get_settings()
 
     async def execute(
         self,
@@ -61,6 +65,8 @@ class SelectClothingSourceUseCase:
             if not ready_items:
                 raise ValueError("CLOSET requires at least one READY closet item")
 
+        await enforce_daily_generation_limit(self.styling_repo, self._settings, user_id)
+
         session.select_source(source, preference, shared_closet_id)
         await self.styling_repo.update(session)
         try:
@@ -76,6 +82,7 @@ class SelectClothingSourceUseCase:
                         "style": preference.style,
                         "colorPreference": preference.color_preference,
                         "gender": preference.gender,
+                        "language": preference.language,
                     },
                     phase="propose",
                 )

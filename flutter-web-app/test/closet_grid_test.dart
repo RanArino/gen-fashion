@@ -4,8 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gen_fashion_web/api/api_client.dart';
 import 'package:gen_fashion_web/closet/closet_item.dart';
 import 'package:gen_fashion_web/closet/closet_screen.dart';
-import 'package:gen_fashion_web/closet/thumbnail.dart'
-    show DownloadUrlCache;
+import 'package:gen_fashion_web/closet/thumbnail.dart' show DownloadUrlCache;
+
+import 'test_app.dart';
 
 void main() {
   testWidgets('renders PROCESSING and READY badges and the empty state',
@@ -43,14 +44,12 @@ void main() {
       ),
     ];
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ClosetGrid(
-            items: items,
-            cache: cache,
-            thumbnailBuilder: (_, item) =>
-                Container(key: ValueKey('thumb-${item.id}')),
-          ),
+      localizedTestApp(
+        ClosetGrid(
+          items: items,
+          cache: cache,
+          thumbnailBuilder: (_, item) =>
+              Container(key: ValueKey('thumb-${item.id}')),
         ),
       ),
     );
@@ -80,7 +79,8 @@ void main() {
     expect(item.season, 'summer');
     expect(item.createdAt, DateTime(2026, 6, 6));
 
-    final processing = ClosetItem.fromFirestore('id2', {'status': 'PROCESSING'});
+    final processing =
+        ClosetItem.fromFirestore('id2', {'status': 'PROCESSING'});
     expect(processing.status, ItemStatus.processing);
     expect(processing.tags, isEmpty);
 

@@ -18,6 +18,7 @@ from app.domain.styling import (
     StyleSessionNotFound,
     StyleSessionState,
 )
+from app.domain.styling.exceptions import DailyGenerationLimitExceeded
 from app.main import app
 
 
@@ -63,6 +64,20 @@ class SelectCandidatesRouteUseCase:
             (),
             {"session_id": session_id, "status": "PROPOSING", "source": "SHARED_CLOSET"},
         )()
+
+
+class DailyLimitSelectCandidatesRouteUseCase:
+    async def execute(self, user_id, session_id, selected_item_ids):
+        raise DailyGenerationLimitExceeded(
+            "Daily generation limit of 5 reached. Limit resets at midnight UTC."
+        )
+
+
+class DailyLimitSelectSourceRouteUseCase:
+    async def execute(self, **kwargs):
+        raise DailyGenerationLimitExceeded(
+            "Daily generation limit of 5 reached. Limit resets at midnight UTC."
+        )
 
 
 class StreamRepo:
@@ -310,6 +325,27 @@ def test_select_source_maps_agent_trigger_failure():
     reset_overrides()
 
 
+def test_select_source_returns_429_when_daily_generation_limit_reached():
+    reset_overrides()
+    session_id = str(uuid4())
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_select_source_use_case] = (
+        lambda: DailyLimitSelectSourceRouteUseCase()
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        f"/sessions/{session_id}/source",
+        json={"source": "SHARED_CLOSET", "userPreference": {}},
+    )
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == (
+        "Daily generation limit of 5 reached. Limit resets at midnight UTC."
+    )
+    reset_overrides()
+
+
 def test_select_candidates_accepts_explicit_selection():
     reset_overrides()
     session_id = str(uuid4())
@@ -324,6 +360,25 @@ def test_select_candidates_accepts_explicit_selection():
 
     assert response.status_code == 202
     assert response.json()["status"] == "PROPOSING"
+    reset_overrides()
+
+
+def test_select_candidates_returns_429_when_daily_generation_limit_reached():
+    reset_overrides()
+    session_id = str(uuid4())
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_select_candidates_use_case] = (
+        lambda: DailyLimitSelectCandidatesRouteUseCase()
+    )
+    response = TestClient(app).post(
+        f"/sessions/{session_id}/select",
+        json={"selectedItemIds": ["item-1"]},
+    )
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == (
+        "Daily generation limit of 5 reached. Limit resets at midnight UTC."
+    )
     reset_overrides()
 
 
@@ -375,3 +430,16 @@ def test_stream_emits_proposed_candidates_and_closes():
     assert "event: session.proposed" in response.text
     assert '"item_id": "item-1"' in response.text
     reset_overrides()
+
+
+def test_user_preference_request_carries_language_to_domain():
+    from app.handlers.session_routes import UserPreferenceRequest
+
+    request = UserPreferenceRequest.model_validate(
+        {"colorPreference": "blue", "gender": "female", "language": "en"}
+    )
+    preference = request.to_domain()
+
+    assert preference.language == "en"
+    assert preference.color_preference == "blue"
+    assert preference.gender == "female"

@@ -26,11 +26,18 @@ This is equivalent to:
 cd flutter-web-app
 flutter run -d chrome --web-port 8088 \
   --dart-define=API_BASE_URL=http://localhost:8000 \
-  --dart-define=USE_EMULATORS=true
+  --dart-define=USE_EMULATORS=true \
+  --dart-define=FIREBASE_PROJECT_ID=gen-fashion-local \
+  --dart-define=FIREBASE_API_KEY=AIzaSyDLocalEmulatorOnlyKey00000000000 \
+  --dart-define=FIREBASE_APP_ID=1:000000000000:web:0000000000000000 \
+  --dart-define=FIREBASE_MESSAGING_SENDER_ID=000000000000 \
+  --dart-define=FIREBASE_AUTH_DOMAIN=gen-fashion-local.firebaseapp.com \
+  --dart-define=FIREBASE_STORAGE_BUCKET=gen-fashion-local.appspot.com
 ```
 
-The Chrome window opens at `http://localhost:8088`. Sign-in uses the Auth
-Emulator's mock Google provider — no real OAuth client needed locally.
+The Chrome window opens at `http://localhost:8088`. Sign-in uses a generated
+email/password user against the Auth Emulator — no real OAuth client needed
+locally.
 
 For production, pass the real Firebase web config through `--dart-define`
 values such as `FIREBASE_API_KEY`, `FIREBASE_APP_ID`,

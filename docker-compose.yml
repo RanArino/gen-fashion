@@ -8,12 +8,15 @@ services:
       - xpack.security.enabled=false
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - gen-fashion_elasticsearch-data:/usr/share/elasticsearch/data
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 90s
 
   firestore-emulator:
     image: google/cloud-sdk:latest
@@ -28,12 +31,27 @@ services:
           import_arg="";
           echo "Starting Firestore emulator with empty persistent storage";
         fi &&
-        exec gcloud beta emulators firestore start --host-port=0.0.0.0:8080 $$import_arg
+        export_firestore() {
+          export_dir="/firestore-data/snapshot-$$(date +%s)";
+          mkdir -p "$$export_dir";
+          curl -fsS -X POST \
+            "http://localhost:8080/emulator/v1/projects/$${FIREBASE_PROJECT_ID:-gen-fashion-local}:export" \
+            -H "Content-Type: application/json" \
+            -d "{\"database\":\"projects/$${FIREBASE_PROJECT_ID:-gen-fashion-local}/databases/(default)\",\"export_directory\":\"$$export_dir\"}" \
+            >/dev/null &&
+          echo "Firestore emulator data exported to $$export_dir";
+        };
+        trap "export_firestore; kill $$pid; wait $$pid" TERM INT;
+        gcloud beta emulators firestore start --host-port=0.0.0.0:8080 $$import_arg &
+        pid=$$!;
+        wait $$pid
       '
     environment:
       - FIRESTORE_EMULATOR_HOST=0.0.0.0:8080
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-gen-fashion-local}
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+    stop_grace_period: 30s
     volumes:
       - gen-fashion_firestore-data:/firestore-data
     healthcheck:
@@ -41,20 +59,24 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 120s
 
   firebase-auth-emulator:
-    image: node:20-alpine
+    build:
+      context: ./firebase
+      dockerfile: Dockerfile
     working_dir: /workspace
-    command: sh -c "npm install -g firebase-tools@latest && firebase emulators:start --only auth --project gen-fashion-local"
+    command: sh -c "firebase emulators:start --only auth --project gen-fashion-local"
     ports:
-      - "9099:9099"
+      - "127.0.0.1:9099:9099"
     volumes:
       - ./firebase.json:/workspace/firebase.json:ro
     healthcheck:
       test: ["CMD", "node", "-e", "require('net').connect(9099,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 6
+      start_period: 30s
 
   minio:
     image: minio/minio:latest
@@ -67,8 +89,10 @@ services:
       # Production R2 uses the §8.4 bucket CORS rule instead.
       - MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:8088
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - gen-fashion_minio-data:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
@@ -80,7 +104,7 @@ services:
       context: ./fastapi-service
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - FIRESTORE_EMULATOR_HOST=firestore-emulator:8080
       - FIREBASE_AUTH_EMULATOR_HOST=firebase-auth-emulator:9099
@@ -94,6 +118,7 @@ services:
       - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY:-}
       - GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI:-false}
       - IMAGE_ANALYSIS_MODEL=gemini-2.5-flash
+      - MAX_DAILY_GENERATIONS_PER_USER=${MAX_DAILY_GENERATIONS_PER_USER:-5}
       - R2_ENDPOINT_URL=http://minio:9000
       - R2_PUBLIC_ENDPOINT_URL=http://localhost:9000
       - R2_ACCESS_KEY_ID=minioadmin
@@ -125,7 +150,7 @@ services:
       context: ./adk-agent-service
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-gen-fashion-local}
       # Firestore data uses the Firebase project (matches fastapi + frontend),
@@ -162,3 +187,7 @@ services:
 volumes:
   gen-fashion_firestore-data:
     name: gen-fashion_firestore-data
+  gen-fashion_elasticsearch-data:
+    name: gen-fashion_elasticsearch-data
+  gen-fashion_minio-data:
+    name: gen-fashion_minio-data

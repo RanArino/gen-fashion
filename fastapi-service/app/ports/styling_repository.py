@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any, Optional
 from app.domain.styling import StyleSession, StyleSessionId
 
@@ -24,6 +25,11 @@ class StylingRepositoryPort(ABC):
     @abstractmethod
     async def list_completed(self, user_id: str, limit: int = 20) -> list[StyleSession]:
         """List the user's completed styling sessions, newest first."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def count_completed_today(self, user_id: str, since: datetime) -> int:
+        """Return COMPLETED sessions for user_id whose completedAt is at or after since."""
         raise NotImplementedError
 
     @abstractmethod

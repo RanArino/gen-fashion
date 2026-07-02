@@ -95,6 +95,7 @@ ES_API=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_API_KEY --
 R2_KEY=$(gcloud secrets versions access latest --secret=R2_ACCESS_KEY_ID --project=animation-agent)
 R2_SECRET=$(gcloud secrets versions access latest --secret=R2_SECRET_ACCESS_KEY --project=animation-agent)
 TASK_SECRET=$(gcloud secrets versions access latest --secret=INTERNAL_TASK_SECRET --project=animation-agent)
+ES_SSL_FINGERPRINT=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_SSL_FINGERPRINT --project=animation-agent)
 
 # 登録済みシークレット一覧
 gcloud secrets list --project=animation-agent
@@ -117,6 +118,23 @@ gcloud compute firewall-rules list --filter="name:gen-fashion OR name:allow-es" 
 
 # ES への許可ルール詳細確認
 gcloud compute firewall-rules describe allow-es-from-cloudrun
+
+# ES VM にだけ tcp:9200 許可/拒否を適用するタグを確認
+gcloud compute instances describe gen-fashion-es \
+  --zone=asia-northeast1-a \
+  --format='value(tags.items)'
+
+# Cloud Run Direct VPC egress subnet から ES への tcp:9200 だけ許可
+gcloud compute firewall-rules describe allow-es-from-cloudrun \
+  --format='yaml(priority,sourceRanges,targetTags,allowed,logConfig)'
+
+# default-allow-internal より優先して、その他の内部 tcp:9200 を拒否
+gcloud compute firewall-rules describe deny-es-other-internal \
+  --format='yaml(priority,sourceRanges,targetTags,denied,logConfig)'
+
+# 外部 IP なしの VM へ IAP SSH するための最小許可
+gcloud compute firewall-rules describe allow-iap-ssh \
+  --format='yaml(sourceRanges,targetTags,allowed,logConfig)'
 ```
 
 ---
@@ -191,6 +209,7 @@ bash scripts/deploy/deploy_adk.sh \
   --project animation-agent --region asia-northeast1 \
   --image "$REPO/adk-agent-service:$NEW_TAG" \
   --es-internal-ip 10.146.0.2 \
+  --es-ssl-fingerprint "$ES_SSL_FINGERPRINT" \
   --r2-endpoint-url https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com \
   --r2-public-endpoint-url https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com \
   --r2-bucket-name gen-fashion-images
@@ -202,6 +221,8 @@ bash scripts/deploy/deploy_fastapi.sh \
   --image "$REPO/fastapi-service:$NEW_TAG" \
   --adk-url "$ADK_URL" --fastapi-url "$FASTAPI_URL" \
   --es-internal-ip 10.146.0.2 \
+  --es-ssl-fingerprint "$ES_SSL_FINGERPRINT" \
+  --cors-allow-origins "https://gen-fashion-app.web.app,https://animation-agent.web.app" \
   --r2-endpoint-url https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com \
   --r2-public-endpoint-url https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com \
   --r2-bucket-name gen-fashion-images
@@ -243,7 +264,7 @@ flutter build web --release \
   --dart-define=API_BASE_URL=https://fastapi-service-hvwhpzcehq-an.a.run.app \
   --dart-define=USE_EMULATORS=false \
   --dart-define=FIREBASE_PROJECT_ID=animation-agent \
-  --dart-define=FIREBASE_API_KEY=AIzaSyDWx1gLxdKy3MHmMlQpWjHtTo5mKEsKyEc \
+  --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" \
   --dart-define=FIREBASE_APP_ID=1:789766161934:web:e894240fca5dc80b9ede5f \
   --dart-define=FIREBASE_MESSAGING_SENDER_ID=789766161934 \
   --dart-define=FIREBASE_AUTH_DOMAIN=animation-agent.firebaseapp.com \
@@ -354,7 +375,7 @@ gcloud iam workload-identity-pools providers create-oidc github-provider \
   --display-name="GitHub Actions Provider" \
   --issuer-uri="https://token.actions.githubusercontent.com" \
   --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
-  --attribute-condition="assertion.repository=='${GITHUB_REPO}'"
+  --attribute-condition="assertion.repository=='${GITHUB_REPO}' && assertion.ref=='refs/heads/main'"
 
 # 3. デプロイ用 SA を作成してロールを付与
 gcloud iam service-accounts create github-deployer \
@@ -403,6 +424,7 @@ echo "WIF_SA: github-deployer@${PROJECT}.iam.gserviceaccount.com"
 | `WIF_PROVIDER` | `projects/789766161934/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
 | `WIF_SA` | `github-deployer@animation-agent.iam.gserviceaccount.com` |
 | `ES_INTERNAL_IP` | `10.146.0.2` |
+| `ES_SSL_FINGERPRINT` | ES VM が `:9200` で提示する leaf certificate の SHA-256 fingerprint |
 | `R2_ENDPOINT_URL` | `https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com` |
 | `R2_PUBLIC_ENDPOINT_URL` | `https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com` |
 | `R2_BUCKET_NAME` | `gen-fashion-images` |
@@ -412,10 +434,38 @@ echo "WIF_SA: github-deployer@${PROJECT}.iam.gserviceaccount.com"
 | `FIREBASE_AUTH_DOMAIN` | `animation-agent.firebaseapp.com` |
 | `FIREBASE_STORAGE_BUCKET` | `animation-agent.firebasestorage.app` |
 
-### GitHub Actions 環境（production）の設定（任意）
+### GitHub Actions 環境（production）の設定
 
-GitHub repo → Settings → Environments → New environment → 名前: `production`
-Required reviewers を設定するとマニュアル承認フローになる。
+GitHub repo → Settings → Environments → New environment → 名前: `production`。
+現在の GitHub plan では Required reviewers が使えないため、production 環境は
+deployment branch policy で `main` のみに制限する。WIF provider 側も
+`assertion.ref=='refs/heads/main'` に制限しているため、他ブランチの
+`workflow_dispatch` は GCP credentials を取得できない。
+
+```bash
+# 現在の WIF 条件を確認
+gcloud iam workload-identity-pools providers describe github-provider \
+  --project=animation-agent --location=global \
+  --workload-identity-pool=github-pool \
+  --format='value(attributeCondition)'
+
+# 条件を main branch のみに再適用
+gcloud iam workload-identity-pools providers update-oidc github-provider \
+  --project=animation-agent --location=global \
+  --workload-identity-pool=github-pool \
+  --attribute-condition="assertion.repository=='RanArino/gen-fashion' && assertion.ref=='refs/heads/main'"
+```
+
+### Firebase Web API key の referrer 制限
+
+Firebase Web API key は公開クライアント設定だが、濫用を抑えるため実ドメインと
+ローカル開発 URL のみに制限する。
+
+```bash
+gcloud services api-keys update f185ac73-ab70-486d-a139-3b821854afdf \
+  --project=animation-agent \
+  --allowed-referrers='https://gen-fashion-app.web.app/*,https://animation-agent.web.app/*,http://localhost:8088/*'
+```
 
 ---
 
@@ -449,9 +499,20 @@ sed -i 's/^FIRESTORE_EMULATOR_HOST=/#FIRESTORE_EMULATOR_HOST=/' /home/ran/seed_s
 1. `ELASTICSEARCH_URL` に内部 IP（静的割当）ではなく VM 名を使っている → 内部 IP を使うこと
 2. Cloud Run のデプロイ時に `--network`/`--subnet`/`--vpc-egress=private-ranges-only` を省略している
 3. ファイアウォールルール `allow-es-from-cloudrun` のソース範囲が subnet の CIDR と一致していない
+4. ES 証明書を再生成したのに `ES_SSL_FINGERPRINT` / `ELASTICSEARCH_SSL_ASSERT_FINGERPRINT` を更新していない
 
 ```bash
 # subnet の CIDR を確認（ファイアウォールルールと照合）
 gcloud compute networks subnets describe default \
   --region=asia-northeast1 --format='value(ipCidrRange)'
+
+# ES が :9200 で提示する leaf certificate fingerprint を IAP SSH 経由で取得
+gcloud compute ssh gen-fashion-es \
+  --zone=asia-northeast1-a --tunnel-through-iap \
+  --command="echo | openssl s_client -connect localhost:9200 -servername 10.146.0.2 2>/dev/null | openssl x509 -fingerprint -sha256 -noout"
+
+# Cloud Run に入っている fingerprint env を確認
+gcloud run services describe fastapi-service \
+  --region=asia-northeast1 \
+  --format='value(spec.template.spec.containers[0].env[?name=ELASTICSEARCH_SSL_ASSERT_FINGERPRINT].value)'
 ```

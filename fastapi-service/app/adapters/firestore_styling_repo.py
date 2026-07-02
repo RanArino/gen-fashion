@@ -48,6 +48,7 @@ class FirestoreStylingRepository(StylingRepositoryPort):
             "style": preference.style,
             "colorPreference": preference.color_preference,
             "gender": preference.gender,
+            "language": preference.language,
         }
 
     @staticmethod
@@ -60,6 +61,7 @@ class FirestoreStylingRepository(StylingRepositoryPort):
             style=data.get("style"),
             color_preference=data.get("colorPreference"),
             gender=data.get("gender"),
+            language=data.get("language"),
         )
 
     @staticmethod
@@ -155,6 +157,21 @@ class FirestoreStylingRepository(StylingRepositoryPort):
             if session is not None:
                 sessions.append(session)
         return sessions
+
+    async def count_completed_today(self, user_id: str, since: datetime) -> int:
+        settings = get_settings()
+        cap = max(settings.max_daily_generations_per_user + 1, 2)
+        query = (
+            self._collection()
+            .where("userId", "==", user_id)
+            .where("status", "==", StyleSessionState.COMPLETED.value)
+            .where("completedAt", ">=", since)
+            .limit(cap)
+        )
+        count = 0
+        async for _ in query.stream():
+            count += 1
+        return count
 
     async def list_events(
         self, user_id: str, session_id: StyleSessionId, after_seq: int = 0

@@ -36,6 +36,8 @@ ES_INTERNAL_IP=""
 R2_ENDPOINT_URL=""
 R2_PUBLIC_ENDPOINT_URL=""
 R2_BUCKET_NAME="gen-fashion-images"
+ES_SSL_FINGERPRINT=""
+CORS_ALLOW_ORIGINS="https://gen-fashion-app.web.app,https://animation-agent.web.app"
 # Direct VPC egress (ADL-023): reach the private ES VM with no Serverless VPC Access connector.
 VPC_NETWORK="default"
 VPC_SUBNET="default"
@@ -52,6 +54,8 @@ while [[ $# -gt 0 ]]; do
     --r2-endpoint-url)    R2_ENDPOINT_URL="$2";       shift 2 ;;
     --r2-public-endpoint-url) R2_PUBLIC_ENDPOINT_URL="$2"; shift 2 ;;
     --r2-bucket-name)     R2_BUCKET_NAME="$2";        shift 2 ;;
+    --es-ssl-fingerprint) ES_SSL_FINGERPRINT="$2";    shift 2 ;;
+    --cors-allow-origins) CORS_ALLOW_ORIGINS="$2";    shift 2 ;;
     --network)            VPC_NETWORK="$2";           shift 2 ;;
     --subnet)             VPC_SUBNET="$2";            shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
@@ -64,25 +68,33 @@ done
 : "${ES_INTERNAL_IP:?--es-internal-ip is required}"
 : "${R2_ENDPOINT_URL:?--r2-endpoint-url is required}"
 : "${R2_PUBLIC_ENDPOINT_URL:?--r2-public-endpoint-url is required}"
+# ELASTICSEARCH_URL is deployed as https://...:9200 against a self-signed cert.
+# An empty fingerprint disables pinning and falls back to default cert
+# verification, which fails at runtime — guard against a broken revision.
+: "${ES_SSL_FINGERPRINT:?--es-ssl-fingerprint is required}"
 
-# Build env-vars string
+# Build env-vars string. Use a custom delimiter for gcloud because
+# CORS_ALLOW_ORIGINS is a comma-separated value.
 ENV_VARS="GOOGLE_CLOUD_PROJECT=${PROJECT}"
-ENV_VARS+=",FIREBASE_PROJECT_ID=${PROJECT}"
-ENV_VARS+=",GOOGLE_GENAI_USE_VERTEXAI=true"
-ENV_VARS+=",GOOGLE_CLOUD_LOCATION=us-central1"
-ENV_VARS+=",ELASTICSEARCH_URL=https://${ES_INTERNAL_IP}:9200"
-ENV_VARS+=",R2_ENDPOINT_URL=${R2_ENDPOINT_URL}"
-ENV_VARS+=",R2_PUBLIC_ENDPOINT_URL=${R2_PUBLIC_ENDPOINT_URL}"
-ENV_VARS+=",R2_BUCKET_NAME=${R2_BUCKET_NAME}"
-ENV_VARS+=",TASK_QUEUE_MODE=cloud_tasks"
-ENV_VARS+=",CLOUD_TASKS_QUEUE_EMBED=gen-fashion-embed"
-ENV_VARS+=",CLOUD_TASKS_LOCATION=${REGION}"
-ENV_VARS+=",ADK_INTERNAL_BASE_URL=${ADK_URL}"
+ENV_VARS+="|FIREBASE_PROJECT_ID=${PROJECT}"
+ENV_VARS+="|GOOGLE_GENAI_USE_VERTEXAI=true"
+ENV_VARS+="|GOOGLE_CLOUD_LOCATION=us-central1"
+ENV_VARS+="|ELASTICSEARCH_URL=https://${ES_INTERNAL_IP}:9200"
+ENV_VARS+="|ELASTICSEARCH_SSL_ASSERT_FINGERPRINT=${ES_SSL_FINGERPRINT}"
+ENV_VARS+="|R2_ENDPOINT_URL=${R2_ENDPOINT_URL}"
+ENV_VARS+="|R2_PUBLIC_ENDPOINT_URL=${R2_PUBLIC_ENDPOINT_URL}"
+ENV_VARS+="|R2_BUCKET_NAME=${R2_BUCKET_NAME}"
+ENV_VARS+="|TASK_QUEUE_MODE=cloud_tasks"
+ENV_VARS+="|CLOUD_TASKS_QUEUE_EMBED=gen-fashion-embed"
+ENV_VARS+="|CLOUD_TASKS_LOCATION=${REGION}"
+ENV_VARS+="|ADK_INTERNAL_BASE_URL=${ADK_URL}"
+ENV_VARS+="|CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS}"
+ENV_VARS+="|MAX_DAILY_GENERATIONS_PER_USER=5"
 
 if [[ "${BOOTSTRAP}" == "false" ]]; then
   : "${FASTAPI_URL:?--fastapi-url is required (omit only with --bootstrap)}"
-  ENV_VARS+=",FASTAPI_INTERNAL_BASE_URL=${FASTAPI_URL}"
-  ENV_VARS+=",INTERNAL_INVOKER_SA=tasks-invoker-sa@${PROJECT}.iam.gserviceaccount.com"
+  ENV_VARS+="|FASTAPI_INTERNAL_BASE_URL=${FASTAPI_URL}"
+  ENV_VARS+="|INTERNAL_INVOKER_SA=tasks-invoker-sa@${PROJECT}.iam.gserviceaccount.com"
 fi
 
 echo "==> Deploying fastapi-service (public) to ${REGION}..."
@@ -101,7 +113,7 @@ gcloud run deploy fastapi-service \
   --network="${VPC_NETWORK}" \
   --subnet="${VPC_SUBNET}" \
   --vpc-egress=private-ranges-only \
-  --set-env-vars="${ENV_VARS}" \
+  --set-env-vars="^|^${ENV_VARS}" \
   --set-secrets="ELASTICSEARCH_API_KEY=ELASTICSEARCH_API_KEY:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,INTERNAL_TASK_SECRET=INTERNAL_TASK_SECRET:latest"
 
 if [[ "${BOOTSTRAP}" == "false" ]]; then
