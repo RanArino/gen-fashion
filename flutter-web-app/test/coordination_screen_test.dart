@@ -50,6 +50,6 @@ void main() {
 
     expect(event.seq, 3);
     expect(event.toolResult?['coordinateImageUrl'], 'http://image');
-    expect(event.detailText, contains('style_synthesizer'));
+    expect(event.toJson()['toolName'], 'style_synthesizer');
   });
 }
