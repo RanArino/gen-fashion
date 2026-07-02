@@ -242,6 +242,41 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get tracePreview => 'プレビュー';
+
+  @override
+  String get traceRaw => 'Raw';
+
+  @override
+  String get traceDescription => '説明';
+
+  @override
+  String get traceStyleDirection => 'スタイル';
+
+  @override
+  String get traceWearer => '着用者';
+
+  @override
+  String get traceItemCount => 'アイテム数';
+
+  @override
+  String get traceModelUsed => 'モデル';
+
+  @override
+  String get traceGenerationPrompt => 'プロンプト';
+
+  @override
+  String get traceTags => 'タグ';
+
+  @override
+  String get traceTargetAgent => 'エージェント';
+
+  @override
+  String traceItemsFound(int count) {
+    return '$count 件見つかりました';
+  }
+
+  @override
   String historyLoadFailed(Object error) {
     return '履歴の読み込みに失敗しました: $error';
   }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -534,27 +536,72 @@ class _TracePanel extends StatelessWidget {
   }
 }
 
-class AgentEventTile extends StatelessWidget {
+enum _TraceView { preview, raw }
+
+class AgentEventTile extends StatefulWidget {
   const AgentEventTile({super.key, required this.event});
 
   final AgentEvent event;
 
   @override
+  State<AgentEventTile> createState() => _AgentEventTileState();
+}
+
+class _AgentEventTileState extends State<AgentEventTile> {
+  _TraceView _view = _TraceView.preview;
+
+  @override
   Widget build(BuildContext context) {
-    final title = event.summary(AppLocalizations.of(context)!);
+    final l10n = AppLocalizations.of(context)!;
+    final title = widget.event.summary(l10n);
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
-      leading: Icon(_iconFor(event.eventKind)),
+      leading: Icon(_iconFor(widget.event.eventKind)),
       title: Text(title, overflow: TextOverflow.ellipsis),
-      subtitle: event.text == null
+      subtitle: widget.event.text == null
           ? null
-          : Text(event.text!, maxLines: 1, overflow: TextOverflow.ellipsis),
+          : Text(widget.event.text!,
+              maxLines: 1, overflow: TextOverflow.ellipsis),
       children: [
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: SelectableText(event.detailText),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SegmentedButton<_TraceView>(
+                segments: [
+                  ButtonSegment(
+                    value: _TraceView.preview,
+                    label: Text(l10n.tracePreview),
+                  ),
+                  ButtonSegment(
+                    value: _TraceView.raw,
+                    label: Text(l10n.traceRaw),
+                  ),
+                ],
+                selected: {_view},
+                onSelectionChanged: (values) =>
+                    setState(() => _view = values.first),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_view == _TraceView.preview)
+                _AgentPreview(event: widget.event)
+              else
+                SelectableText(
+                  const JsonEncoder.withIndent('  ')
+                      .convert(widget.event.toJson()),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'SpaceMono',
+                      ),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -568,6 +615,296 @@ class AgentEventTile extends StatelessWidget {
       'thinking' => Icons.psychology_outlined,
       _ => Icons.notes_outlined,
     };
+  }
+}
+
+// ── MJ: Preview dispatcher ────────────────────────────────────────────────────
+
+class _AgentPreview extends StatelessWidget {
+  const _AgentPreview({required this.event});
+
+  final AgentEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    if (event.toolName == 'search_closet') {
+      return _SearchClosetPreview(event: event, l10n: l10n);
+    }
+    if (event.toolName == 'style_synthesizer') {
+      return _StyleSynthesizerPreview(event: event, l10n: l10n);
+    }
+    if (event.toolName == 'transfer_to_agent') {
+      final agentName =
+          event.toolArgs?['agent_name'] as String? ?? event.text ?? '—';
+      return _PreviewField(label: l10n.traceTargetAgent, child: Text(agentName));
+    }
+    if (event.eventKind == 'final_answer') {
+      return _FinalAnswerPreview(event: event);
+    }
+    return SelectableText(
+      const JsonEncoder.withIndent('  ').convert(event.toJson()),
+      style: Theme.of(context).textTheme.bodySmall,
+    );
+  }
+}
+
+class _SearchClosetPreview extends StatelessWidget {
+  const _SearchClosetPreview({required this.event, required this.l10n});
+
+  final AgentEvent event;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    if (event.eventKind == 'tool_call') {
+      final args = event.toolArgs ?? {};
+      final description = args['description'] as String?;
+      final category = args['category'] as String?;
+      final rawColors = args['colors'];
+      final colors =
+          rawColors is List ? rawColors.cast<String>() : <String>[];
+      final gender = args['gender'] as String?;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (description != null)
+            _PreviewField(
+                label: l10n.traceDescription, child: Text(description)),
+          if (category != null)
+            _PreviewField(label: l10n.category, child: Text(category)),
+          if (colors.isNotEmpty)
+            _PreviewField(
+                label: l10n.colors, child: _ChipRow(values: colors)),
+          if (gender != null)
+            _PreviewField(label: l10n.gender, child: Text(gender)),
+        ],
+      );
+    }
+
+    // tool_result: N items found + compact per-item rows
+    final raw = event.toolResult?['result'];
+    final items = raw is List
+        ? raw.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.traceItemsFound(items.length),
+          style: Theme.of(context).textTheme.labelMedium,
+        ),
+        const SizedBox(height: 8),
+        ...items.map((item) => _ClosetItemRow(item: item)),
+      ],
+    );
+  }
+}
+
+class _StyleSynthesizerPreview extends StatelessWidget {
+  const _StyleSynthesizerPreview({required this.event, required this.l10n});
+
+  final AgentEvent event;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    if (event.eventKind == 'tool_call') {
+      final args = event.toolArgs ?? {};
+      final styleDesc = args['style_description'] as String?;
+      final age = args['wearer_age'] as String?;
+      final gender = args['gender'] as String?;
+      final language = args['language'] as String?;
+      final itemCount = (args['item_image_urls'] as List?)?.length ?? 0;
+      final wearer = [age, gender].whereType<String>().join(' ');
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (styleDesc != null)
+            _PreviewField(
+                label: l10n.traceStyleDirection, child: Text(styleDesc)),
+          if (wearer.isNotEmpty)
+            _PreviewField(label: l10n.traceWearer, child: Text(wearer)),
+          if (language != null)
+            _PreviewField(label: l10n.language, child: Text(language)),
+          _PreviewField(
+              label: l10n.traceItemCount, child: Text('$itemCount')),
+        ],
+      );
+    }
+
+    // tool_result
+    final result = event.toolResult ?? {};
+    final model = result['model_used'] as String?;
+    final language = result['language'] as String?;
+    final prompt = result['generation_prompt'] as String?;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (model != null)
+          _PreviewField(label: l10n.traceModelUsed, child: Text(model)),
+        if (language != null)
+          _PreviewField(label: l10n.language, child: Text(language)),
+        if (prompt != null)
+          _PreviewField(label: l10n.traceGenerationPrompt, child: Text(prompt)),
+      ],
+    );
+  }
+}
+
+class _FinalAnswerPreview extends StatelessWidget {
+  const _FinalAnswerPreview({required this.event});
+
+  final AgentEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = event.text;
+    if (text == null || text.isEmpty) {
+      return SelectableText(
+        const JsonEncoder.withIndent('  ').convert(event.toJson()),
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+    return SelectableText(text);
+  }
+}
+
+// ── MJ: Shared preview helpers ────────────────────────────────────────────────
+
+class _PreviewField extends StatelessWidget {
+  const _PreviewField({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 88,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+          Expanded(
+            child: DefaultTextStyle.merge(
+              style: Theme.of(context).textTheme.bodySmall!,
+              child: child,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChipRow extends StatelessWidget {
+  const _ChipRow({required this.values});
+
+  final List<String> values;
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 4,
+      runSpacing: 2,
+      children: values
+          .map((v) => RawChip(
+                label: Text(v),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+              ))
+          .toList(),
+    );
+  }
+}
+
+class _ClosetItemRow extends StatelessWidget {
+  const _ClosetItemRow({required this.item});
+
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = item['image_url'] as String?;
+    final category = item['category'] as String?;
+    final colors = (item['colors'] as List?)?.cast<String>() ?? <String>[];
+    final tags = (item['tags'] as List?)?.cast<String>() ?? <String>[];
+    final season = item['season'] as String?;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              width: 48,
+              height: 48,
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? Image.network(imageUrl, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => ColoredBox(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            child: const Icon(Icons.checkroom, size: 20),
+                          ))
+                  : ColoredBox(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      child: const Icon(Icons.checkroom, size: 20),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (category != null)
+                  Text(category,
+                      style: Theme.of(context).textTheme.bodySmall),
+                if (colors.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  _ChipRow(values: colors),
+                ],
+                if (tags.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  _ChipRow(values: tags),
+                ],
+                if (season != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    season,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -752,18 +1089,18 @@ class AgentEvent {
     );
   }
 
-  String get detailText {
-    final parts = <String>[
-      'seq: $seq',
-      'agent: $agentName',
-      'kind: $eventKind',
-      if (toolName != null) 'tool: $toolName',
-      if (text != null) 'text: $text',
-      if (toolArgs != null) 'args: $toolArgs',
-      if (toolResult != null) 'result: $toolResult',
-    ];
-    return parts.join('\n');
-  }
+  Map<String, dynamic> toJson() => {
+        'seq': seq,
+        'agentName': agentName,
+        'eventKind': eventKind,
+        if (toolName != null) 'toolName': toolName,
+        if (text != null) 'text': text,
+        if (toolArgs != null) 'toolArgs': toolArgs,
+        if (toolResult != null) 'toolResult': toolResult,
+      };
+
+  String get detailText =>
+      const JsonEncoder.withIndent('  ').convert(toJson());
 
   String summary(AppLocalizations l10n) {
     if (toolName == 'search_closet' && eventKind == 'tool_result') {

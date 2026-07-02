@@ -122,6 +122,24 @@
       "agentName": {}
     }
   },
+  "tracePreview": "Preview",
+  "traceRaw": "Raw",
+  "traceDescription": "Description",
+  "traceStyleDirection": "Style",
+  "traceWearer": "Wearer",
+  "traceItemCount": "Items",
+  "traceModelUsed": "Model",
+  "traceGenerationPrompt": "Prompt",
+  "traceTags": "Tags",
+  "traceTargetAgent": "Agent",
+  "traceItemsFound": "{count} items found",
+  "@traceItemsFound": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "historyLoadFailed": "Failed to load history: {error}",
   "@historyLoadFailed": {
     "placeholders": {

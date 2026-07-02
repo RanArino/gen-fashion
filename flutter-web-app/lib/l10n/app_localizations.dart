@@ -524,6 +524,72 @@ abstract class AppLocalizations {
   /// **'{agentName} is generating the coordinate'**
   String traceGeneratingCoordinate(Object agentName);
 
+  /// No description provided for @tracePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get tracePreview;
+
+  /// No description provided for @traceRaw.
+  ///
+  /// In en, this message translates to:
+  /// **'Raw'**
+  String get traceRaw;
+
+  /// No description provided for @traceDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get traceDescription;
+
+  /// No description provided for @traceStyleDirection.
+  ///
+  /// In en, this message translates to:
+  /// **'Style'**
+  String get traceStyleDirection;
+
+  /// No description provided for @traceWearer.
+  ///
+  /// In en, this message translates to:
+  /// **'Wearer'**
+  String get traceWearer;
+
+  /// No description provided for @traceItemCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Items'**
+  String get traceItemCount;
+
+  /// No description provided for @traceModelUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get traceModelUsed;
+
+  /// No description provided for @traceGenerationPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt'**
+  String get traceGenerationPrompt;
+
+  /// No description provided for @traceTags.
+  ///
+  /// In en, this message translates to:
+  /// **'Tags'**
+  String get traceTags;
+
+  /// No description provided for @traceTargetAgent.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent'**
+  String get traceTargetAgent;
+
+  /// No description provided for @traceItemsFound.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items found'**
+  String traceItemsFound(int count);
+
   /// No description provided for @historyLoadFailed.
   ///
   /// In en, this message translates to:

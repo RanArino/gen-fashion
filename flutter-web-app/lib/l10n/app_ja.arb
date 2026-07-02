@@ -71,6 +71,24 @@
   "traceSearchingCloset": "{agentName} がクローゼットを検索中",
   "traceGeneratedCoordinate": "{agentName} がコーディネートを生成しました",
   "traceGeneratingCoordinate": "{agentName} がコーディネートを生成中",
+  "tracePreview": "プレビュー",
+  "traceRaw": "Raw",
+  "traceDescription": "説明",
+  "traceStyleDirection": "スタイル",
+  "traceWearer": "着用者",
+  "traceItemCount": "アイテム数",
+  "traceModelUsed": "モデル",
+  "traceGenerationPrompt": "プロンプト",
+  "traceTags": "タグ",
+  "traceTargetAgent": "エージェント",
+  "traceItemsFound": "{count} 件見つかりました",
+  "@traceItemsFound": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "historyLoadFailed": "履歴の読み込みに失敗しました: {error}",
   "historyEmpty": "完了したコーディネートはまだありません。",
   "dateUnavailable": "日付不明",

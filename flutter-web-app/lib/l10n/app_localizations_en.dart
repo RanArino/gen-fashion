@@ -242,6 +242,41 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get tracePreview => 'Preview';
+
+  @override
+  String get traceRaw => 'Raw';
+
+  @override
+  String get traceDescription => 'Description';
+
+  @override
+  String get traceStyleDirection => 'Style';
+
+  @override
+  String get traceWearer => 'Wearer';
+
+  @override
+  String get traceItemCount => 'Items';
+
+  @override
+  String get traceModelUsed => 'Model';
+
+  @override
+  String get traceGenerationPrompt => 'Prompt';
+
+  @override
+  String get traceTags => 'Tags';
+
+  @override
+  String get traceTargetAgent => 'Agent';
+
+  @override
+  String traceItemsFound(int count) {
+    return '$count items found';
+  }
+
+  @override
   String historyLoadFailed(Object error) {
     return 'Failed to load history: $error';
   }
