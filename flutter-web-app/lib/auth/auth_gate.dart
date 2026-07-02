@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../config.dart';
 import '../home/home_screen.dart';
-import '../locale/locale_controller.dart';
 import 'auth_service.dart';
 import 'login_screen.dart';
 
@@ -19,25 +18,12 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   bool _autoSignInStarted = false;
-  String? _loadedLocaleUid;
   final _auth = AuthService();
 
   Future<void> _startE2eAutoSignIn() async {
     if (_autoSignInStarted || !AppConfig.e2eAutoSignIn) return;
     _autoSignInStarted = true;
-    await _auth.signInWithGoogle(
-      onLanguage: (language) =>
-          LocaleScope.of(context).value = Locale(language),
-    );
-  }
-
-  void _loadLocale(User user) {
-    if (_loadedLocaleUid == user.uid) return;
-    _loadedLocaleUid = user.uid;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      LocaleScope.of(context).loadForUser(user.uid);
-    });
+    await _auth.signInWithGoogle();
   }
 
   @override
@@ -52,7 +38,6 @@ class _AuthGateState extends State<AuthGate> {
         }
         final user = snapshot.data;
         if (user == null) {
-          _loadedLocaleUid = null;
           if (AppConfig.e2eAutoSignIn) {
             _startE2eAutoSignIn();
             return const Scaffold(
@@ -61,7 +46,6 @@ class _AuthGateState extends State<AuthGate> {
           }
           return const LoginScreen();
         }
-        _loadLocale(user);
         return HomeScreen(uid: user.uid);
       },
     );
