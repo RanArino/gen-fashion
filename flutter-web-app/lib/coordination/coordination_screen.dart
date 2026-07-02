@@ -506,12 +506,6 @@ class _TracePanel extends StatelessWidget {
                 if (status != null) Chip(label: Text(status!)),
               ],
             ),
-            if (sessionId != null)
-              Text(
-                sessionId!,
-                style: Theme.of(context).textTheme.bodySmall,
-                overflow: TextOverflow.ellipsis,
-              ),
             const SizedBox(height: 12),
             if (error != null)
               Text(
