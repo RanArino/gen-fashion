@@ -21,3 +21,8 @@ class NoSourceSelected(StylingException):
 class NoImageUploaded(StylingException):
     """Raised when image is not uploaded for analysis."""
     pass
+
+
+class DailyGenerationLimitExceeded(StylingException):
+    """Raised when the user has reached the daily image generation limit."""
+    pass

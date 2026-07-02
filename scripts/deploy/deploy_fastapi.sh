@@ -85,6 +85,7 @@ ENV_VARS+="|CLOUD_TASKS_QUEUE_EMBED=gen-fashion-embed"
 ENV_VARS+="|CLOUD_TASKS_LOCATION=${REGION}"
 ENV_VARS+="|ADK_INTERNAL_BASE_URL=${ADK_URL}"
 ENV_VARS+="|CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS}"
+ENV_VARS+="|MAX_DAILY_GENERATIONS_PER_USER=5"
 
 if [[ "${BOOTSTRAP}" == "false" ]]; then
   : "${FASTAPI_URL:?--fastapi-url is required (omit only with --bootstrap)}"

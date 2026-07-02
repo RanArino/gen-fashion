@@ -2,6 +2,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.config import Settings
 from app.domain.closet import ClothingItem, ClothingItemId, ClothingItemStatus
 from app.domain.styling import (
     ClothingSource,
@@ -11,6 +12,7 @@ from app.domain.styling import (
     StyleSessionState,
     UserPreference,
 )
+from app.domain.styling.exceptions import DailyGenerationLimitExceeded
 from app.ports import AgentRunRequest
 from app.use_cases.styling import (
     CreateSessionUseCase,
@@ -22,6 +24,8 @@ from app.use_cases.styling import (
 class FakeStylingRepo:
     def __init__(self):
         self.sessions = {}
+        self.completed_today_count = 0
+        self.count_completed_today_calls = []
 
     async def create(self, session):
         self.sessions[(session.user_id, str(session.id))] = session
@@ -31,6 +35,13 @@ class FakeStylingRepo:
 
     async def update(self, session):
         self.sessions[(session.user_id, str(session.id))] = session
+
+    async def list_completed(self, user_id, limit=20):
+        return []
+
+    async def count_completed_today(self, user_id, since):
+        self.count_completed_today_calls.append((user_id, since))
+        return self.completed_today_count
 
     async def list_events(self, user_id, session_id):
         return []
@@ -196,6 +207,40 @@ async def test_select_source_accepts_ready_closet_item():
 
 
 @pytest.mark.asyncio
+async def test_select_source_rejects_when_daily_generation_limit_reached_before_agent_run():
+    repo = FakeStylingRepo()
+    repo.completed_today_count = 5
+    session_id = uuid4()
+    await repo.create(
+        StyleSession(
+            id=StyleSessionId(session_id),
+            user_id="user-123",
+            state=StyleSessionState.SOURCE_SELECTING,
+        )
+    )
+    agent_run = FakeAgentRun()
+
+    with pytest.raises(DailyGenerationLimitExceeded, match="Daily generation limit of 5"):
+        await SelectClothingSourceUseCase(
+            repo,
+            FakeClosetRepo(),
+            agent_run,
+            Settings(max_daily_generations_per_user=5),
+        ).execute(
+            "user-123",
+            str(session_id),
+            ClothingSource.SHARED_CLOSET,
+            UserPreference(),
+            "adult-01",
+        )
+
+    session = await repo.get_by_id("user-123", StyleSessionId(session_id))
+    assert session.state == StyleSessionState.SOURCE_SELECTING
+    assert len(repo.count_completed_today_calls) == 1
+    assert agent_run.requests == []
+
+
+@pytest.mark.asyncio
 async def test_select_source_rejects_non_owner_or_missing_session():
     with pytest.raises(StyleSessionNotFound):
         await SelectClothingSourceUseCase(
@@ -228,6 +273,82 @@ async def test_select_candidates_persists_explicit_selection_and_triggers_genera
     assert session.selected_items == [{"item_id": "item-1", "image_url": "http://item"}]
     assert agent_run.requests[0].phase == "generate"
     assert agent_run.requests[0].user_preference["gender"] == "female"
+
+
+@pytest.mark.asyncio
+async def test_select_candidates_rejects_when_daily_generation_limit_reached():
+    repo = FakeStylingRepo()
+    repo.completed_today_count = 5
+    session_id = uuid4()
+    await repo.create(
+        StyleSession(
+            id=StyleSessionId(session_id),
+            user_id="user-123",
+            state=StyleSessionState.PROPOSING,
+            clothing_source=ClothingSource.SHARED_CLOSET,
+            proposed_candidates=[{"item_id": "item-1"}],
+        )
+    )
+    use_case = SelectCandidatesUseCase(
+        repo,
+        FakeAgentRun(),
+        Settings(max_daily_generations_per_user=5),
+    )
+
+    with pytest.raises(DailyGenerationLimitExceeded, match="Daily generation limit of 5"):
+        await use_case.execute("user-123", str(session_id), ["item-1"])
+
+
+@pytest.mark.asyncio
+async def test_select_candidates_allows_when_under_daily_generation_limit():
+    repo = FakeStylingRepo()
+    repo.completed_today_count = 4
+    session_id = uuid4()
+    await repo.create(
+        StyleSession(
+            id=StyleSessionId(session_id),
+            user_id="user-123",
+            state=StyleSessionState.PROPOSING,
+            clothing_source=ClothingSource.SHARED_CLOSET,
+            proposed_candidates=[{"item_id": "item-1"}],
+        )
+    )
+    agent_run = FakeAgentRun()
+
+    await SelectCandidatesUseCase(
+        repo,
+        agent_run,
+        Settings(max_daily_generations_per_user=5),
+    ).execute("user-123", str(session_id), ["item-1"])
+
+    assert len(repo.count_completed_today_calls) == 1
+    assert agent_run.requests[0].phase == "generate"
+
+
+@pytest.mark.asyncio
+async def test_select_candidates_skips_count_when_daily_generation_limit_unlimited():
+    repo = FakeStylingRepo()
+    repo.completed_today_count = 99
+    session_id = uuid4()
+    await repo.create(
+        StyleSession(
+            id=StyleSessionId(session_id),
+            user_id="user-123",
+            state=StyleSessionState.PROPOSING,
+            clothing_source=ClothingSource.SHARED_CLOSET,
+            proposed_candidates=[{"item_id": "item-1"}],
+        )
+    )
+    agent_run = FakeAgentRun()
+
+    await SelectCandidatesUseCase(
+        repo,
+        agent_run,
+        Settings(max_daily_generations_per_user=0),
+    ).execute("user-123", str(session_id), ["item-1"])
+
+    assert repo.count_completed_today_calls == []
+    assert agent_run.requests[0].phase == "generate"
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,7 @@
 # Phase 1 Feature Matrix — gen-fashion
 
+> **MH completion update (2026-07-01): ✅ Implemented.** Daily image generation cap is enforced before ADK agent launch at `POST /sessions/{id}/source` → `SelectClothingSourceUseCase`, and remains enforced at `POST /sessions/{id}/select` → `SelectCandidatesUseCase` as a second guard. `MAX_DAILY_GENERATIONS_PER_USER=5` is wired for Cloud Run and local Docker/`.env.example`; `0` intentionally disables the limit. Count method: `COMPLETED` sessions with `completedAt >= today UTC midnight`; failed/timed-out/in-flight sessions are not counted. `DailyGenerationLimitExceeded` maps to HTTP 429. FastAPI tests pass (**76 passed**), local container health returns `{"status":"ok"}`, and the local container reads `MAX_DAILY_GENERATIONS_PER_USER=5`. **MH-1…MH-4 → ✅ Implemented.**
+
 > **CI/CD planning (2026-06-26 — tracking only, no ExecPlan yet):** The hackathon's
 > judging axis — **CI/CD after deployment** — was not present anywhere in the
 > requirements or plans (no `.github/`, no Cloud Build trigger, no `cloudbuild.yaml`,
@@ -75,6 +77,7 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 | **ME** | Pre-Deployment Experience & Domain Hardening | 1a | M5 | Close six user-facing / domain gaps found before deploy (`ToDo` §1–6): closet gallery + metadata incl. shared closets, a gender/age dimension threaded end-to-end (child closet → child imagery), shared-closet gender data, Agent-Trace curation, candidate result UI + mandatory user-selection gate, and agent run history. |
 | **MD** | Phase 1a Production Deployment & Hardening | 1a | M5, ME | Deploy the verified Phase 1a stack to Google Cloud: Compute Engine ES + private connectivity, full vector seed, Cloud Run ×2, Secret Manager + OIDC, Nano Banana on Vertex AI, Firebase Hosting. |
 | **MF** | CI/CD (Continuous Delivery) | 1a | MD | Automate MD's manual deploy: GitHub Actions CI gate (per-service tests + image build) + CD (Artifact Registry → Cloud Run ×2 + Firebase Hosting) over Workload Identity Federation, with post-deploy smoke + revision rollback. The hackathon's CI/CD-after-deployment axis. |
+| **MH** | Daily Generation Rate Limit | 1a | MD | Per-user daily cap on image generation completions (default 5/UTC day). HTTP 429 when limit reached. Enforced locally and in production before ADK agent launch; `MAX_DAILY_GENERATIONS_PER_USER=0` intentionally disables it. |
 
 > Phase 1a = **M0–M5** (local-verified) **+ ME** (pre-deploy UX / domain hardening) **+ MD** (production cutover) **+ MF** (CI/CD automation over MD). Phase 1b = **M6**. **ME precedes MD** — MD's must-fix gate is the two requirement violations it found (the `child-01` → adult-image defect **ME-3** and the missing user-selection step **ME-6**); the rest of ME is strongly recommended before cutover. **MD** completes Phase 1a in the cloud and is independent of M6; LINE work (M6) must not start until M5 is complete (`req-phase01.md` §14).
 
@@ -288,6 +291,24 @@ Implementation proceeds **milestone by milestone**, in order. Each milestone is 
 
 ---
 
+
+
+## MH — Production Daily Generation Rate Limit
+
+**Scope:** Add a per-user daily cap on completed image generations to prevent runaway Vertex AI spend. Active in local dev and production by default; `0` intentionally disables the limit. Enforcement starts in `SelectClothingSourceUseCase` before the propose ADK run and remains in `SelectCandidatesUseCase` before the generate ADK run. Reference: `req-phase01.md` §21, ADL-034.
+
+> **ExecPlan (2026-07-01, completed 2026-07-01):** [20260701-mh-daily-generation-rate-limit.md](plans/20260701-mh-daily-generation-rate-limit.md) covers MH-1…MH-4. Count method: `status == COMPLETED` and `completedAt >= today UTC midnight` — failed/timed-out generations are not counted. Firestore reads at most `limit + 1` documents per quota check (≤ 6 for the default limit of 5). Reuses existing `(userId, status, completedAt DESC)` composite index. `adk-agent-service` is not touched. 2026-07-01 local hardening moved the first enforcement point to `/source`, before propose/search agent launch, and kept `/select` as a second guard before generate launch. Verification: FastAPI `pytest -q` reports 76 passed; Docker container targeted tests pass; local FastAPI container reads `MAX_DAILY_GENERATIONS_PER_USER=5` and `/health` returns ok.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| MH-1 | Config + `DailyGenerationLimitExceeded` exception | ✅ Implemented | `max_daily_generations_per_user: int = 0` in `Settings` (`fastapi-service/app/config.py`), with Docker/`.env.example` defaulting to 5 for local testability; `DailyGenerationLimitExceeded(StylingException)` in `app/domain/styling/exceptions.py`. | §21, ADL-034 |
+| MH-2 | `count_completed_today` port method + Firestore adapter | ✅ Implemented | Abstract `count_completed_today(user_id, since) -> int` on `StylingRepositoryPort`; Firestore implementation queries `userId==, status==COMPLETED, completedAt >= since` with `.limit(cap)`. | §21, ADL-034 |
+| MH-3 | Pre-agent use-case enforcement | ✅ Implemented | `SelectClothingSourceUseCase` checks the daily count before `AgentRunPort.start_session_run(phase="propose")`, so no search/propose agent run starts after the cap is reached. `SelectCandidatesUseCase` also checks before `phase="generate"` as a second guard. Both skip the count when `limit == 0`. | §21, ADL-034 |
+| MH-4 | Route handler 429 + deployment config | ✅ Implemented | Catch `DailyGenerationLimitExceeded` → HTTP 429 in both `select_source` and `select_candidates` handlers; `MAX_DAILY_GENERATIONS_PER_USER=5` is deployed by `scripts/deploy/deploy_fastapi.sh` and enabled in local Docker/`.env.example`. | §21, ADL-034 |
+
+**Exit criteria:** `POST /sessions/{id}/source` returns HTTP 429 before ADK launch when the user's `COMPLETED` generation count for the current UTC day reaches 5; `POST /sessions/{id}/select` also returns 429 if reached there; local `make dev` enforces the same default limit unless explicitly set to `0`.
+
+---
 
 
 ## Out of scope (Phase 1)

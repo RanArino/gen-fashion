@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../config.dart';
 import '../home/home_screen.dart';
+import 'auth_service.dart';
 import 'login_screen.dart';
 
 /// Gates the closet behind sign-in (M2-1). Unauthenticated visitors see only
@@ -17,11 +18,12 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   bool _autoSignInStarted = false;
+  final _auth = AuthService();
 
   Future<void> _startE2eAutoSignIn() async {
     if (_autoSignInStarted || !AppConfig.e2eAutoSignIn) return;
     _autoSignInStarted = true;
-    await FirebaseAuth.instance.signInAnonymously();
+    await _auth.signInWithGoogle();
   }
 
   @override
