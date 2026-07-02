@@ -31,6 +31,7 @@ This ExecPlan is authored at the user's explicit request. It corresponds to feat
 - [x] (2026-07-02 JST) Milestone C — Design system theme: central `lib/theme/app_theme.dart` and `lib/theme/components.dart` implement the `temp-ui` palette/typography/components and are wired into `MaterialApp.theme`.
 - [x] (2026-07-02 JST) Milestone D implementation — Login, Home shell/nav, Closet, Coordinate, History, Shared gallery, attribution, dialogs, snackbars, and test wrappers were localized/restyled with the theme/components.
 - [x] (2026-07-02 JST) Milestone D verification (MI-7) — Full E2E against `make dev`: FastAPI 77 passed (incl. two new `language` regression tests), ADK 41, `flutter analyze` clean, `flutter test` 15. Scripted `en`+`ja` `SHARED_CLOSET` coordinations proved language freeze at `PROPOSING` + final-session persistence + `style_synthesizer` propagation + `COMPLETED`. Rendered browser E2E captured the redesigned UI in both locales via persisted `users/{uid}.language`. Verification found and fixed a four-site FastAPI language-drop bug (see Surprises + Outcomes).
+- [x] (2026-07-02 JST) Milestone E — UI polish (MI-8, MI-9): removed internal session ID display from the Agent Trace panel; added Apple-style CJK font fallback stacks to all text theme styles in `lib/theme/app_theme.dart` (sans Archivo → Hiragino Kaku Gothic Pro / Hiragino Sans / Yu Gothic UI / Noto Sans JP; serif Instrument Serif → Hiragino Mincho Pro / Yu Mincho / Noto Serif JP; Space Mono eyebrow → sans stack). `flutter analyze` clean.
 
 
 ## Surprises & Discoveries
@@ -181,6 +182,21 @@ Acceptance: a run started while the UI is English produces English reasoning/des
 4. Wire `theme:` into `MaterialApp` in `main.dart`, replacing `ColorScheme.fromSeed(seedColor: Colors.indigo)`.
 
 Acceptance: the app renders with the beige canvas, serif headers, mono eyebrow labels, and terracotta buttons; `flutter analyze` is clean.
+
+### Milestone E — UI Polish follow-up (MI-8, MI-9)
+
+Two small presentation bugs found after Milestone D browser verification.
+
+1. **Remove session ID from Agent Trace panel (MI-8).** `_TracePanel` displayed the raw `sessionId` string (e.g., `"2726d…"`) under the "Agent trace" heading. It is an internal identifier with no value to end users; remove it. Session data is still accessible in the Raw JSON view of any event tile.
+   - File: `flutter-web-app/lib/coordination/coordination_screen.dart`, `_TracePanel.build` — delete the `if (sessionId != null) Text(sessionId!, …)` block.
+
+2. **CJK (Japanese) font fallback stack (MI-9).** The three Google Fonts faces (Archivo, Instrument Serif, Space Mono) cover only Latin characters. Japanese text fell through to an unspecified platform default, which varies by OS (MS Gothic on Windows, different weights on Android), breaking the visual tone of the design system. Following Apple's convention — pairing each primary Latin face with a specifically chosen Japanese equivalent — add explicit `fontFamilyFallback` chains to all `TextStyle`s in `lib/theme/app_theme.dart`:
+   - **Archivo (body/sans)** → `['Hiragino Kaku Gothic Pro', 'Hiragino Sans', 'Yu Gothic UI', 'Noto Sans JP']`
+   - **Instrument Serif (display/headers)** → `['Hiragino Mincho Pro', 'Yu Mincho', 'Noto Serif JP']`
+   - **Space Mono (eyebrow/mono labels)** → same sans stack (no Japanese-specific monospace)
+   - Implementation: `_serifFallback` const applied via `.copyWith()` to the three Instrument Serif overrides; a `_addSansFallbacks` helper adds `_sansFallback` to all remaining styles; `eyebrow` getter updated so nav/chip themes also benefit.
+
+Acceptance: `flutter analyze` clean; Japanese text on all screens renders in a harmonious weight/style matching its Latin companion font.
 
 ### Milestone D — Restyle screens, responsive, verification (MI-6, MI-7)
 

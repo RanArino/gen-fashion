@@ -1370,6 +1370,15 @@ Vertex AI（Nano Banana / `gemini-2.5-flash-image`）の API 呼び出しは課�
 - レイアウトがレスポンシブ（広幅で内容幅を制約、テキスト重なりなし、十分なタップ領域）で、両言語で崩れないこと。
 - `flutter analyze` クリーン、`flutter test` green。
 
+### 23.4 UI ポリッシュ（MI-8, MI-9）
+
+- **Agent Trace セッション ID 非表示（MI-8）:** Coordinate 画面の「Agent trace」見出し直下に表示されていた内部セッション ID（例: `2726d…`）を非表示にすること。セッション ID はエンドユーザーにとって無意味な内部識別子であり、表示しない。デバッグ用途にはイベントタイルの Raw JSON ビューで確認できる（表示の削除のみ; データフロー不変）。
+- **CJK フォントフォールバックスタック（MI-9）:** Apple のフォント設計方針（欧文書体ごとに視覚的な重みと雰囲気を合わせた日本語書体を対にする）に従い、`lib/theme/app_theme.dart` のすべての `TextStyle` に明示的な `fontFamilyFallback` を設定すること。設定は以下の通り:
+  - **本文（Archivo）** → `['Hiragino Kaku Gothic Pro', 'Hiragino Sans', 'Yu Gothic UI', 'Noto Sans JP']`
+  - **見出し（Instrument Serif）** → `['Hiragino Mincho Pro', 'Yu Mincho', 'Noto Serif JP']`
+  - **アイブロー・モノ（Space Mono）** → 上記サンスタックと同じ（日本語専用等幅書体は指定しない）
+  - この設定により、Windows（MS ゴシック）や Android（OS 既定フォント）での不統一を防ぎ、日本語テキストがデザインシステムと調和した書体で描画されること。
+
 ---
 
 ## 24. Agent-Trace Preview / Raw Views（MJ）
