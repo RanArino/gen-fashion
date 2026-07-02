@@ -1391,6 +1391,7 @@ Vertex AI（Nano Banana / `gemini-2.5-flash-image`）の API 呼び出しは課�
   - 呼び出し: Style direction（`style_description`）/ Wearer（`wearer_age` ＋ `gender`）/ Language / アイテム件数（`item_image_urls` 長）。
   - 結果: Model（`model_used`）/ Language / Generation prompt（`generation_prompt`）。画像 URL（`items` / `coordinate_image_url`）は出さない。
 - **最終提案（final answer）**: サマリ文のみ。取得画像は候補選択エリア（`_CandidatePanel`）と結果パネル（`_ResultPanel`）に既出のため再掲しない（§18.4）。
+- **エージェント委譲（`transfer_to_agent`）**: 委譲先エージェント名（`toolArgs['agent_name']`）を 1 フィールドで表示する。
 - **未対応ツール/イベント**: Raw JSON にフォールバックする（Preview が空にならない）。
 
 ### 24.3 実装方式（ADL-037）
@@ -1406,4 +1407,5 @@ Vertex AI（Nano Banana / `gemini-2.5-flash-image`）の API 呼び出しは課�
 - Closet Agent レスポンスがサムネイル ＋ Category/Colors/Tags/Season で表示され、ID/URL/gender/attribution が出ないこと。
 - styling_app と最終提案が整形フィールドで表示され、画像データを重複表示しないこと。
 - Preview ラベルが `日本語`/`English` に追従すること（生成コンテンツは不変）。
+- `transfer_to_agent` イベントが委譲先エージェント名を 1 フィールドで表示すること（JSON ダンプにならないこと）。
 - `flutter analyze` クリーン、`flutter test` green、両言語のブラウザ確認（Preview / Raw）が通ること。

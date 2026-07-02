@@ -38,11 +38,11 @@ This ExecPlan is authored at the user's explicit request and corresponds to feat
 ## Progress
 
 
-- [ ] MJ-1 — Per-accordion Preview⇄Raw toggle + real pretty-JSON raw view.
-- [ ] MJ-2 — Closet Agent (`search_closet`) Preview: curated request args; response as thumbnail + Category/Colors/Tags/Season (no IDs/URLs/gender/attribution).
-- [ ] MJ-3 — styling_app (`style_synthesizer`) Preview: call (style/wearer/language/item count) + result (model/language/prompt), no duplicated image data.
-- [ ] MJ-4 — Final-suggestion Preview: summary only, no re-listed retrieved image data.
-- [ ] MJ-5 — Localize the new Preview/Raw + field labels (`ja`/`en`) and verify (`flutter analyze`, `flutter test`, two-language browser check).
+- [x] (2026-07-02) MJ-1 — `dart:convert` import added; `_TraceView` enum (`preview`/`raw`); `AgentEventTile` converted to `StatefulWidget` holding per-item `_view` state; compact `SegmentedButton<_TraceView>` at the top of the expanded body; Real JSON Raw view via `AgentEvent.toJson()` + `JsonEncoder.withIndent('  ')` (replaces the old Dart-map `detailText` dump; `detailText` now delegates to `toJson()` for backward-compat).
+- [x] (2026-07-02) MJ-2 — `_SearchClosetPreview`: request shows Description/Category/Colors/Gender (hiding `source`/`user_id`/`shared_closet_id`/`limit`); response shows "N items found" header + `_ClosetItemRow` (48×48 thumbnail + Category/Colors/Tags/Season chips; no `item_id`/`source`/`gender`/`attribution`/raw URL text).
+- [x] (2026-07-02) MJ-3 — `_StyleSynthesizerPreview`: call shows Style direction / Wearer (age+gender) / Language / item count; result shows Model / Language / Generation prompt (no item or coordinate image URLs).
+- [x] (2026-07-02) MJ-4 — `_FinalAnswerPreview`: renders `event.text` as prose; unknown/empty events fall back to JSON so Preview is never empty. `_AgentPreview` dispatcher (routes by `toolName`/`eventKind`, JSON fallback for unrecognized events). Shared helper widgets: `_PreviewField` (88 px label + `Expanded` child), `_ChipRow` (compact `RawChip` wrap), `_ClosetItemRow`.
+- [x] (2026-07-02) MJ-5 — ARB keys added to `app_en.arb` / `app_ja.arb` (`tracePreview`, `traceRaw`, `traceDescription`, `traceStyleDirection`, `traceWearer`, `traceItemCount`, `traceModelUsed`, `traceGenerationPrompt`, `traceTags`, `traceItemsFound`, `traceTargetAgent`); `flutter gen-l10n` regenerated. Test updated (`detailText` → `toJson()`). `flutter analyze` → No issues found; `flutter test` → **15 passed**. Two-language browser check passed. Post-check fix: added `transfer_to_agent` Preview to `_AgentPreview` dispatcher — shows `toolArgs['agent_name']` as a single labeled field ("Agent" / "エージェント") instead of falling back to JSON.
 
 
 ## Surprises & Discoveries
@@ -79,7 +79,16 @@ This ExecPlan is authored at the user's explicit request and corresponds to feat
 ## Outcomes & Retrospective
 
 
-_(To be filled in on completion: verification results, any residuals, and the final view of each tool's Preview.)_
+**Completed 2026-07-02.** All MJ-1…MJ-5 milestones implemented and verified. `flutter analyze` clean; `flutter test` 15 passed; two-language (日本語/English) browser check passed against `make dev`.
+
+Per-tool Preview summary:
+- **`search_closet` call** — Description / Category / Colors (chips) / Gender; `source`/`user_id`/`shared_closet_id`/`limit` hidden.
+- **`search_closet` result** — "N items found" + per-item 48×48 thumbnail + Category / Colors (chips) / Tags (chips) / Season; no IDs/URLs/gender/attribution.
+- **`style_synthesizer` call** — Style / Wearer (age+gender) / Language / item count.
+- **`style_synthesizer` result** — Model / Language / Generation prompt; no image URLs.
+- **`transfer_to_agent`** — target agent name as a single labeled field (post-check fix; was falling back to JSON).
+- **`final_answer`** — summary prose only; no retrieved image data re-listed.
+- **Unknown events** — Raw JSON fallback (Preview never empty).
 
 
 ## Context and Orientation
