@@ -16,7 +16,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 60s
+      start_period: 90s
 
   firestore-emulator:
     image: google/cloud-sdk:latest
@@ -59,11 +59,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 120s
 
   firebase-auth-emulator:
-    image: node:20-alpine
+    build:
+      context: ./firebase
+      dockerfile: Dockerfile
     working_dir: /workspace
-    command: sh -c "npm install -g firebase-tools@latest && firebase emulators:start --only auth --project gen-fashion-local"
+    command: sh -c "firebase emulators:start --only auth --project gen-fashion-local"
     ports:
       - "127.0.0.1:9099:9099"
     volumes:
@@ -72,7 +75,8 @@ services:
       test: ["CMD", "node", "-e", "require('net').connect(9099,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 6
+      start_period: 30s
 
   minio:
     image: minio/minio:latest
