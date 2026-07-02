@@ -62,12 +62,22 @@ jobs:
       - run: flutter analyze
       - run: flutter test
 
+  test-deploy-scripts:
+    name: Test deploy scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest scripts.deploy.tests.test_deploy_firebase_hosting
+
   # ── Deploy to Production (main branch only, after all tests pass) ─ MF-3/4/5
 
   deploy:
     name: Deploy to Production
     if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
-    needs: [test-fastapi, test-adk, test-flutter]
+    needs: [test-fastapi, test-adk, test-flutter, test-deploy-scripts]
     runs-on: ubuntu-latest
     environment: production
     # Required for WIF OIDC token (ADL-030: no stored SA JSON keys)
