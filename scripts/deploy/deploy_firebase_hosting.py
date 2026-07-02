@@ -64,8 +64,8 @@ def api(method: str, url: str, token: str, body=None, raw_body: bytes = None,
 def sha256_gz(path: Path) -> tuple[str, bytes]:
     """Return (hex sha256, gzipped bytes) for a file."""
     raw = path.read_bytes()
-    gz = gzip.compress(raw, compresslevel=9)
-    digest = hashlib.sha256(raw).hexdigest()
+    gz = gzip.compress(raw, compresslevel=9, mtime=0)
+    digest = hashlib.sha256(gz).hexdigest()
     return digest, gz
 
 
