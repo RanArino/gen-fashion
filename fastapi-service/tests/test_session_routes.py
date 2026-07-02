@@ -4,8 +4,10 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.auth import verify_firebase_token
+from app.config import get_settings
 from app.dependencies import (
     get_create_session_use_case,
+    get_image_storage,
     get_select_candidates_use_case,
     get_select_source_use_case,
     get_styling_repository,
@@ -144,6 +146,11 @@ class HistoryRepo:
         return self.sessions
 
 
+class FakeImageStorage:
+    async def get_download_url(self, image_path):
+        return f"https://fresh.example.test/{image_path}?sig=new"
+
+
 def _completed_session(image_url: str, session_id: StyleSessionId | None = None) -> StyleSession:
     completed_at = datetime(2026, 6, 24, 10, 32)
     return StyleSession(
@@ -213,6 +220,44 @@ def test_list_sessions_returns_200_with_completed_sessions():
     ]
     assert response.json()[0]["selected_items"][0]["item_id"] == "item-1"
     reset_overrides()
+
+
+def test_list_sessions_refreshes_expired_storage_urls(monkeypatch):
+    reset_overrides()
+    monkeypatch.setenv("R2_ENDPOINT_URL", "http://minio:9000")
+    monkeypatch.setenv("R2_PUBLIC_ENDPOINT_URL", "http://localhost:9000")
+    monkeypatch.setenv("R2_BUCKET_NAME", "gen-fashion-images")
+    get_settings.cache_clear()
+    repo = HistoryRepo(
+        [
+            _completed_session(
+                "http://localhost:9000/gen-fashion-images/user-123/"
+                "coordinates/result.jpg?X-Amz-Signature=old"
+            ),
+        ]
+    )
+    repo.sessions[0].selected_items[0]["image_url"] = (
+        "http://localhost:9000/gen-fashion-images/__shared__/"
+        "closet/item-1.jpg?X-Amz-Signature=old"
+    )
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_styling_repository] = lambda: repo
+    app.dependency_overrides[get_image_storage] = lambda: FakeImageStorage()
+
+    response = TestClient(app).get("/sessions?limit=1")
+
+    assert response.status_code == 200
+    body = response.json()[0]
+    assert (
+        body["style_result"]["coordinate_image_url"]
+        == "https://fresh.example.test/user-123/coordinates/result.jpg?sig=new"
+    )
+    assert (
+        body["selected_items"][0]["image_url"]
+        == "https://fresh.example.test/__shared__/closet/item-1.jpg?sig=new"
+    )
+    reset_overrides()
+    get_settings.cache_clear()
 
 
 def test_list_sessions_empty_when_no_completed():
