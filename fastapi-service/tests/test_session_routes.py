@@ -430,3 +430,16 @@ def test_stream_emits_proposed_candidates_and_closes():
     assert "event: session.proposed" in response.text
     assert '"item_id": "item-1"' in response.text
     reset_overrides()
+
+
+def test_user_preference_request_carries_language_to_domain():
+    from app.handlers.session_routes import UserPreferenceRequest
+
+    request = UserPreferenceRequest.model_validate(
+        {"colorPreference": "blue", "gender": "female", "language": "en"}
+    )
+    preference = request.to_domain()
+
+    assert preference.language == "en"
+    assert preference.color_preference == "blue"
+    assert preference.gender == "female"

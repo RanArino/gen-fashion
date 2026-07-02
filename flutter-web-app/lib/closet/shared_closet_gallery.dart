@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../l10n/app_localizations.dart';
 import '../shared/attribution.dart';
 
 class SharedClosetGallery extends StatefulWidget {
@@ -77,7 +78,10 @@ class _SharedClosetGalleryState extends State<SharedClosetGallery> {
 
   @override
   Widget build(BuildContext context) {
-    if (_error != null) return Center(child: Text('Error: $_error'));
+    final l10n = AppLocalizations.of(context)!;
+    if (_error != null) {
+      return Center(child: Text(l10n.sharedGalleryError('$_error')));
+    }
     if (_loading && _closets.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -87,9 +91,8 @@ class _SharedClosetGalleryState extends State<SharedClosetGallery> {
           padding: const EdgeInsets.all(16),
           child: DropdownButtonFormField<String>(
             initialValue: _selectedClosetId,
-            decoration: const InputDecoration(
-              labelText: 'Shared closet',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: l10n.sharedCloset,
             ),
             items: _closets.map((closet) {
               final id = closet['closetId'] as String;

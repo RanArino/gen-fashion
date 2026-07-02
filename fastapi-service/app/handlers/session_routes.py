@@ -46,6 +46,7 @@ class UserPreferenceRequest(BaseModel):
     style: str | None = None
     color_preference: str | None = Field(default=None, alias="colorPreference")
     gender: str | None = None
+    language: str | None = None
 
     def to_domain(self) -> UserPreference:
         return UserPreference(
@@ -54,6 +55,7 @@ class UserPreferenceRequest(BaseModel):
             style=self.style,
             color_preference=self.color_preference,
             gender=self.gender,
+            language=self.language,
         )
 
 

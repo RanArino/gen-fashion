@@ -18,6 +18,7 @@ def style_synthesizer(
     style_description: str,
     gender: str = "common",
     wearer_age: str = "adult",
+    language: str = "ja",
 ) -> dict:
     """Generate a coordinate (outfit) image from the selected garment images.
 
@@ -27,6 +28,7 @@ def style_synthesizer(
         style_description: Desired styling direction for the generated photo.
         gender: Wearer's gender preference (male/female/common).
         wearer_age: Wearer's age group (adult/child).
+        language: Natural-language output language code (ja/en).
 
     Returns:
         {coordinate_image_url, items, model_used}; model_used is
@@ -38,7 +40,14 @@ def style_synthesizer(
     wearer = f"{wearer_age} wearer"
     if gender != "common":
         wearer = f"{wearer_age} {gender} wearer"
-    generation_prompt = f"Outfit worn by a {wearer}. {style_description}"
+    language_instruction = (
+        "Write all natural-language descriptions in English."
+        if language == "en"
+        else "Write all natural-language descriptions in Japanese."
+    )
+    generation_prompt = (
+        f"Outfit worn by a {wearer}. {language_instruction} {style_description}"
+    )
     try:
         result_bytes = image_generation.generate(image_bytes_list, generation_prompt)
         model_used = settings.image_generation_model
@@ -54,6 +63,7 @@ def style_synthesizer(
         "items": item_image_urls,
         "model_used": model_used,
         "generation_prompt": generation_prompt,
+        "language": language,
     }
 
 

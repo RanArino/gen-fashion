@@ -67,6 +67,7 @@ async def execute_run_session(
         seq = await session_repo.next_seq(request.session_id)
         closet_kind = await _resolve_closet_kind(request, session_repo)
         gender = request.user_preference.get("gender") or "common"
+        language = _language_code(request.user_preference)
 
         if request.phase == "propose":
             await session_repo.update_status(request.session_id, "SEARCHING")
@@ -80,7 +81,7 @@ async def execute_run_session(
                     "Propose outfit candidates only. Delegate closet searches to "
                     "ClosetAgent, let it create concrete descriptions for each "
                     "garment type, and stop after returning candidates. Context: "
-                    f"{_message_context(request, gender, closet_kind)}"
+                    f"{_message_context(request, gender, closet_kind, language)}"
                 ),
             )
             candidates = _collect_candidates(normalized_events)
@@ -124,7 +125,7 @@ async def execute_run_session(
                     "Generate one coordinate image for the already-selected "
                     "garments. Call style_synthesizer; you may only set an "
                     "optional style_description. Context: "
-                    f"{_message_context(request, gender, closet_kind)}"
+                    f"{_message_context(request, gender, closet_kind, language)}"
                 ),
             )
             result = _collect_style_result(
@@ -146,6 +147,7 @@ async def execute_run_session(
                     seq + 1,
                     gender=gender,
                     wearer_age=closet_kind,
+                    language=language,
                 )
             if result is None:
                 await session_repo.mark_error(request.session_id, "Selected items have no images")
@@ -170,6 +172,7 @@ async def _run_adk_phase(
 ) -> tuple[list[dict[str, Any]], int]:
     session_service = InMemorySessionService()
     gender = request.user_preference.get("gender") or "common"
+    language = _language_code(request.user_preference)
     search_tool = None
     style_tool = None
     selected_image_urls: list[str] = []
@@ -177,7 +180,7 @@ async def _run_adk_phase(
         search_tool = _build_propose_search_tool(request, gender)
     elif request.phase == "generate":
         selected_image_urls = _selected_image_urls(request.selected_items)
-        style_tool = _build_generate_style_tool(request, gender, wearer_age)
+        style_tool = _build_generate_style_tool(request, gender, wearer_age, language)
     active_runner = runner or Runner(
         agent=build_agent_for_phase(
             request.phase, search_tool=search_tool, style_tool=style_tool
@@ -195,6 +198,7 @@ async def _run_adk_phase(
         "selectedItems": request.selected_items or [],
         "gender": request.user_preference.get("gender") or "common",
         "wearerAge": wearer_age,
+        "language": language,
     }
     created = session_service.create_session(
         app_name=APP_NAME,
@@ -246,6 +250,7 @@ async def _run_adk_phase(
                             ),
                             "gender": gender,
                             "wearer_age": wearer_age,
+                            "language": language,
                         }
                     await session_repo.write_event(request.session_id, normalized)
                     normalized_events.append(normalized)
@@ -312,11 +317,13 @@ def _build_generate_style_tool(
     request: RunSessionRequest,
     gender: str,
     wearer_age: str,
+    language: str,
 ):
     user_id = request.user_id
     image_urls = _selected_image_urls(request.selected_items)
     bound_gender = gender
     bound_wearer_age = wearer_age
+    bound_language = language
 
     def style_synthesizer_tool(style_description: str = "") -> dict:
         return style_synthesizer(
@@ -327,18 +334,25 @@ def _build_generate_style_tool(
             ),
             gender=bound_gender,
             wearer_age=bound_wearer_age,
+            language=bound_language,
         )
 
     style_synthesizer_tool.__name__ = "style_synthesizer"
     style_synthesizer_tool.__doc__ = (
         "Generate a coordinate image for the already-selected garments. Provide "
         "only an optional style_description; the requesting user, garment images, "
-        "wearer gender, and wearer age are fixed by the server."
+        "wearer gender, wearer age, and language are fixed by the server."
     )
     return style_synthesizer_tool
 
 
-def _message_context(request: RunSessionRequest, gender: str, wearer_age: str) -> str:
+def _message_context(
+    request: RunSessionRequest,
+    gender: str,
+    wearer_age: str,
+    language: str,
+) -> str:
+    language_display = "English" if language == "en" else "Japanese"
     return json.dumps(
         {
             "sessionId": request.session_id,
@@ -354,6 +368,11 @@ def _message_context(request: RunSessionRequest, gender: str, wearer_age: str) -
             ],
             "gender": gender,
             "wearerAge": wearer_age,
+            "language": language,
+            "languageInstruction": (
+                "Author all natural-language output "
+                f"(reasoning, item descriptions, final answer) in {language_display}."
+            ),
         },
         ensure_ascii=False,
         separators=(",", ":"),
@@ -460,6 +479,7 @@ async def _run_generate_fallback(
     *,
     gender: str,
     wearer_age: str,
+    language: str,
 ) -> dict[str, Any] | None:
     selected = request.selected_items or []
     image_urls = [item["image_url"] for item in selected if item.get("image_url")]
@@ -473,6 +493,7 @@ async def _run_generate_fallback(
         "style_description": style_text,
         "gender": gender,
         "wearer_age": wearer_age,
+        "language": language,
     }
     await session_repo.write_event(
         request.session_id,
@@ -504,7 +525,11 @@ async def _run_generate_fallback(
             seq,
             agent_name="StylingAgent",
             event_kind="final_answer",
-            text="Coordinate image generated.",
+            text=(
+                "Coordinate image generated."
+                if language == "en"
+                else "コーディネート画像を生成しました。"
+            ),
         ),
     )
     return {
@@ -552,6 +577,10 @@ def _preference_colors(preference: dict[str, Any]) -> list[str] | None:
         if token.strip()
     ]
     return colors or None
+
+
+def _language_code(preference: dict[str, Any]) -> str:
+    return "en" if preference.get("language") == "en" else "ja"
 
 
 def _style_description(preference: dict[str, Any]) -> str:

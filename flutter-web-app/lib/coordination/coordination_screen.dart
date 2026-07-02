@@ -1,9 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../config.dart';
 import '../e2e_probe_stub.dart' if (dart.library.html) '../e2e_probe_web.dart';
+import '../l10n/app_localizations.dart';
+import '../locale/locale_controller.dart';
 import '../shared/attribution.dart';
+import '../theme/components.dart';
 
 const List<String> _sharedClosets = ['adult-01', 'adult-02', 'child-01'];
 
@@ -61,6 +66,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
 
   Future<void> _start() async {
     if (_running) return;
+    final languageCode = LocaleScope.of(context).languageCode;
     setState(() {
       _running = true;
       _error = null;
@@ -81,6 +87,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           'season': _season.text,
           'colorPreference': _color.text,
           'gender': _gender,
+          'language': languageCode,
         },
       );
       setState(() {
@@ -237,6 +244,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           season: _season,
           color: _color,
           gender: _gender,
+          languageCode: LocaleScope.of(context).languageCode,
           onSourceChanged: (value) => setState(() => _source = value),
           onSharedClosetChanged: (value) =>
               setState(() => _sharedClosetId = value),
@@ -322,6 +330,7 @@ class _Controls extends StatelessWidget {
     required this.season,
     required this.color,
     required this.gender,
+    required this.languageCode,
     required this.onSourceChanged,
     required this.onSharedClosetChanged,
     required this.onGenderChanged,
@@ -336,6 +345,7 @@ class _Controls extends StatelessWidget {
   final TextEditingController season;
   final TextEditingController color;
   final String gender;
+  final String languageCode;
   final ValueChanged<String> onSourceChanged;
   final ValueChanged<String> onSharedClosetChanged;
   final ValueChanged<String> onGenderChanged;
@@ -343,25 +353,33 @@ class _Controls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final l10n = AppLocalizations.of(context)!;
+    final languageLabel =
+        languageCode == 'en' ? l10n.languageEnglish : l10n.languageJapanese;
+    return SectionCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Coordination', style: Theme.of(context).textTheme.titleLarge),
+            const EyebrowLabel('Studio'),
+            const SizedBox(height: 6),
+            Text(
+              l10n.coordinationTitle,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 16),
             SegmentedButton<String>(
-              segments: const [
+              segments: [
                 ButtonSegment(
                   value: 'SHARED_CLOSET',
-                  icon: Icon(Icons.groups_outlined),
-                  label: Text('Shared'),
+                  icon: const Icon(Icons.groups_outlined),
+                  label: Text(l10n.sourceShared),
                 ),
                 ButtonSegment(
                   value: 'CLOSET',
-                  icon: Icon(Icons.checkroom_outlined),
-                  label: Text('Mine'),
+                  icon: const Icon(Icons.checkroom_outlined),
+                  label: Text(l10n.sourceMine),
                 ),
               ],
               selected: {source},
@@ -372,9 +390,8 @@ class _Controls extends StatelessWidget {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: sharedClosetId,
-                decoration: const InputDecoration(
-                  labelText: 'Shared closet',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.sharedCloset,
                 ),
                 items: _sharedClosets
                     .map((id) => DropdownMenuItem(value: id, child: Text(id)))
@@ -387,20 +404,25 @@ class _Controls extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            _TextField(controller: occasion, label: 'Occasion'),
-            _TextField(controller: style, label: 'Style'),
-            _TextField(controller: season, label: 'Season'),
-            _TextField(controller: color, label: 'Colors'),
+            _TextField(controller: occasion, label: l10n.occasion),
+            _TextField(controller: style, label: l10n.style),
+            _TextField(controller: season, label: l10n.season),
+            _TextField(controller: color, label: l10n.colors),
             DropdownButtonFormField<String>(
               initialValue: gender,
-              decoration: const InputDecoration(
-                labelText: 'Gender',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.gender,
               ),
-              items: const [
-                DropdownMenuItem(value: 'common', child: Text('Common')),
-                DropdownMenuItem(value: 'female', child: Text('Female')),
-                DropdownMenuItem(value: 'male', child: Text('Male')),
+              items: [
+                DropdownMenuItem(
+                  value: 'common',
+                  child: Text(l10n.genderCommon),
+                ),
+                DropdownMenuItem(
+                  value: 'female',
+                  child: Text(l10n.genderFemale),
+                ),
+                DropdownMenuItem(value: 'male', child: Text(l10n.genderMale)),
               ],
               onChanged: running
                   ? null
@@ -408,6 +430,8 @@ class _Controls extends StatelessWidget {
                       if (value != null) onGenderChanged(value);
                     },
             ),
+            const SizedBox(height: 8),
+            EyebrowLabel(l10n.selectedGenerationLanguage(languageLabel)),
             const SizedBox(height: 8),
             FilledButton.icon(
               onPressed: running ? null : onStart,
@@ -418,7 +442,7 @@ class _Controls extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.play_arrow),
-              label: Text(running ? 'Running' : 'Start'),
+              label: Text(running ? l10n.running : l10n.start),
             ),
           ],
         ),
@@ -441,7 +465,6 @@ class _TextField extends StatelessWidget {
         controller: controller,
         decoration: InputDecoration(
           labelText: label,
-          border: const OutlineInputBorder(),
         ),
       ),
     );
@@ -465,9 +488,10 @@ class _TracePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final l10n = AppLocalizations.of(context)!;
+    return SectionCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -475,29 +499,26 @@ class _TracePanel extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Agent trace',
+                    l10n.agentTrace,
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
                 if (status != null) Chip(label: Text(status!)),
               ],
             ),
-            if (sessionId != null)
-              Text(
-                sessionId!,
-                style: Theme.of(context).textTheme.bodySmall,
-                overflow: TextOverflow.ellipsis,
-              ),
             const SizedBox(height: 12),
             if (error != null)
-              Text('Error: $error', style: const TextStyle(color: Colors.red))
+              Text(
+                l10n.errorWithMessage('$error'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              )
             else if (events.isEmpty)
               SizedBox(
                 height: 160,
                 child: Center(
                   child: running
                       ? const CircularProgressIndicator()
-                      : const Text('No session events yet.'),
+                      : Text(l10n.noSessionEvents),
                 ),
               )
             else
@@ -509,27 +530,72 @@ class _TracePanel extends StatelessWidget {
   }
 }
 
-class AgentEventTile extends StatelessWidget {
+enum _TraceView { preview, raw }
+
+class AgentEventTile extends StatefulWidget {
   const AgentEventTile({super.key, required this.event});
 
   final AgentEvent event;
 
   @override
+  State<AgentEventTile> createState() => _AgentEventTileState();
+}
+
+class _AgentEventTileState extends State<AgentEventTile> {
+  _TraceView _view = _TraceView.preview;
+
+  @override
   Widget build(BuildContext context) {
-    final title = event.summary;
+    final l10n = AppLocalizations.of(context)!;
+    final title = widget.event.summary(l10n);
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
-      leading: Icon(_iconFor(event.eventKind)),
+      leading: Icon(_iconFor(widget.event.eventKind)),
       title: Text(title, overflow: TextOverflow.ellipsis),
-      subtitle: event.text == null
+      subtitle: widget.event.text == null
           ? null
-          : Text(event.text!, maxLines: 1, overflow: TextOverflow.ellipsis),
+          : Text(widget.event.text!,
+              maxLines: 1, overflow: TextOverflow.ellipsis),
       children: [
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: SelectableText(event.detailText),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SegmentedButton<_TraceView>(
+                segments: [
+                  ButtonSegment(
+                    value: _TraceView.preview,
+                    label: Text(l10n.tracePreview),
+                  ),
+                  ButtonSegment(
+                    value: _TraceView.raw,
+                    label: Text(l10n.traceRaw),
+                  ),
+                ],
+                selected: {_view},
+                onSelectionChanged: (values) =>
+                    setState(() => _view = values.first),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_view == _TraceView.preview)
+                _AgentPreview(event: widget.event)
+              else
+                SelectableText(
+                  const JsonEncoder.withIndent('  ')
+                      .convert(widget.event.toJson()),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'SpaceMono',
+                      ),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -543,6 +609,296 @@ class AgentEventTile extends StatelessWidget {
       'thinking' => Icons.psychology_outlined,
       _ => Icons.notes_outlined,
     };
+  }
+}
+
+// ── MJ: Preview dispatcher ────────────────────────────────────────────────────
+
+class _AgentPreview extends StatelessWidget {
+  const _AgentPreview({required this.event});
+
+  final AgentEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    if (event.toolName == 'search_closet') {
+      return _SearchClosetPreview(event: event, l10n: l10n);
+    }
+    if (event.toolName == 'style_synthesizer') {
+      return _StyleSynthesizerPreview(event: event, l10n: l10n);
+    }
+    if (event.toolName == 'transfer_to_agent') {
+      final agentName =
+          event.toolArgs?['agent_name'] as String? ?? event.text ?? '—';
+      return _PreviewField(label: l10n.traceTargetAgent, child: Text(agentName));
+    }
+    if (event.eventKind == 'final_answer') {
+      return _FinalAnswerPreview(event: event);
+    }
+    return SelectableText(
+      const JsonEncoder.withIndent('  ').convert(event.toJson()),
+      style: Theme.of(context).textTheme.bodySmall,
+    );
+  }
+}
+
+class _SearchClosetPreview extends StatelessWidget {
+  const _SearchClosetPreview({required this.event, required this.l10n});
+
+  final AgentEvent event;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    if (event.eventKind == 'tool_call') {
+      final args = event.toolArgs ?? {};
+      final description = args['description'] as String?;
+      final category = args['category'] as String?;
+      final rawColors = args['colors'];
+      final colors =
+          rawColors is List ? rawColors.cast<String>() : <String>[];
+      final gender = args['gender'] as String?;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (description != null)
+            _PreviewField(
+                label: l10n.traceDescription, child: Text(description)),
+          if (category != null)
+            _PreviewField(label: l10n.category, child: Text(category)),
+          if (colors.isNotEmpty)
+            _PreviewField(
+                label: l10n.colors, child: _ChipRow(values: colors)),
+          if (gender != null)
+            _PreviewField(label: l10n.gender, child: Text(gender)),
+        ],
+      );
+    }
+
+    // tool_result: N items found + compact per-item rows
+    final raw = event.toolResult?['result'];
+    final items = raw is List
+        ? raw.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.traceItemsFound(items.length),
+          style: Theme.of(context).textTheme.labelMedium,
+        ),
+        const SizedBox(height: 8),
+        ...items.map((item) => _ClosetItemRow(item: item)),
+      ],
+    );
+  }
+}
+
+class _StyleSynthesizerPreview extends StatelessWidget {
+  const _StyleSynthesizerPreview({required this.event, required this.l10n});
+
+  final AgentEvent event;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    if (event.eventKind == 'tool_call') {
+      final args = event.toolArgs ?? {};
+      final styleDesc = args['style_description'] as String?;
+      final age = args['wearer_age'] as String?;
+      final gender = args['gender'] as String?;
+      final language = args['language'] as String?;
+      final itemCount = (args['item_image_urls'] as List?)?.length ?? 0;
+      final wearer = [age, gender].whereType<String>().join(' ');
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (styleDesc != null)
+            _PreviewField(
+                label: l10n.traceStyleDirection, child: Text(styleDesc)),
+          if (wearer.isNotEmpty)
+            _PreviewField(label: l10n.traceWearer, child: Text(wearer)),
+          if (language != null)
+            _PreviewField(label: l10n.language, child: Text(language)),
+          _PreviewField(
+              label: l10n.traceItemCount, child: Text('$itemCount')),
+        ],
+      );
+    }
+
+    // tool_result
+    final result = event.toolResult ?? {};
+    final model = result['model_used'] as String?;
+    final language = result['language'] as String?;
+    final prompt = result['generation_prompt'] as String?;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (model != null)
+          _PreviewField(label: l10n.traceModelUsed, child: Text(model)),
+        if (language != null)
+          _PreviewField(label: l10n.language, child: Text(language)),
+        if (prompt != null)
+          _PreviewField(label: l10n.traceGenerationPrompt, child: Text(prompt)),
+      ],
+    );
+  }
+}
+
+class _FinalAnswerPreview extends StatelessWidget {
+  const _FinalAnswerPreview({required this.event});
+
+  final AgentEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = event.text;
+    if (text == null || text.isEmpty) {
+      return SelectableText(
+        const JsonEncoder.withIndent('  ').convert(event.toJson()),
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+    return SelectableText(text);
+  }
+}
+
+// ── MJ: Shared preview helpers ────────────────────────────────────────────────
+
+class _PreviewField extends StatelessWidget {
+  const _PreviewField({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 88,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+          Expanded(
+            child: DefaultTextStyle.merge(
+              style: Theme.of(context).textTheme.bodySmall!,
+              child: child,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChipRow extends StatelessWidget {
+  const _ChipRow({required this.values});
+
+  final List<String> values;
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 4,
+      runSpacing: 2,
+      children: values
+          .map((v) => RawChip(
+                label: Text(v),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+              ))
+          .toList(),
+    );
+  }
+}
+
+class _ClosetItemRow extends StatelessWidget {
+  const _ClosetItemRow({required this.item});
+
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = item['image_url'] as String?;
+    final category = item['category'] as String?;
+    final colors = (item['colors'] as List?)?.cast<String>() ?? <String>[];
+    final tags = (item['tags'] as List?)?.cast<String>() ?? <String>[];
+    final season = item['season'] as String?;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              width: 48,
+              height: 48,
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? Image.network(imageUrl, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => ColoredBox(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            child: const Icon(Icons.checkroom, size: 20),
+                          ))
+                  : ColoredBox(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      child: const Icon(Icons.checkroom, size: 20),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (category != null)
+                  Text(category,
+                      style: Theme.of(context).textTheme.bodySmall),
+                if (colors.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  _ChipRow(values: colors),
+                ],
+                if (tags.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  _ChipRow(values: tags),
+                ],
+                if (season != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    season,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -563,13 +919,15 @@ class _CandidatePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final l10n = AppLocalizations.of(context)!;
+    return SectionCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Choose items', style: Theme.of(context).textTheme.titleLarge),
+            Text(l10n.chooseItems,
+                style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             Wrap(
               spacing: 12,
@@ -589,7 +947,7 @@ class _CandidatePanel extends StatelessWidget {
             FilledButton.icon(
               onPressed: running || selectedIds.isEmpty ? null : onGenerate,
               icon: const Icon(Icons.auto_awesome),
-              label: const Text('Generate selected'),
+              label: Text(l10n.generateSelected),
             ),
           ],
         ),
@@ -617,6 +975,7 @@ class _CandidateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final imageUrl = candidate['image_url'] ?? candidate['imageUrl'];
+    final l10n = AppLocalizations.of(context)!;
     return SizedBox(
       width: 180,
       child: Card.outlined(
@@ -633,8 +992,8 @@ class _CandidateCard extends StatelessWidget {
               CheckboxListTile(
                 value: selected,
                 onChanged: (value) => onChanged(value ?? false),
-                title: Text(candidate['category'] as String? ?? 'Item'),
-                subtitle: recommended ? const Text('Recommended') : null,
+                title: Text(candidate['category'] as String? ?? l10n.item),
+                subtitle: recommended ? Text(l10n.recommended) : null,
                 controlAffinity: ListTileControlAffinity.leading,
                 dense: true,
               ),
@@ -657,19 +1016,19 @@ class _ResultPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final l10n = AppLocalizations.of(context)!;
+    return SectionCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Result', style: Theme.of(context).textTheme.titleLarge),
+            Text(l10n.result, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             if (coordinateImageUrl == null)
-              const SizedBox(
+              SizedBox(
                 height: 220,
-                child:
-                    Center(child: Text('Coordinate image will appear here.')),
+                child: Center(child: Text(l10n.coordinatePlaceholder)),
               )
             else
               ClipRRect(
@@ -724,32 +1083,32 @@ class AgentEvent {
     );
   }
 
-  String get detailText {
-    final parts = <String>[
-      'seq: $seq',
-      'agent: $agentName',
-      'kind: $eventKind',
-      if (toolName != null) 'tool: $toolName',
-      if (text != null) 'text: $text',
-      if (toolArgs != null) 'args: $toolArgs',
-      if (toolResult != null) 'result: $toolResult',
-    ];
-    return parts.join('\n');
-  }
+  Map<String, dynamic> toJson() => {
+        'seq': seq,
+        'agentName': agentName,
+        'eventKind': eventKind,
+        if (toolName != null) 'toolName': toolName,
+        if (text != null) 'text': text,
+        if (toolArgs != null) 'toolArgs': toolArgs,
+        if (toolResult != null) 'toolResult': toolResult,
+      };
 
-  String get summary {
+  String get detailText =>
+      const JsonEncoder.withIndent('  ').convert(toJson());
+
+  String summary(AppLocalizations l10n) {
     if (toolName == 'search_closet' && eventKind == 'tool_result') {
       final raw = toolResult?['result'];
       final count = raw is List ? raw.length : 0;
-      return '$agentName searched closet — $count candidates';
+      return l10n.traceSearchedCloset(agentName, count);
     }
     if (toolName == 'search_closet') {
-      return '$agentName is searching the closet';
+      return l10n.traceSearchingCloset(agentName);
     }
     if (toolName == 'style_synthesizer') {
       return eventKind == 'tool_result'
-          ? '$agentName generated the coordinate'
-          : '$agentName is generating the coordinate';
+          ? l10n.traceGeneratedCoordinate(agentName)
+          : l10n.traceGeneratingCoordinate(agentName);
     }
     return text ?? '$agentName · $eventKind';
   }
