@@ -1057,6 +1057,14 @@ async def resolve_user(line_user_id: str) -> str | None:
 - **Trade-off:** `google_fonts` はランタイム取得（オフライン時はシステムフォントにフォールバック）。必要なら将来アセット同梱に切替。
 - **Date/Author:** 2026-07-01 / Ran
 
+### ADL-037: エージェントトレースのアコーディオンは Preview（利用者向け）/ Raw（開発者向け JSON）を項目ごとに切替
+
+- **Decision:** Coordination 画面の稼働中エージェントのアコーディオン（`AgentEventTile`）は、各項目ごとに **Preview**（ツール別の利用者向け整形表示、既定）と **Raw**（インデント付き JSON、開発者向け）を切り替える。Preview はツール別に必要フィールドのみを表示する: **Closet Agent（`search_closet`）** はリクエストで Description/Category/Colors/Gender のみ、レスポンスでサムネイル ＋ **Category/Colors/Tags/Season**（`item_id`/`source`/`gender`/`attribution`/生 `image_url` は非表示）。**styling_app（`style_synthesizer`）** は呼び出しで style/wearer/language/件数、結果で model/language/prompt（画像 URL は出さない）。**最終提案（final answer）** はサマリのみ（取得画像は候補選択エリア/結果パネルに既出のため再掲しない）。表示のみの変更で、必要データは既に `AgentEvent`（`toolArgs`/`toolResult`/`text`）に到達している。
+- **Alternatives:** (a) 現状の Dart-map `toString()` ダンプ（可読性ゼロ、正当な JSON ですらない）、(b) 全体一括の Preview/Raw トグル（項目単位の粒度を失う）、(c) Raw を廃し Preview のみ（開発者のデバッグ性を失う）。
+- **Rationale:** 既定 Preview で利用者に読みやすく、項目単位で Raw に切替できるため開発者は必要な 1 ステップだけ生データを確認できる。ツール別フォーマッタ（`toolName`/`eventKind` で分岐）＋ 未知イベントは Raw JSON にフォールバックすることで、欠損や例外に強い。トレース（思考）と結果 UI を分ける方針（§18.4 / ADL-018）に整合し、取得画像の再掲を避ける。
+- **Trade-off:** ツールごとに Preview フォーマッタを保守する必要がある（ツール追加時は Raw フォールバックで劣化）。バックエンド/エージェント/エンドポイント/データモデルの変更は無し。
+- **Date/Author:** 2026-07-02 / Ran
+
 
 ---
 
@@ -1361,3 +1369,41 @@ Vertex AI（Nano Banana / `gemini-2.5-flash-image`）の API 呼び出しは課�
 - 5 画面（Login / Closet / Coordinate / History / Shared）が Claude Design（ベージュ背景・ヘアライン枠のオフホワイトカード・テラコッタ主ボタン・`Instrument Serif` 見出し・`Space Mono` アイブロー・`Archivo` 本文）で描画され、既存フローと 4 タブ identity が保たれること。
 - レイアウトがレスポンシブ（広幅で内容幅を制約、テキスト重なりなし、十分なタップ領域）で、両言語で崩れないこと。
 - `flutter analyze` クリーン、`flutter test` green。
+
+---
+
+## 24. Agent-Trace Preview / Raw Views（MJ）
+
+> Coordination 画面の稼働中エージェントのアコーディオン（`AgentEventTile`）を利用者に分かりやすくする。各項目を **Preview**（ツール別の利用者向け整形、既定）/ **Raw**（インデント付き JSON、開発者向け）で切り替える。feature-matrix の **MJ-1 … MJ-5** に対応。実装方針は ADL-037。ExecPlan: `docs/plans/20260702-mj-agent-trace-preview-raw-views.md`。表示のみの変更で、必要データは既に `AgentEvent` に到達している（バックエンド/エージェント/エンドポイント/データモデルは不変）。本節は §11 / §18.4 への差分を定義する。MI（テーマ・多言語化済みのアコーディオン）に依存する。
+
+### 24.1 概要
+
+- 現状の `AgentEventTile` は展開時にイベントを Dart-map の `toString()` でダンプしており、利用者には読めず開発者にもノイズが多い（`search_closet` レスポンスは全アイテム ＋ 画像 URL を inline する）。
+- 各アコーディオン項目に **Preview / Raw** の項目単位トグル（`SegmentedButton`、既定 Preview）を追加する。Raw はイベントをインデント付き JSON（`JsonEncoder.withIndent`）で表示する。
+- Preview のラベル（Preview/Raw ＋ フィールド名）は UI クロムであり、現在の言語（`日本語`/`English`）に追従する（生成コンテンツには影響しない）。
+
+### 24.2 ツール別 Preview（ADL-037）
+
+- **Closet Agent（`search_closet`）**
+  - リクエスト: Description / Category / Colors（チップ）/ Gender のみ。`source`・`user_id`・`shared_closet_id`・`limit` は非表示。
+  - レスポンス: 「N 件見つかりました」＋ 各アイテムを 小サムネイル ＋ **Category / Colors（チップ）/ Tags（チップ）/ Season** で表示。`item_id`・`source`・`gender`・`attribution`・生 `image_url` は非表示（フィールドは利用者と確認済み）。
+- **styling_app（`style_synthesizer`）**
+  - 呼び出し: Style direction（`style_description`）/ Wearer（`wearer_age` ＋ `gender`）/ Language / アイテム件数（`item_image_urls` 長）。
+  - 結果: Model（`model_used`）/ Language / Generation prompt（`generation_prompt`）。画像 URL（`items` / `coordinate_image_url`）は出さない。
+- **最終提案（final answer）**: サマリ文のみ。取得画像は候補選択エリア（`_CandidatePanel`）と結果パネル（`_ResultPanel`）に既出のため再掲しない（§18.4）。
+- **未対応ツール/イベント**: Raw JSON にフォールバックする（Preview が空にならない）。
+
+### 24.3 実装方式（ADL-037）
+
+- `flutter-web-app/lib/coordination/coordination_screen.dart` のみを変更する。`AgentEventTile` を `StatefulWidget` 化し、項目ごとに表示モードを保持する。
+- `AgentEvent.toJson()`（順序付き map、null 省略）を追加し Raw ビューに供給。現状の `detailText`（Dart-map ダンプ）は置換する。
+- ツール別 Preview ウィジェット（`toolName`/`eventKind` で分岐）＋ JSON フォールバックのディスパッチャを実装。テーマ／再利用ウィジェット（`lib/theme/components.dart`）を消費する。
+- 新規ラベルは `gen-l10n`（`lib/l10n/app_ja.arb` / `app_en.arb`）に追加（MI の i18n を踏襲）。
+
+### 24.4 受け入れ条件
+
+- 各アコーディオン項目が既定で Preview を開き、項目単位で Raw（インデント付き JSON）へ切り替えられること。
+- Closet Agent レスポンスがサムネイル ＋ Category/Colors/Tags/Season で表示され、ID/URL/gender/attribution が出ないこと。
+- styling_app と最終提案が整形フィールドで表示され、画像データを重複表示しないこと。
+- Preview ラベルが `日本語`/`English` に追従すること（生成コンテンツは不変）。
+- `flutter analyze` クリーン、`flutter test` green、両言語のブラウザ確認（Preview / Raw）が通ること。
