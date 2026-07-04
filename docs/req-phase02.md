@@ -114,3 +114,40 @@ Owned READY items are selectable in Coordinate-from-closet.
 - A local smoke or browser E2E demonstrates: assisted anchors -> Rakuten
   suggestions -> default checks -> generation -> save suggestion as Interesting
   -> change to Owned -> reuse the item from Standard Coordinate closet mode.
+
+---
+
+## 4. UI Onboarding & Contextual Help
+
+First-time and returning users get no in-app explanation of what a page is for:
+the Closet page and the Coordination result panel both showed the Shared
+tab's CC BY-SA dataset banner unconditionally (irrelevant to a user's own
+items or a generated result), there is no explanation of Closet's
+purpose, upload flow, or ownership/category filters, and Coordination's
+mode/source selectors ("Closet Styling"/"Style & Shop", "Shared"/"Mine") and
+the "Owned"/"Interesting" ownership distinction relied on hover-only
+tooltips, which don't work for touch (mobile/tablet) users. The header
+language switcher also truncated the Japanese label ("日本..."), and nothing
+pointed a brand-new (or empty-closet) user at the app's one help affordance.
+This is UI-only polish, not an architecture change; no ADL is needed (see
+ExecPlan Decision Log).
+
+- The Closet page's default view and the Coordination result panel no longer
+  show the CC BY-SA banner; that banner remains only on the Shared tab, where
+  the images actually are the shared dataset.
+- A single header "How this app works" icon (replacing the earlier
+  Closet-only help icon and the old shared-closet-only dialog) opens one
+  dialog with a collapsible Accordion section per tab (Closet, Coordinate,
+  History, Shared). Opening it from a given tab auto-expands that tab's
+  section; the rest start collapsed. The Shared section explicitly states
+  that the shared closet exists so users can try a full styling demo without
+  uploading their own clothes first, and still carries the CC BY-SA 4.0
+  attribution/Kaggle link.
+- Every previously hover-only explanation (Coordination's mode/source
+  segments, Closet's ownership filter) now also renders as an always-visible
+  caption, so touch users see the same explanation mouse users get from
+  hovering; the hover tooltip remains as a bonus for desktop.
+- The header info icon pulses (a subtle animation) whenever the user's
+  closet is empty or their account was created in the last 24h, to guide
+  new users toward it; the pulse stops for that session once tapped.
+- The header language switcher no longer truncates the Japanese label.

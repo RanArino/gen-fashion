@@ -73,6 +73,43 @@
 
 ---
 
+## MM — Closet/Coordination Onboarding & Contextual Help UI
+
+**Scope:** The Closet page and the Coordination result panel both always showed the CC BY-SA dataset banner even though it only applies to shared-dataset images (the Shared tab), and gave no in-app explanation of Closet's purpose, upload flow, or ownership/category filters; Coordination's mode/source segmented buttons ("Closet Styling"/"Style & Shop", "Shared"/"Mine") and the Closet "Owned"/"Interesting" ownership distinction had no hover explanation. Pure front-end/localization UI polish, no backend or data-model change. Reference: `req-phase02.md` §4, no new ADL (see ExecPlan Decision Log).
+
+> **ExecPlan (2026-07-04):** [20260704-mm-closet-coordination-onboarding-help.md](plans/20260704-mm-closet-coordination-onboarding-help.md). Implemented and verified 2026-07-04: `flutter analyze` clean, `flutter test` 43 passed (unchanged count, all additive), and a live browser run (Playwright against a `flutter build web` release bundle, `E2E_AUTO_SIGN_IN`) confirmed the Closet banner and the Coordination result-panel banner are both gone, the new help dialog opens from both the filter bar and empty state, Coordination's four segment tooltips and the ownership filter/edit-dialog tooltips all render, in both 日本語 and English.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| MM-1 | Attribution-banner removal (Closet + Coordination result) | ✅ Implemented (2026-07-04) | `AttributionFooter()` removed from both `ClosetScreen` build branches and, after user review of a live screenshot, from `_ResultPanel` (`coordination_screen.dart`) too — only the Shared tab (`shared_closet_gallery.dart`) still shows it. `_ResultPanel`'s now-unused `source` field was removed along with the now-unused `attribution.dart` import. | §4 |
+| MM-2 | Closet help dialog + two entry points | ✅ Implemented (2026-07-04) | New `showClosetHelpDialog` + `_ClosetHelpButton` in `closet_screen.dart`, wired into `ClosetFilterBar`'s header and `_EmptyState`; confirmed live in both languages. | §4 |
+| MM-3 | Coordination tab hover tooltips (mode+source) | ✅ Implemented (2026-07-04) | `tooltip:` added to all four `ButtonSegment`s in `coordination_screen.dart`'s `_Controls`; confirmed live via mouse-hover screenshots. | §4 |
+| MM-4 | Ownership Owned/Interesting tooltips | ✅ Implemented (2026-07-04) | Tooltips on `ClosetFilterBar`'s ownership segments; live-updating caption in the edit-dialog Ownership dropdown; confirmed live, including the caption switching live when the dropdown selection changes. | §4 |
+| MM-5 | Localization + verification | ✅ Implemented (2026-07-04) | 9 new ARB keys in both catalogs, `flutter gen-l10n`, `flutter analyze` clean, `flutter test` 43/43 passed, manual two-language browser check passed. | §4 |
+
+**Exit criteria:** The Closet page's default view and the Coordination result panel no longer show the CC BY-SA banner (only the Shared tab still shows it); a "how this page works" help dialog is reachable from both the Closet filter bar and the empty state; hovering any of Coordination's four mode/source segment labels shows a tooltip; hovering the Closet ownership filter chips, and the item-edit dialog's Ownership caption, explain "Owned" vs "Interesting" — confirmed in both 日本語 and English.
+
+---
+
+## MN — Unified Help Accordion, Touch Parity, Language-Switcher Fix, New-User Nudge
+
+**Scope:** Follow-up to MM after live use: hover-only tooltips don't work for touch/mobile users, the header language switcher truncated the Japanese label, the Closet-only help icon should fold into the existing global header info icon (one dialog, one Accordion section per tab, auto-expanding the current tab's section), and new/empty-closet users should be nudged toward that icon. Reference: `req-phase02.md` §4 (revised), no new ADL.
+
+> **ExecPlan (2026-07-04):** [20260704-mn-unified-help-nudge-touch-fixes.md](plans/20260704-mn-unified-help-nudge-touch-fixes.md). Implemented and verified 2026-07-04: `flutter analyze` clean, `flutter test` 43/43 passed, and a live browser run (Playwright against a `flutter build web` release bundle with the local emulator stack) confirmed the unified accordion dialog auto-expands the correct section from Closet/Coordinate/Shared, the Shared section keeps the CC BY-SA attribution and Kaggle link with reworded demo-purpose copy, Coordination's source caption and Closet's ownership caption are now always visible (not hover-only), and the language switcher shows the full "日本語"/"English" label, in both languages.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| MN-1 | Unified help accordion dialog | ✅ Implemented (2026-07-04) | New `showAppHelpDialog` (`lib/shared/help_dialog.dart`) with one `ExpansionTile` per tab (Closet/Coordinate/History/Shared), `initiallyExpanded` set to the tab the user opened it from. Retires `showSharedClosetAboutDialog`; `AttributionFooter`'s `onTap` now opens this dialog with the Shared section expanded. | §4 |
+| MN-2 | Closet-only help icon retired | ✅ Implemented (2026-07-04) | Removed `_ClosetHelpButton`/`showClosetHelpDialog` from `closet_screen.dart`; the header's single global info icon (`home_screen.dart`) is now the only entry point, wired to the current tab via an index→section map. Empty-closet state shows a plain hint pointing at the header icon instead of its own tappable affordance. | §4 |
+| MN-3 | Touch-safe captions replace hover-only tooltips | ✅ Implemented (2026-07-04) | Coordination's source selector and Closet's ownership filter now show an always-visible caption (mirroring the existing mode-selector caption pattern), in addition to the existing hover `tooltip:` bonus for desktop. | §4 |
+| MN-4 | Language-switcher truncation fix | ✅ Implemented (2026-07-04) | Replaced `_LanguageSwitcher`'s `Chip`-wrapped label (which force-truncates via `Chip`'s internal `maxLines:1`/fade styling) with a plain icon+text `Row`, so "日本語" no longer renders as "日本...". | §4 |
+| MN-5 | New-user / empty-closet nudge animation | ✅ Implemented (2026-07-04) | Header info icon pulses (`ScaleTransition` + `AnimationController`) when the closet is empty or the account was created within 24h (`users/{uid}.createdAt`); stops for the session once tapped. Session-only, no new dependency. | §4 |
+| MN-6 | Localization + verification | ✅ Implemented (2026-07-04) | New ARB keys (`appHelpTooltip`, `appHelpTitle`, `helpCoordinateIntro`, `helpHistoryBody`, `emptyClosetHelpHint`), reworded `sharedAboutBody` to state the shared closet's demo purpose, removed now-unused `sharedClosetAbout`/`closetHelpTooltip`/`closetHelpTitle` keys, `flutter gen-l10n`, `flutter analyze` clean, `flutter test` 43/43 passed, manual two-language browser check passed. | §4 |
+
+**Exit criteria:** One header info icon opens a single dialog with four Accordion sections, auto-expanding the section for the tab it was opened from; Coordination's source caption and Closet's ownership caption are visible without hovering; the language switcher shows the full "日本語"/"English" label; the header icon visibly pulses when the closet is empty or the account is new, and stops after being tapped for that session — confirmed in both 日本語 and English.
+
+---
+
 ## M6 — LINE Channel Integration (Phase 1b)
 
 **Scope:** Bring the coordination experience to LINE; add Rakuten search. **Do not start before M5 is complete** (`req-phase01.md` §14). Reference: `req-phase01.md` §6.4, §6.6, §7.3, §7.4, §10.2, ADL-006, ADL-009.

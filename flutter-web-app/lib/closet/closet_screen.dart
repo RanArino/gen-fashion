@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api/api_client.dart';
 import '../auth/auth_service.dart';
 import '../l10n/app_localizations.dart';
-import '../shared/attribution.dart';
+import '../shared/help_dialog.dart';
 import '../theme/app_theme.dart';
 import 'closet_item.dart';
 import 'thumbnail.dart';
@@ -190,6 +190,15 @@ class _ClosetScreenState extends State<ClosetScreen> {
                       }
                     },
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    ownership == 'INTERESTING'
+                        ? l10n.ownershipInterestingHint
+                        : l10n.ownershipOwnedHint,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
                 ],
               ),
             ),
@@ -236,16 +245,10 @@ class _ClosetScreenState extends State<ClosetScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final content = Column(
-      children: [
-        Expanded(child: _buildBody()),
-        const AttributionFooter(),
-      ],
-    );
     if (widget.embedded) {
       return Stack(
         children: [
-          content,
+          _buildBody(),
           Positioned(
             right: 16,
             bottom: 16,
@@ -273,8 +276,11 @@ class _ClosetScreenState extends State<ClosetScreen> {
             },
           ),
           IconButton(
-            tooltip: l10n.sharedClosetAbout,
-            onPressed: () => showSharedClosetAboutDialog(context),
+            tooltip: l10n.appHelpTooltip,
+            onPressed: () => showAppHelpDialog(
+              context,
+              initialSection: helpSectionCloset,
+            ),
             icon: const Icon(Icons.info_outline),
           ),
           IconButton(
@@ -284,12 +290,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(child: _buildBody()),
-          const AttributionFooter(),
-        ],
-      ),
+      body: _buildBody(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _busy ? null : _onUploadPressed,
         icon: const Icon(Icons.add_a_photo),
@@ -382,6 +383,13 @@ class _EmptyState extends StatelessWidget {
           const Icon(Icons.checkroom, size: 64, color: AppColors.muted),
           const SizedBox(height: 12),
           Text(AppLocalizations.of(context)!.emptyCloset),
+          const SizedBox(height: 8),
+          Text(
+            AppLocalizations.of(context)!.emptyClosetHelpHint,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
         ],
       ),
     );
@@ -436,48 +444,65 @@ class ClosetFilterBar extends StatelessWidget {
         color: AppColors.panel,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
-      child: Wrap(
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 16,
-        runSpacing: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SegmentedButton<ItemOwnership?>(
-            segments: [
-              ButtonSegment(value: null, label: Text(l10n.filterAll)),
-              ButtonSegment(
-                value: ItemOwnership.owned,
-                label: Text(l10n.ownershipOwned),
-              ),
-              ButtonSegment(
-                value: ItemOwnership.interesting,
-                label: Text(l10n.ownershipInteresting),
-              ),
-            ],
-            selected: {ownershipFilter},
-            onSelectionChanged: (values) => onOwnershipChanged(values.first),
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-            ),
-          ),
-          if (categories.isNotEmpty)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilterChip(
-                  label: Text(l10n.filterAll),
-                  selected: categoryFilter == null,
-                  onSelected: (_) => onCategoryChanged(null),
-                ),
-                for (final category in categories)
-                  FilterChip(
-                    label: Text(category),
-                    selected: categoryFilter == category,
-                    onSelected: (selected) =>
-                        onCategoryChanged(selected ? category : null),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              SegmentedButton<ItemOwnership?>(
+                segments: [
+                  ButtonSegment(value: null, label: Text(l10n.filterAll)),
+                  ButtonSegment(
+                    value: ItemOwnership.owned,
+                    label: Text(l10n.ownershipOwned),
+                    tooltip: l10n.ownershipOwnedHint,
                   ),
-              ],
+                  ButtonSegment(
+                    value: ItemOwnership.interesting,
+                    label: Text(l10n.ownershipInteresting),
+                    tooltip: l10n.ownershipInterestingHint,
+                  ),
+                ],
+                selected: {ownershipFilter},
+                onSelectionChanged: (values) =>
+                    onOwnershipChanged(values.first),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              if (categories.isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilterChip(
+                      label: Text(l10n.filterAll),
+                      selected: categoryFilter == null,
+                      onSelected: (_) => onCategoryChanged(null),
+                    ),
+                    for (final category in categories)
+                      FilterChip(
+                        label: Text(category),
+                        selected: categoryFilter == category,
+                        onSelected: (selected) =>
+                            onCategoryChanged(selected ? category : null),
+                      ),
+                  ],
+                ),
+            ],
+          ),
+          if (ownershipFilter != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              ownershipFilter == ItemOwnership.owned
+                  ? l10n.ownershipOwnedHint
+                  : l10n.ownershipInterestingHint,
+              style: Theme.of(context).textTheme.bodySmall,
             ),
+          ],
         ],
       ),
     );
