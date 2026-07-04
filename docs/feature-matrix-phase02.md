@@ -110,6 +110,24 @@
 
 ---
 
+## MO — Scene-Aware Style Synthesizer Prompt (Rakuten Non-Garment Photo Robustness)
+
+**Scope:** Assisted/Style & Shop (MK) coordinate generation degrades when a Rakuten product photo is not a clean single-garment shot (person wearing the garment, hand holding an item amid props). Phase 1 fix only: label each reference image with its garment/accessory category and instruct the generation model to extract only that labeled item, ignoring any person/background/pose/unrelated object in the photo. No image selection, classification, or cropping (deferred). Reference: `docs/local/20260704_styling_image_generation_issue.md`, `req-phase01.md` §6.5/§7.2, ADL-005 (model constraint unchanged), no new ADL.
+
+> **ExecPlan (2026-07-04):** [20260704-mo-style-synthesizer-scene-aware-prompt.md](plans/20260704-mo-style-synthesizer-scene-aware-prompt.md). Implemented 2026-07-04 (MO-1..MO-5): `pytest adk-agent-service/styling_app/tests -q` → 60 passed. MO-6 (manual visual check with live Vertex AI credentials) is still open.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| MO-1 | Per-item labeled reference images | ✅ Implemented (2026-07-04) | `image_generation.generate()` takes `list[{bytes, category, note}]` and inserts a labeled text part before each image part. | §6.5 |
+| MO-2 | Scene-extraction prompt instruction | ✅ Implemented (2026-07-04) | `_TRYON_PROMPT` explicitly tells the model to extract only the labeled item per photo and ignore person/background/pose/unrelated objects. | §6.5 |
+| MO-3 | `style_synthesizer` category forwarding | ✅ Implemented (2026-07-04) | New optional `item_categories` param, parallel to `item_image_urls`, threaded into `image_generation.generate()`. | §7.2 |
+| MO-4/5 | Unit + integration test coverage | ✅ Implemented (2026-07-04) | `test_image_generation.py` (label placement) + `test_tools.py` additions proving a `search_rakuten` result's `category` reaches the `generate()` call via `style_synthesizer`. | §6.5, §7.2 |
+| MO-6 | Manual visual check | 🟡 In progress | Before/after comparison against the three `docs/local/coord.jpg` input types; requires live Vertex AI credentials, not yet run. | §6.5 |
+
+**Exit criteria:** `pytest adk-agent-service/styling_app/tests` passes with the new/updated tests (met); a manual generation run against the three `coord.jpg` input types shows the original model/background/props visibly reduced or absent compared to the pre-change prompt (open).
+
+---
+
 ## M6 — LINE Channel Integration (Phase 1b)
 
 **Scope:** Bring the coordination experience to LINE; add Rakuten search. **Do not start before M5 is complete** (`req-phase01.md` §14). Reference: `req-phase01.md` §6.4, §6.6, §7.3, §7.4, §10.2, ADL-006, ADL-009.
