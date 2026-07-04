@@ -13,6 +13,12 @@ class ClothingSource(str, Enum):
     RAKUTEN = "RAKUTEN"
 
 
+class CoordinationMode(str, Enum):
+    """Web Coordinate mode (MK): standard closet flow or assisted shopping."""
+    STANDARD = "STANDARD"
+    ASSISTED = "ASSISTED"
+
+
 @dataclass(frozen=True)
 class StyleSessionId(ValueObject):
     """Unique identifier for a styling session."""
