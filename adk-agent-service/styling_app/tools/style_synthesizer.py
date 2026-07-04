@@ -19,6 +19,7 @@ def style_synthesizer(
     gender: str = "common",
     wearer_age: str = "adult",
     language: str = "ja",
+    item_categories: list[str] | None = None,
 ) -> dict:
     """Generate a coordinate (outfit) image from the selected garment images.
 
@@ -29,12 +30,26 @@ def style_synthesizer(
         gender: Wearer's gender preference (male/female/common).
         wearer_age: Wearer's age group (adult/child).
         language: Natural-language output language code (ja/en).
+        item_categories: Optional per-item category labels (e.g. from
+            search_rakuten/search_closet), parallel to item_image_urls, used
+            to tell the generation model which item to extract from each
+            reference photo when the photo is not a plain garment shot.
 
     Returns:
         {coordinate_image_url, items, model_used}; model_used is
         "collage-fallback" when generation failed and a collage was stored.
     """
     image_bytes_list = [image_storage.fetch_bytes(url) for url in item_image_urls]
+    items = [
+        {
+            "bytes": data,
+            "category": item_categories[i]
+            if item_categories and i < len(item_categories)
+            else None,
+            "note": None,
+        }
+        for i, data in enumerate(image_bytes_list)
+    ]
 
     settings = get_settings()
     wearer = f"{wearer_age} wearer"
@@ -49,7 +64,7 @@ def style_synthesizer(
         f"Outfit worn by a {wearer}. {language_instruction} {style_description}"
     )
     try:
-        result_bytes = image_generation.generate(image_bytes_list, generation_prompt)
+        result_bytes = image_generation.generate(items, generation_prompt)
         model_used = settings.image_generation_model
     except Exception:
         result_bytes = image_generation.build_collage(image_bytes_list)

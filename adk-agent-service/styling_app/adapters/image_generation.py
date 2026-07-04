@@ -15,17 +15,31 @@ _TRYON_PROMPT = (
     "Generate a realistic full-body fashion photo of a single person wearing all of "
     "the provided clothing items together as one coordinated outfit. Keep each "
     "garment's color, pattern, and shape faithful to the reference photos. Studio "
-    "background, soft even lighting, natural pose."
+    "background, soft even lighting, natural pose. Each reference photo is labeled "
+    "with the item it represents and may show that item worn by a different person, "
+    "styled in a street or lifestyle scene, or placed among unrelated objects. For "
+    "each labeled reference photo, extract and reproduce only the named item's "
+    "color, pattern, and shape; ignore any person, pose, background, or unrelated "
+    "object shown in that photo."
 )
 
 
-def generate(image_bytes_list: list[bytes], style_description: str) -> bytes:
-    """Virtual try-on via Nano Banana: garment photos + prompt -> outfit image."""
+def generate(items: list[dict], style_description: str) -> bytes:
+    """Virtual try-on via Nano Banana: labeled garment photos + prompt -> outfit image.
+
+    Each item is {"bytes": bytes, "category": str | None, "note": str | None}. A
+    text label is inserted immediately before each image part so the model can
+    be told, per photo, which item to extract from it (docs/local/20260704_
+    styling_image_generation_issue.md, Phase 1).
+    """
     settings = get_settings()
-    parts = [
-        types.Part.from_bytes(data=data, mime_type="image/jpeg")
-        for data in image_bytes_list
-    ]
+    parts: list[types.Part] = []
+    for index, item in enumerate(items, start=1):
+        label = f"Reference photo {index}: {item.get('category') or 'item'}."
+        if item.get("note"):
+            label += f" {item['note']}"
+        parts.append(types.Part.from_text(text=label))
+        parts.append(types.Part.from_bytes(data=item["bytes"], mime_type="image/jpeg"))
     prompt = _TRYON_PROMPT
     if style_description:
         prompt += f" Desired style: {style_description}."
