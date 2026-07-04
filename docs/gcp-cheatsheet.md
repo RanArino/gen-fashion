@@ -321,7 +321,25 @@ gcloud firestore fields ttls list --project=animation-agent
 # TTL ポリシーを有効化（Milestone E）
 gcloud firestore fields ttls update ttlAt \
   --collection-group=agentEvents --enable-ttl --project=animation-agent
+
+# 現在デプロイ済みの複合インデックス一覧（firestore.indexes.json との差分確認用）
+gcloud firestore indexes composite list --project=animation-agent \
+  --format='table(collectionGroup,fields)'
+
+# firestore.indexes.json を本番に同期（CI/CD の deploy ジョブが毎回自動実行するが、
+# 手動で先にインデックスを温めたい/緊急修正したい場合はこれを直接叩く）
+bash scripts/deploy/deploy_firestore_indexes.sh --project=animation-agent
 ```
+
+**落とし穴 (2026-07-04 の障害):** Firestore はクエリが `.where()` の等価条件2つ以上
++ 範囲条件 (`>=`, `<=` 等) や `.order_by()` を組み合わせると複合インデックスが必要になるが、
+Firestore エミュレータはこの要件を一切検証しない（インデックス無しでもエミュレータ上は成功する）。
+そのため新しいクエリ形状を追加したら、必ず `firestore.indexes.json` に対応するインデックスを
+追加し、`fastapi-service/tests/adapters/test_firestore_composite_indexes.py` を通すこと
+(このテストは実際の `.where()`/`.order_by()` 呼び出しから必要なインデックス形状を導出し、
+宣言済みインデックスと突き合わせる。CI の `test-fastapi` ジョブで main/develop へのマージ前に
+必ず実行される)。さらに `firestore.indexes.json` を更新しただけでは本番には反映されない
+— 本番反映は `ci-cd.yml` の deploy ジョブが `deploy_firestore_indexes.sh` を実行して行う。
 
 ---
 
