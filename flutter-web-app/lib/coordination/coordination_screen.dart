@@ -12,7 +12,6 @@ import '../config.dart';
 import '../e2e_probe_stub.dart' if (dart.library.html) '../e2e_probe_web.dart';
 import '../l10n/app_localizations.dart';
 import '../locale/locale_controller.dart';
-import '../shared/attribution.dart';
 import '../theme/components.dart';
 
 const List<String> _sharedClosets = ['adult-01', 'adult-02', 'child-01'];
@@ -433,7 +432,6 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           error: _error,
         );
         final result = _ResultPanel(
-          source: _source,
           coordinateImageUrl: _coordinateImageUrl,
         );
         final candidates = CandidatePanel(
@@ -560,11 +558,13 @@ class _Controls extends StatelessWidget {
                   value: 'STANDARD',
                   icon: const Icon(Icons.style_outlined),
                   label: Text(l10n.modeStandard),
+                  tooltip: l10n.modeStandardHint,
                 ),
                 ButtonSegment(
                   value: 'ASSISTED',
                   icon: const Icon(Icons.shopping_bag_outlined),
                   label: Text(l10n.modeAssisted),
+                  tooltip: l10n.modeAssistedHint,
                 ),
               ],
               selected: {mode},
@@ -586,16 +586,25 @@ class _Controls extends StatelessWidget {
                     value: 'SHARED_CLOSET',
                     icon: const Icon(Icons.groups_outlined),
                     label: Text(l10n.sourceShared),
+                    tooltip: l10n.sourceSharedHint,
                   ),
                   ButtonSegment(
                     value: 'CLOSET',
                     icon: const Icon(Icons.checkroom_outlined),
                     label: Text(l10n.sourceMine),
+                    tooltip: l10n.sourceMineHint,
                   ),
                 ],
                 selected: {source},
                 onSelectionChanged:
                     running ? null : (values) => onSourceChanged(values.first),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                source == 'SHARED_CLOSET'
+                    ? l10n.sourceSharedHint
+                    : l10n.sourceMineHint,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
               if (source == 'SHARED_CLOSET') ...[
                 const SizedBox(height: 12),
@@ -1728,11 +1737,9 @@ class _SaveInterestingDialogState extends State<_SaveInterestingDialog> {
 
 class _ResultPanel extends StatelessWidget {
   const _ResultPanel({
-    required this.source,
     required this.coordinateImageUrl,
   });
 
-  final String source;
   final String? coordinateImageUrl;
 
   @override
@@ -1762,10 +1769,6 @@ class _ResultPanel extends StatelessWidget {
                       SelectableText(coordinateImageUrl!),
                 ),
               ),
-            if (source == 'SHARED_CLOSET') ...[
-              const SizedBox(height: 12),
-              const AttributionFooter(),
-            ],
           ],
         ),
       ),
