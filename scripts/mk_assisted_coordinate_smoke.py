@@ -16,6 +16,8 @@ Manual live-Rakuten checklist (when RAKUTEN_APPLICATION_ID/ACCESS_KEY are set):
 - suggestions render with name, price, image, and outbound link
 - `search_rakuten` tool calls appear in the trace
 - import creates an Interesting closet item with external metadata
+- the closet item card for an Interesting Rakuten item shows a link/button
+  back to the Rakuten Ichiba product page
 """
 
 import argparse
