@@ -172,6 +172,11 @@ services:
       - FIRESTORE_EMULATOR_HOST=firestore-emulator:8080
       - FIRESTORE_DATABASE_ID=(default)
       - INTERNAL_TASK_SECRET=${INTERNAL_TASK_SECRET:-local-dev-internal-secret}
+      # Rakuten Ichiba Item Search (MK-3); leave empty to disable search_rakuten.
+      - RAKUTEN_APPLICATION_ID=${RAKUTEN_APPLICATION_ID:-}
+      - RAKUTEN_ACCESS_KEY=${RAKUTEN_ACCESS_KEY:-}
+      - RAKUTEN_AFFILIATE_ID=${RAKUTEN_AFFILIATE_ID:-}
+      - RAKUTEN_APPLICATION_URL=${RAKUTEN_APPLICATION_URL:-https://gen-fashion-app.web.app/}
     depends_on:
       elasticsearch:
         condition: service_healthy
