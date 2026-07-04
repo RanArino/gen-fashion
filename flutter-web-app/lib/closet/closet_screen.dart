@@ -13,6 +13,20 @@ import 'upload_service.dart';
 
 const int _kMaxItems = 20;
 
+/// Applies the ownership/category filters to [items]. Pure function so it
+/// can be unit-tested without a widget tree.
+List<ClosetItem> applyClosetFilters(
+  List<ClosetItem> items, {
+  ItemOwnership? ownership,
+  String? category,
+}) {
+  return items.where((item) {
+    if (ownership != null && item.ownership != ownership) return false;
+    if (category != null && item.category != category) return false;
+    return true;
+  }).toList();
+}
+
 class ClosetScreen extends StatefulWidget {
   const ClosetScreen({super.key, required this.uid, this.embedded = false});
 
@@ -29,6 +43,8 @@ class _ClosetScreenState extends State<ClosetScreen> {
   late final UploadService _uploads = UploadService(api: _api);
   final AuthService _auth = AuthService();
   bool _busy = false;
+  ItemOwnership? _ownershipFilter;
+  String? _categoryFilter;
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _stream() {
     return FirebaseFirestore.instance
@@ -291,15 +307,55 @@ class _ClosetScreenState extends State<ClosetScreen> {
         }
         final items =
             docs.map((d) => ClosetItem.fromFirestore(d.id, d.data())).toList();
-        return ClosetGrid(
-          items: items,
-          cache: _cache,
-          onDelete: _onDelete,
-          onEdit: _onEdit,
+        final ownershipFiltered =
+            applyClosetFilters(items, ownership: _ownershipFilter);
+        final categories = _distinctCategories(ownershipFiltered);
+        if (_categoryFilter != null && !categories.contains(_categoryFilter)) {
+          _categoryFilter = null;
+        }
+        final filtered =
+            applyClosetFilters(ownershipFiltered, category: _categoryFilter);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClosetFilterBar(
+              categories: categories,
+              ownershipFilter: _ownershipFilter,
+              categoryFilter: _categoryFilter,
+              onOwnershipChanged: (value) => setState(() {
+                _ownershipFilter = value;
+                _categoryFilter = null;
+              }),
+              onCategoryChanged: (value) =>
+                  setState(() => _categoryFilter = value),
+            ),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const _NoFilterMatchState()
+                  : ClosetGrid(
+                      items: filtered,
+                      cache: _cache,
+                      onDelete: _onDelete,
+                      onEdit: _onEdit,
+                    ),
+            ),
+          ],
         );
       },
     );
   }
+}
+
+List<String> _distinctCategories(List<ClosetItem> items) {
+  final seen = <String>{};
+  for (final item in items) {
+    final category = item.category;
+    if (category != null && category.trim().isNotEmpty) {
+      seen.add(category);
+    }
+  }
+  final sorted = seen.toList()..sort();
+  return sorted;
 }
 
 class _EmptyState extends StatelessWidget {
@@ -315,6 +371,102 @@ class _EmptyState extends StatelessWidget {
           const Icon(Icons.checkroom, size: 64, color: AppColors.muted),
           const SizedBox(height: 12),
           Text(AppLocalizations.of(context)!.emptyCloset),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoFilterMatchState extends StatelessWidget {
+  const _NoFilterMatchState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      key: const ValueKey('no-filter-match-state'),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.filter_alt_off, size: 64, color: AppColors.muted),
+          const SizedBox(height: 12),
+          Text(AppLocalizations.of(context)!.noItemsMatchFilter),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ownership + category filter bar shown above [ClosetGrid]. Stateless:
+/// [ClosetScreen] owns the filter selection and passes down the distinct
+/// category values already narrowed by the current ownership filter.
+class ClosetFilterBar extends StatelessWidget {
+  const ClosetFilterBar({
+    super.key,
+    required this.categories,
+    required this.ownershipFilter,
+    required this.categoryFilter,
+    required this.onOwnershipChanged,
+    required this.onCategoryChanged,
+  });
+
+  final List<String> categories;
+  final ItemOwnership? ownershipFilter;
+  final String? categoryFilter;
+  final ValueChanged<ItemOwnership?> onOwnershipChanged;
+  final ValueChanged<String?> onCategoryChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: const BoxDecoration(
+        color: AppColors.panel,
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 16,
+        runSpacing: 8,
+        children: [
+          SegmentedButton<ItemOwnership?>(
+            segments: [
+              ButtonSegment(value: null, label: Text(l10n.filterAll)),
+              ButtonSegment(
+                value: ItemOwnership.owned,
+                label: Text(l10n.ownershipOwned),
+              ),
+              ButtonSegment(
+                value: ItemOwnership.interesting,
+                label: Text(l10n.ownershipInteresting),
+              ),
+            ],
+            selected: {ownershipFilter},
+            onSelectionChanged: (values) => onOwnershipChanged(values.first),
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+          if (categories.isNotEmpty)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilterChip(
+                  label: Text(l10n.filterAll),
+                  selected: categoryFilter == null,
+                  onSelected: (_) => onCategoryChanged(null),
+                ),
+                for (final category in categories)
+                  FilterChip(
+                    label: Text(category),
+                    selected: categoryFilter == category,
+                    onSelected: (selected) =>
+                        onCategoryChanged(selected ? category : null),
+                  ),
+              ],
+            ),
         ],
       ),
     );
