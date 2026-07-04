@@ -19,16 +19,32 @@ _INSTRUCTION = (
     "Use analyze_clothing_image when a garment image URL needs to be analyzed. "
     "Report the candidate items (including image_url and attribution) back."
 )
+_ASSISTED_INSTRUCTION = (
+    " This is an assisted-shopping run: the user message lists anchorItems the "
+    "user already owns. Treat the anchor items as fixed context, describe a "
+    "short styling suggestion for each missing garment or accessory (e.g. "
+    "white t-shirt, black hat, bag, shoes, belt), and call search_rakuten once "
+    "per suggestion with a concrete query. Report both the anchor items and "
+    "the purchasable Rakuten candidates (with name, price, image_url, and "
+    "external_url) back."
+)
 
 
-def build_closet_agent(search_tool: Callable | None = None) -> Agent:
+def build_closet_agent(
+    search_tool: Callable | None = None,
+    rakuten_tool: Callable | None = None,
+    assisted: bool = False,
+) -> Agent:
+    tools = [
+        registry.get("analyze_clothing_image"),
+        search_tool or registry.get("search_closet"),
+    ]
+    if assisted:
+        tools.append(rakuten_tool or registry.get("search_rakuten"))
     return Agent(
         name="ClosetAgent",
         model=get_settings().agent_model,
         description="Closet search & management sub-agent.",
-        instruction=_INSTRUCTION,
-        tools=[
-            registry.get("analyze_clothing_image"),
-            search_tool or registry.get("search_closet"),
-        ],
+        instruction=_INSTRUCTION + (_ASSISTED_INSTRUCTION if assisted else ""),
+        tools=tools,
     )
