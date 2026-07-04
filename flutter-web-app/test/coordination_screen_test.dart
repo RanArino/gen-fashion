@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gen_fashion_web/api/api_client.dart';
 import 'package:gen_fashion_web/closet/closet_item.dart';
 import 'package:gen_fashion_web/coordination/coordination_screen.dart';
+import 'package:gen_fashion_web/history/history_item.dart';
 
 import 'test_app.dart';
 
@@ -9,6 +11,99 @@ List<ClosetItem> _readyItems(int count) => [
       for (var i = 0; i < count; i++)
         ClosetItem(id: 'item-$i', status: ItemStatus.ready, category: 'top'),
     ];
+
+/// Fake backend for exercising the propose -> select -> generate flow
+/// without real HTTP/SSE. First [streamSessionEvents] call (from `_start`)
+/// yields the proposed candidates; the second (from `_generateSelected`)
+/// yields the generated coordinate image.
+class _FakeCoordinationApiClient extends ApiClient {
+  _FakeCoordinationApiClient({required this.candidates});
+
+  final List<Map<String, dynamic>> candidates;
+  final List<String> importedCandidateIds = [];
+  int _streamCalls = 0;
+  bool _generated = false;
+
+  static const _coordinateImageUrl = 'https://example.com/coordinate.jpg';
+
+  @override
+  Future<StyleSessionResponse> createSession() async {
+    return const StyleSessionResponse(
+      sessionId: 'session-1',
+      status: 'PROPOSING',
+      source: 'SHARED_CLOSET',
+    );
+  }
+
+  @override
+  Future<StyleSessionResponse> selectSource({
+    required String sessionId,
+    required String source,
+    required Map<String, String> userPreference,
+    String? sharedClosetId,
+  }) async {
+    return const StyleSessionResponse(
+      sessionId: 'session-1',
+      status: 'PROPOSING',
+      source: 'SHARED_CLOSET',
+    );
+  }
+
+  @override
+  Future<StyleSessionResponse> selectCandidates({
+    required String sessionId,
+    required List<String> selectedItemIds,
+  }) async {
+    _generated = true;
+    return const StyleSessionResponse(
+      sessionId: 'session-1',
+      status: 'GENERATING',
+      source: 'SHARED_CLOSET',
+    );
+  }
+
+  @override
+  Future<String> importSuggestedItem({
+    required String sessionId,
+    required String candidateId,
+  }) async {
+    importedCandidateIds.add(candidateId);
+    return 'closet-item-$candidateId';
+  }
+
+  @override
+  Future<SessionHistoryItem> getSession(String sessionId) async {
+    return SessionHistoryItem(
+      sessionId: sessionId,
+      status: _generated ? 'COMPLETED' : 'PROPOSING',
+      selectedItems: const [],
+      proposedCandidates: candidates,
+      coordinateImageUrl: _generated ? _coordinateImageUrl : null,
+    );
+  }
+
+  @override
+  Stream<SseMessage> streamSessionEvents(String sessionId) async* {
+    _streamCalls += 1;
+    if (_streamCalls == 1) {
+      yield SseMessage(
+        event: 'session.proposed',
+        data: {'candidates': candidates},
+      );
+      return;
+    }
+    yield const SseMessage(
+      event: 'agent.event',
+      data: {
+        'seq': 1,
+        'agentName': 'StylingAgent',
+        'eventKind': 'tool_result',
+        'toolName': 'style_synthesizer',
+        'toolResult': {'coordinateImageUrl': _coordinateImageUrl},
+      },
+    );
+  }
+}
 
 void main() {
   testWidgets('renders coordination controls and event accordion',
@@ -262,5 +357,133 @@ void main() {
     expect(event.seq, 3);
     expect(event.toolResult?['coordinateImageUrl'], 'http://image');
     expect(event.toJson()['toolName'], 'style_synthesizer');
+  });
+
+  testWidgets(
+      'offers to save selected Rakuten items as Interesting after generation',
+      (tester) async {
+    final fakeApi = _FakeCoordinationApiClient(
+      candidates: [
+        {'item_id': 'closet-1', 'source': 'CLOSET'},
+        {
+          'item_id': 'rakuten:1',
+          'source': 'RAKUTEN',
+          'name': 'White T-Shirt',
+          'price': 2980,
+          'recommended': true,
+        },
+      ],
+    );
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [CoordinationScreen(uid: 'user-1', api: fakeApi)],
+        ),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Generate selected'));
+    await tester.tap(find.text('Generate selected'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('Save Rakuten items to your closet?'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('White T-Shirt'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Save selected'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(fakeApi.importedCandidateIds, ['rakuten:1']);
+  });
+
+  testWidgets('unchecking a Rakuten item in the dialog skips its import',
+      (tester) async {
+    final fakeApi = _FakeCoordinationApiClient(
+      candidates: [
+        {
+          'item_id': 'rakuten:1',
+          'source': 'RAKUTEN',
+          'name': 'White T-Shirt',
+          'recommended': true,
+        },
+      ],
+    );
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [CoordinationScreen(uid: 'user-1', api: fakeApi)],
+        ),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Generate selected'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(CheckboxListTile),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Save selected'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(fakeApi.importedCandidateIds, isEmpty);
+  });
+
+  testWidgets('closet-only generation never shows the save-Interesting modal',
+      (tester) async {
+    final fakeApi = _FakeCoordinationApiClient(
+      candidates: [
+        {'item_id': 'closet-1', 'source': 'CLOSET'},
+      ],
+    );
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [CoordinationScreen(uid: 'user-1', api: fakeApi)],
+        ),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Generate selected'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('Save Rakuten items to your closet?'), findsNothing);
   });
 }
