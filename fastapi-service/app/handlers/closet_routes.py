@@ -1,18 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.auth import verify_firebase_token
 from app.dependencies import (
     get_delete_closet_item_use_case,
     get_download_url_use_case,
+    get_import_suggested_item_use_case,
     get_register_clothing_item_use_case,
     get_upload_url_use_case,
     get_update_item_metadata_use_case,
 )
 from app.domain.closet import ClosetItemNotFound, MaxClosetItemsExceeded
+from app.domain.styling import StyleSessionNotFound
 from app.use_cases.closet import (
     DeleteClosetItemUseCase,
     GetDownloadUrlUseCase,
     GetUploadUrlUseCase,
+    ImportSuggestedClosetItemUseCase,
     RegisterClothingItemUseCase,
     UpdateClosetItemMetadataUseCase,
 )
@@ -21,12 +24,18 @@ from app.use_cases.closet import (
 router = APIRouter()
 
 
+class ImportSuggestionRequest(BaseModel):
+    session_id: str = Field(alias="sessionId")
+    candidate_id: str = Field(alias="candidateId")
+
+
 class UpdateItemMetadataRequest(BaseModel):
     gender: str | None = None
     category: str | None = None
     colors: list[str] | None = None
     season: str | None = None
     tags: list[str] | None = None
+    ownership_status: str | None = Field(default=None, alias="ownershipStatus")
 
 
 @router.get("/upload-url")
@@ -76,6 +85,23 @@ async def delete_item(
     except ClosetItemNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/import-suggestion")
+async def import_suggestion(
+    request: ImportSuggestionRequest,
+    user_id: str = Depends(verify_firebase_token),
+    use_case: ImportSuggestedClosetItemUseCase = Depends(get_import_suggested_item_use_case),
+):
+    """Save a proposed Rakuten suggestion to the closet as Interesting (MK-6)."""
+    try:
+        return await use_case.execute(user_id, request.session_id, request.candidate_id)
+    except StyleSessionNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except MaxClosetItemsExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.patch("/items/{item_id}")
