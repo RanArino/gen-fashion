@@ -63,6 +63,63 @@ void main() {
     expect(find.byKey(const ValueKey('thumb-r1')), findsOneWidget);
   });
 
+  testWidgets('renders ownership chips for Owned and Interesting items',
+      (tester) async {
+    final cache = DownloadUrlCache(ApiClient());
+    final items = [
+      ClosetItem(
+        id: 'own1',
+        status: ItemStatus.ready,
+        category: 'tops',
+        createdAt: DateTime.now(),
+      ),
+      ClosetItem(
+        id: 'int1',
+        status: ItemStatus.ready,
+        ownership: ItemOwnership.interesting,
+        origin: 'RAKUTEN',
+        category: 'hat',
+        createdAt: DateTime.now(),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ClosetGrid(
+          items: items,
+          cache: cache,
+          thumbnailBuilder: (_, item) =>
+              Container(key: ValueKey('thumb-${item.id}')),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Owned'), findsOneWidget);
+    expect(find.text('Interesting'), findsOneWidget);
+    // Both items stay READY regardless of ownership.
+    expect(find.text('READY'), findsNWidgets(2));
+  });
+
+  test('ClosetItem.fromFirestore parses ownership and external fields', () {
+    final imported = ClosetItem.fromFirestore('id1', {
+      'status': 'READY',
+      'ownershipStatus': 'INTERESTING',
+      'origin': 'RAKUTEN',
+      'externalUrl': 'https://item.rakuten.co.jp/shop/1001',
+      'price': 2980,
+    });
+    expect(imported.status, ItemStatus.ready);
+    expect(imported.ownership, ItemOwnership.interesting);
+    expect(imported.origin, 'RAKUTEN');
+    expect(imported.externalUrl, 'https://item.rakuten.co.jp/shop/1001');
+    expect(imported.price, 2980);
+
+    // Pre-MK documents without ownershipStatus default to Owned.
+    final legacy = ClosetItem.fromFirestore('id2', {'status': 'READY'});
+    expect(legacy.ownership, ItemOwnership.owned);
+  });
+
   test('ClosetItem.fromFirestore parses statuses and tags', () {
     final item = ClosetItem.fromFirestore('id1', {
       'status': 'READY',
