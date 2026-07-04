@@ -1,12 +1,20 @@
 from uuid import UUID, uuid4
 import pytest
 from app.config import get_settings
-from app.domain.closet import ClothingItem, ClothingItemId, ClothingItemStatus
+from app.domain.closet import (
+    ClosetOwnershipStatus,
+    ClothingItem,
+    ClothingItemId,
+    ClothingItemStatus,
+)
 from app.domain.closet.exceptions import ClosetItemNotFound, MaxClosetItemsExceeded
+from app.domain.styling import StyleSession, StyleSessionId, StyleSessionNotFound
+from app.domain.styling.state_machine import StyleSessionState
 from app.ports import ClothingAnalysisResult
 from app.use_cases.closet import (
     DeleteClosetItemUseCase,
     GetUploadUrlUseCase,
+    ImportSuggestedClosetItemUseCase,
     ProcessUploadedClothingItemUseCase,
     RegisterClothingItemUseCase,
     UpdateClosetItemMetadataUseCase,
@@ -59,6 +67,9 @@ class FakeImageStorage:
     async def get_image_bytes(self, image_path):
         return self.bytes_by_path[image_path]
 
+    async def put_image_bytes(self, image_path, data, content_type="image/jpeg"):
+        self.bytes_by_path[image_path] = data
+
 
 class FakeEmbeddingSearch:
     def __init__(self):
@@ -71,7 +82,8 @@ class FakeEmbeddingSearch:
 
     async def index_item(
         self, item_id, user_id, *, is_shared, tags, category, colors, season,
-        embedding, gender=None
+        embedding, gender=None, ownership_status=None, origin=None,
+        external_item_id=None, external_url=None
     ):
         self.indexed.append(
             {
@@ -84,6 +96,10 @@ class FakeEmbeddingSearch:
                 "season": season,
                 "embedding": embedding,
                 "gender": gender,
+                "ownership_status": ownership_status,
+                "origin": origin,
+                "external_item_id": external_item_id,
+                "external_url": external_url,
             }
         )
 
@@ -93,7 +109,7 @@ class FakeEmbeddingSearch:
         self.deleted.append((item_id, user_id))
 
     async def update_item_metadata(
-        self, item_id, *, tags, category, colors, season, gender
+        self, item_id, *, tags, category, colors, season, gender, ownership_status=None
     ):
         self.indexed.append(
             {
@@ -103,6 +119,7 @@ class FakeEmbeddingSearch:
                 "colors": colors,
                 "season": season,
                 "gender": gender,
+                "ownership_status": ownership_status,
             }
         )
 
@@ -301,3 +318,164 @@ async def test_update_metadata_persists_and_reindexes_gender():
     assert item.gender == "female"
     assert [tag.value for tag in item.tags] == ["formal"]
     assert search.indexed[0]["gender"] == "female"
+
+
+@pytest.mark.asyncio
+async def test_update_metadata_switches_ownership_status():
+    repo = FakeClosetRepo()
+    search = FakeEmbeddingSearch()
+    item = closet_item()
+    item.mark_ready("shirt", ["blue"], "spring", "common", [])
+    item.set_ownership_status(ClosetOwnershipStatus.INTERESTING)
+    await repo.create(item)
+
+    result = await UpdateClosetItemMetadataUseCase(repo, search).execute(
+        item.user_id,
+        str(item.id),
+        ownership_status="OWNED",
+    )
+
+    assert item.ownership_status == ClosetOwnershipStatus.OWNED
+    assert item.status == ClothingItemStatus.READY
+    assert result["ownershipStatus"] == "OWNED"
+    assert search.indexed[0]["ownership_status"] == "OWNED"
+
+
+class FakeStylingRepo:
+    def __init__(self, session=None):
+        self.session = session
+
+    async def get_by_id(self, user_id, session_id):
+        if self.session is None or self.session.user_id != user_id:
+            return None
+        return self.session
+
+
+def proposing_session(user_id="user-123", candidates=None):
+    return StyleSession(
+        id=StyleSessionId(uuid4()),
+        user_id=user_id,
+        state=StyleSessionState.PROPOSING,
+        proposed_candidates=candidates or [],
+    )
+
+
+def rakuten_candidate(item_id="rakuten:shop:1001"):
+    return {
+        "item_id": item_id,
+        "source": "RAKUTEN",
+        "name": "White T-Shirt",
+        "image_url": "https://thumbnail.image.rakuten.co.jp/shop/1001.jpg",
+        "price": 2980,
+        "category": "top",
+        "tags": ["casual"],
+        "external_url": "https://item.rakuten.co.jp/shop/1001",
+        "affiliate_url": "https://hb.afl.rakuten.co.jp/xyz",
+        "shop_name": "Shop Name",
+        "attribution": "Rakuten Ichiba",
+    }
+
+
+def import_use_case(styling_repo, closet_repo, storage, search):
+    async def fetch(url):
+        return b"external-jpeg"
+
+    return ImportSuggestedClosetItemUseCase(
+        styling_repo, closet_repo, storage, search, image_fetcher=fetch
+    )
+
+
+@pytest.mark.asyncio
+async def test_import_suggestion_creates_interesting_ready_item():
+    candidate = rakuten_candidate()
+    session = proposing_session(candidates=[candidate])
+    repo = FakeClosetRepo()
+    storage = FakeImageStorage()
+    search = FakeEmbeddingSearch()
+    use_case = import_use_case(FakeStylingRepo(session), repo, storage, search)
+
+    result = await use_case.execute("user-123", str(session.id), candidate["item_id"])
+
+    items = await repo.get_all_by_user("user-123")
+    assert len(items) == 1
+    item = items[0]
+    assert result == {
+        "item_id": str(item.id),
+        "status": "READY",
+        "ownershipStatus": "INTERESTING",
+    }
+    assert item.status == ClothingItemStatus.READY
+    assert item.ownership_status == ClosetOwnershipStatus.INTERESTING
+    assert item.origin == "RAKUTEN"
+    assert item.external_url == "https://item.rakuten.co.jp/shop/1001"
+    assert item.price == 2980
+    assert item.brand_or_shop == "Shop Name"
+    assert storage.bytes_by_path[f"user-123/closet/{item.id}.jpg"] == b"external-jpeg"
+    assert search.indexed[0]["ownership_status"] == "INTERESTING"
+    assert search.indexed[0]["origin"] == "RAKUTEN"
+    assert search.indexed[0]["is_shared"] is False
+
+
+@pytest.mark.asyncio
+async def test_import_suggestion_rejects_unknown_candidate():
+    session = proposing_session(candidates=[rakuten_candidate()])
+    use_case = import_use_case(
+        FakeStylingRepo(session), FakeClosetRepo(), FakeImageStorage(), FakeEmbeddingSearch()
+    )
+
+    with pytest.raises(ValueError, match="not proposed in this session"):
+        await use_case.execute("user-123", str(session.id), "rakuten:other:999")
+
+
+@pytest.mark.asyncio
+async def test_import_suggestion_rejects_non_rakuten_candidate():
+    candidate = {"item_id": "closet-1", "source": "CLOSET", "image_url": "http://x"}
+    session = proposing_session(candidates=[candidate])
+    use_case = import_use_case(
+        FakeStylingRepo(session), FakeClosetRepo(), FakeImageStorage(), FakeEmbeddingSearch()
+    )
+
+    with pytest.raises(ValueError, match="Only RAKUTEN"):
+        await use_case.execute("user-123", str(session.id), "closet-1")
+
+
+@pytest.mark.asyncio
+async def test_import_suggestion_rejects_other_users_session():
+    session = proposing_session(user_id="other-user", candidates=[rakuten_candidate()])
+    use_case = import_use_case(
+        FakeStylingRepo(session), FakeClosetRepo(), FakeImageStorage(), FakeEmbeddingSearch()
+    )
+
+    with pytest.raises(StyleSessionNotFound):
+        await use_case.execute("user-123", str(session.id), "rakuten:shop:1001")
+
+
+@pytest.mark.asyncio
+async def test_import_suggestion_enforces_closet_cap(monkeypatch):
+    monkeypatch.setenv("MAX_CLOSET_IMAGES_PER_USER", "1")
+    get_settings.cache_clear()
+    candidate = rakuten_candidate()
+    session = proposing_session(candidates=[candidate])
+    repo = FakeClosetRepo()
+    await repo.create(closet_item())
+    use_case = import_use_case(
+        FakeStylingRepo(session), repo, FakeImageStorage(), FakeEmbeddingSearch()
+    )
+
+    with pytest.raises(MaxClosetItemsExceeded):
+        await use_case.execute("user-123", str(session.id), candidate["item_id"])
+
+
+@pytest.mark.asyncio
+async def test_update_metadata_rejects_unknown_ownership_status():
+    repo = FakeClosetRepo()
+    item = closet_item()
+    item.mark_ready("shirt", ["blue"], "spring", "common", [])
+    await repo.create(item)
+
+    with pytest.raises(ValueError):
+        await UpdateClosetItemMetadataUseCase(repo, FakeEmbeddingSearch()).execute(
+            item.user_id,
+            str(item.id),
+            ownership_status="WISHLIST",
+        )
