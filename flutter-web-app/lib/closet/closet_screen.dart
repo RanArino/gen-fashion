@@ -128,59 +128,70 @@ class _ClosetScreenState extends State<ClosetScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text(l10n.editMetadata),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                    controller: category,
-                    decoration: InputDecoration(labelText: l10n.category)),
-                TextField(
-                    controller: colors,
-                    decoration: InputDecoration(labelText: l10n.colorsComma)),
-                TextField(
-                    controller: season,
-                    decoration: InputDecoration(labelText: l10n.season)),
-                TextField(
-                    controller: tags,
-                    decoration: InputDecoration(labelText: l10n.tagsComma)),
-                DropdownButtonFormField<String>(
-                  initialValue: gender,
-                  decoration: InputDecoration(labelText: l10n.gender),
-                  items: [
-                    DropdownMenuItem(
-                      value: 'common',
-                      child: Text(l10n.genderCommon),
-                    ),
-                    DropdownMenuItem(
-                      value: 'female',
-                      child: Text(l10n.genderFemale),
-                    ),
-                    DropdownMenuItem(
-                        value: 'male', child: Text(l10n.genderMale)),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setDialogState(() => gender = value);
-                  },
-                ),
-                DropdownButtonFormField<String>(
-                  initialValue: ownership,
-                  decoration: InputDecoration(labelText: l10n.ownership),
-                  items: [
-                    DropdownMenuItem(
-                      value: 'OWNED',
-                      child: Text(l10n.ownershipOwned),
-                    ),
-                    DropdownMenuItem(
-                      value: 'INTERESTING',
-                      child: Text(l10n.ownershipInteresting),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setDialogState(() => ownership = value);
-                  },
-                ),
-              ],
+          content: SizedBox(
+            width: 360,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                      controller: category,
+                      decoration: InputDecoration(labelText: l10n.category)),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: colors,
+                      decoration:
+                          InputDecoration(labelText: l10n.colorsComma)),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: season,
+                      decoration: InputDecoration(labelText: l10n.season)),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: tags,
+                      decoration: InputDecoration(labelText: l10n.tagsComma)),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: gender,
+                    decoration: InputDecoration(labelText: l10n.gender),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'common',
+                        child: Text(l10n.genderCommon),
+                      ),
+                      DropdownMenuItem(
+                        value: 'female',
+                        child: Text(l10n.genderFemale),
+                      ),
+                      DropdownMenuItem(
+                          value: 'male', child: Text(l10n.genderMale)),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setDialogState(() => gender = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: ownership,
+                    decoration: InputDecoration(labelText: l10n.ownership),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'OWNED',
+                        child: Text(l10n.ownershipOwned),
+                      ),
+                      DropdownMenuItem(
+                        value: 'INTERESTING',
+                        child: Text(l10n.ownershipInteresting),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => ownership = value);
+                      }
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
           actions: [
