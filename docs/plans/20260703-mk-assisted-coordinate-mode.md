@@ -33,6 +33,8 @@ Observable success: in Flutter Web, the Coordinate tab has an Assisted mode. A u
 - [x] (2026-07-03) MK-7 - Existing Coordinate-from-closet includes Interesting items (READY-only filtering everywhere; ownership never filters search/anchors; covered by `test_select_source_closet_accepts_interesting_ready_item`).
 - [x] (2026-07-03) MK-8 - End-to-end validation passes locally: fastapi pytest 106 passed, adk pytest 56 passed, `flutter analyze` clean + 24 tests passed, Firestore rules 7 passed (dockerized emulator), `m5_coordination_smoke.py` COMPLETED, new `mk_assisted_coordinate_smoke.py` COMPLETED on the Rakuten-degraded path. Live-Rakuten output pending valid credentials (configured keys return 403).
 - [x] (2026-07-03, post-review feedback) Rakuten 403 root-caused and fixed: the 20260701 endpoint requires `Origin`/`Referer` headers matching the registered application URL (`RAKUTEN_APPLICATION_URL`); adapter now sends them and upsizes `_ex=128x128` thumbnails to 400x400. `mk_assisted_coordinate_smoke.py --require-rakuten` COMPLETED with 10 live Rakuten candidates and a real suggestion import. Also from user feedback: mode labels renamed to self-explanatory names with per-mode hint text (Closet Styling / Style & Shop; クローゼットコーデ / 買い足し提案), and freshly uploaded anchors now appear as analyzing/loading tiles while PROCESSING instead of being hidden until READY. adk pytest 57 passed; flutter analyze clean + 25 tests passed.
+- [x] (2026-07-04, post-launch UX follow-up) MK-6's per-candidate "Add to closet" button required a separate tap before generation and was easy to miss, so users' Rakuten selections weren't reliably ending up in the closet. Added a post-generation confirmation modal (`_SaveInterestingDialog` in `coordination_screen.dart`): once a coordinate image is generated, any selected-but-not-yet-saved Rakuten candidates are offered in a dialog, all pre-checked, letting the user uncheck any before confirming; confirmed items are saved as `INTERESTING` via the existing `_importSuggestion`/`POST /closet/import-suggestion` path (no backend changes). The manual per-candidate button remains for saving before generation without including an item in the current outfit. `flutter analyze` clean; `flutter test` 28 passed (3 new widget tests added: modal appears with Rakuten items pre-checked, unchecking skips import, closet-only generation never shows the modal).
+- [x] (2026-07-04, bug fix) User reported History cards showing hanger-icon placeholders instead of real thumbnails for Rakuten items in a completed session's selected-items row, suspecting the new save-Interesting modal had a timing bug. Root cause was unrelated to import timing: `HistoryScreen`'s selected-item thumbnails used `Image.network` without the `webHtmlElementStrategy` CORS workaround already applied to `CandidateCard`/`_SaveInterestingDialog` (see the 2026-07-03 "post-live" Surprise below), so Rakuten CDN images always fell through to the broken-image placeholder there. Fixed by threading `source` through the stack: `SelectedItemResponse.source` (`session_routes.py`, sourced from the already-present `source` key on `session.selected_items` candidate dicts) -> `HistorySelectedItem.source` (`history_item.dart`) -> `history_screen.dart` now sets `webHtmlElementStrategy: WebHtmlElementStrategy.prefer` for `source == 'RAKUTEN'` thumbnails, `.never` otherwise. fastapi pytest 106 passed (1 new assertion); flutter analyze clean; flutter test 29 passed (1 new test asserting the per-source strategy).
 
 
 ## Surprises & Discoveries
@@ -65,6 +67,9 @@ Observable success: in Flutter Web, the Coordinate tab has an Assisted mode. A u
 
 - Observation (2026-07-03): `firebase emulators:exec` needs a host Java runtime, which this machine lacks; the rules tests were run instead against the dockerized `firestore-emulator` (`npm test` connects to `127.0.0.1:8080`). Caveat: `initializeTestEnvironment` loads `firestore.rules` into that shared emulator and they persist, which then 403s the smoke scripts' unauthenticated emulator REST reads — restart the emulator container after rules tests before running smokes.
   Evidence: `java -version` fails; rules 7/7 pass via the container; `m5_coordination_smoke.py` failed with `PERMISSION_DENIED` until `docker-compose restart firestore-emulator`.
+
+- Observation (2026-07-04): widget-testing `coordination_screen.dart`'s full `Start -> propose -> Generate selected` flow inside the default 800x600 test surface fails silently — `tester.tap()` on the "Start"/"Generate selected" `FilledButton`s warns the offset is outside the render view and the tap never reaches `onPressed`, with no test failure until a later assertion finds an empty widget tree. Fixed by calling `tester.binding.setSurfaceSize(const Size(900, 2600))` (reset via `addTearDown`) before pumping. Separately, once `_maybeOfferSaveInteresting()`'s `showDialog` is on screen, `tester.pumpAndSettle()` times out (`pumpAndSettle timed out`) even though the dialog itself is static; a bounded loop of `tester.pump(const Duration(milliseconds: 100))` (10x) works instead. Both fixes are in `coordination_screen_test.dart`'s three new save-Interesting tests and should be reused by future tests that drive this screen's full session flow.
+  Evidence: tap warnings referenced `Offset(...) outside the bounds of the root of the render tree, Size(800.0, 600.0)`; `_start`/`streamSessionEvents` debug prints confirmed `onPressed` never fired until the surface was enlarged; `pumpAndSettle` only stopped timing out after switching to bounded `pump()` calls post-dialog.
 
 
 ## Decision Log
@@ -130,6 +135,12 @@ Post-review feedback fixes (2026-07-03, later same day):
     scripts/mk_assisted_coordinate_smoke.py --require-rakuten -> COMPLETED
       (11 candidates, 10 live Rakuten; real suggestion imported as INTERESTING
        then flipped to OWNED; generation and Standard reuse verified)
+
+Post-launch UX follow-up (2026-07-04, save-Interesting confirmation modal):
+
+    flutter-web-app:  flutter analyze      -> No issues found
+                      flutter test         -> 28 passed (3 new tests for the
+                      post-generation save-Interesting modal)
 
 Deviations from the plan:
 
