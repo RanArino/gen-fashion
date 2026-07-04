@@ -104,6 +104,8 @@ class _ClosetScreenState extends State<ClosetScreen> {
     final season = TextEditingController(text: item.season ?? '');
     final tags = TextEditingController(text: item.tags.join(', '));
     var gender = item.gender ?? 'common';
+    var ownership =
+        item.ownership == ItemOwnership.interesting ? 'INTERESTING' : 'OWNED';
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -144,6 +146,23 @@ class _ClosetScreenState extends State<ClosetScreen> {
                     if (value != null) setDialogState(() => gender = value);
                   },
                 ),
+                DropdownButtonFormField<String>(
+                  initialValue: ownership,
+                  decoration: InputDecoration(labelText: l10n.ownership),
+                  items: [
+                    DropdownMenuItem(
+                      value: 'OWNED',
+                      child: Text(l10n.ownershipOwned),
+                    ),
+                    DropdownMenuItem(
+                      value: 'INTERESTING',
+                      child: Text(l10n.ownershipInteresting),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => ownership = value);
+                  },
+                ),
               ],
             ),
           ),
@@ -171,6 +190,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
         'season': season.text.trim(),
         'tags': values(tags.text),
         'gender': gender,
+        'ownershipStatus': ownership,
       });
     } catch (e) {
       if (!mounted) return;
@@ -379,7 +399,14 @@ class ClosetCard extends StatelessWidget {
                 Positioned(
                   top: 8,
                   left: 8,
-                  child: StatusBadge(status: item.status),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      StatusBadge(status: item.status),
+                      const SizedBox(height: 4),
+                      OwnershipChip(ownership: item.ownership),
+                    ],
+                  ),
                 ),
                 if (onDelete != null)
                   Positioned(
@@ -438,6 +465,45 @@ class ClosetCard extends StatelessWidget {
                 else if (item.status == ItemStatus.error)
                   Text(l10n.analysisFailed),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ownership classification chip (MK): distinct from the analysis
+/// [StatusBadge], never shows a spinner.
+class OwnershipChip extends StatelessWidget {
+  const OwnershipChip({super.key, required this.ownership});
+  final ItemOwnership ownership;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final interesting = ownership == ItemOwnership.interesting;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: interesting ? AppColors.accent : AppColors.tertiary,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            interesting ? Icons.bookmark : Icons.check,
+            size: 14,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            interesting ? l10n.ownershipInteresting : l10n.ownershipOwned,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ],

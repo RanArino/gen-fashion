@@ -2,6 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum ItemStatus { processing, ready, error, unknown }
 
+/// Ownership classification (MK): analysis status stays separate.
+enum ItemOwnership { owned, interesting }
+
 ItemStatus _parseStatus(Object? raw) {
   switch (raw) {
     case 'PROCESSING':
@@ -15,11 +18,20 @@ ItemStatus _parseStatus(Object? raw) {
   }
 }
 
+ItemOwnership _parseOwnership(Object? raw) {
+  // Pre-MK documents have no ownershipStatus; they are user uploads.
+  return raw == 'INTERESTING' ? ItemOwnership.interesting : ItemOwnership.owned;
+}
+
 /// In-memory model of `users/{uid}/closet/{itemId}` per §8.1.
 class ClosetItem {
   ClosetItem({
     required this.id,
     required this.status,
+    this.ownership = ItemOwnership.owned,
+    this.origin,
+    this.externalUrl,
+    this.price,
     this.category,
     this.tags = const [],
     this.colors = const [],
@@ -30,6 +42,10 @@ class ClosetItem {
 
   final String id;
   final ItemStatus status;
+  final ItemOwnership ownership;
+  final String? origin;
+  final String? externalUrl;
+  final num? price;
   final String? category;
   final List<String> tags;
   final List<String> colors;
@@ -42,6 +58,10 @@ class ClosetItem {
     return ClosetItem(
       id: id,
       status: _parseStatus(data['status']),
+      ownership: _parseOwnership(data['ownershipStatus']),
+      origin: data['origin'] as String?,
+      externalUrl: data['externalUrl'] as String?,
+      price: data['price'] as num?,
       category: data['category'] as String?,
       tags: (data['tags'] as List?)?.cast<String>() ?? const [],
       colors: (data['colors'] as List?)?.cast<String>() ?? const [],
