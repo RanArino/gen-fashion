@@ -18,7 +18,9 @@ from .events import (
     extract_style_result,
     normalize_adk_event,
 )
+from .adapters.rakuten import RakutenUnavailableError
 from .tools.search_closet import search_closet
+from .tools.search_rakuten import search_rakuten
 from .tools.style_synthesizer import style_synthesizer
 
 
@@ -35,6 +37,12 @@ class RunSessionRequest(BaseModel):
     shared_closet_id: str | None = Field(default=None, alias="sharedClosetId")
     phase: str = "propose"
     selected_items: list[dict[str, Any]] | None = Field(default=None, alias="selectedItems")
+    mode: str = "standard"
+    anchor_items: list[dict[str, Any]] | None = Field(default=None, alias="anchorItems")
+
+    @property
+    def assisted(self) -> bool:
+        return self.mode == "assisted"
 
 
 @app.get("/health")
@@ -71,21 +79,37 @@ async def execute_run_session(
 
         if request.phase == "propose":
             await session_repo.update_status(request.session_id, "SEARCHING")
+            if request.assisted:
+                message = (
+                    "Propose a complete styling around the user's anchor items. "
+                    "Treat anchorItems as fixed context, delegate to ClosetAgent, "
+                    "let it describe each complementary garment or accessory "
+                    "(e.g. white t-shirt, black hat, bag, shoes, belt) and call "
+                    "search_rakuten with a concrete query per suggestion, then "
+                    "stop after returning candidates. Context: "
+                    f"{_message_context(request, gender, closet_kind, language)}"
+                )
+            else:
+                message = (
+                    "Propose outfit candidates only. Delegate closet searches to "
+                    "ClosetAgent, let it create concrete descriptions for each "
+                    "garment type, and stop after returning candidates. Context: "
+                    f"{_message_context(request, gender, closet_kind, language)}"
+                )
             normalized_events, seq = await _run_adk_phase(
                 request,
                 session_repo,
                 runner=runner,
                 seq=seq,
                 wearer_age=closet_kind,
-                message=(
-                    "Propose outfit candidates only. Delegate closet searches to "
-                    "ClosetAgent, let it create concrete descriptions for each "
-                    "garment type, and stop after returning candidates. Context: "
-                    f"{_message_context(request, gender, closet_kind, language)}"
-                ),
+                message=message,
             )
             candidates = _collect_candidates(normalized_events)
-            if not candidates:
+            if request.assisted:
+                candidates, seq = await _finalize_assisted_candidates(
+                    request, session_repo, seq, candidates
+                )
+            elif not candidates:
                 await session_repo.write_event(
                     request.session_id,
                     _event(
@@ -175,15 +199,22 @@ async def _run_adk_phase(
     language = _language_code(request.user_preference)
     search_tool = None
     style_tool = None
+    rakuten_tool = None
     selected_image_urls: list[str] = []
     if request.phase == "propose":
         search_tool = _build_propose_search_tool(request, gender)
+        if request.assisted:
+            rakuten_tool = _build_propose_rakuten_tool()
     elif request.phase == "generate":
         selected_image_urls = _selected_image_urls(request.selected_items)
         style_tool = _build_generate_style_tool(request, gender, wearer_age, language)
     active_runner = runner or Runner(
         agent=build_agent_for_phase(
-            request.phase, search_tool=search_tool, style_tool=style_tool
+            request.phase,
+            search_tool=search_tool,
+            style_tool=style_tool,
+            rakuten_tool=rakuten_tool,
+            assisted=request.assisted,
         ),
         app_name=APP_NAME,
         session_service=session_service,
@@ -195,6 +226,8 @@ async def _run_adk_phase(
         "sharedClosetId": request.shared_closet_id,
         "userPreference": request.user_preference,
         "phase": request.phase,
+        "mode": request.mode,
+        "anchorItems": request.anchor_items or [],
         "selectedItems": request.selected_items or [],
         "gender": request.user_preference.get("gender") or "common",
         "wearerAge": wearer_age,
@@ -301,6 +334,126 @@ def _build_propose_search_tool(
     return phase_search_closet
 
 
+def _build_propose_rakuten_tool():
+    def phase_search_rakuten(
+        query: str,
+        category: str | None = None,
+        colors: list[str] | None = None,
+        limit: int = 5,
+    ) -> list[dict]:
+        # A raised tool error aborts the whole ADK run; Rakuten being down or
+        # unconfigured must instead degrade to closet/anchor-only proposals.
+        try:
+            return search_rakuten(
+                query=query, category=category, colors=colors, limit=limit
+            )
+        except RakutenUnavailableError:
+            return []
+
+    phase_search_rakuten.__name__ = "search_rakuten"
+    phase_search_rakuten.__doc__ = search_rakuten.__doc__
+    return phase_search_rakuten
+
+
+MAX_DEFAULT_RECOMMENDED_SUGGESTIONS = 3
+
+
+async def _finalize_assisted_candidates(
+    request: RunSessionRequest,
+    session_repo: FirestoreSessionRepository,
+    seq: int,
+    collected: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Merge fixed anchors with agent/fallback suggestions (MK-4/MK-5).
+
+    Anchors always lead and are recommended; when the agent produced no
+    Rakuten suggestion, one deterministic Rakuten query runs as fallback.
+    Rakuten unavailability degrades to anchor/closet-only candidates instead
+    of failing the session.
+    """
+    anchors = list(request.anchor_items or [])
+    external = [item for item in collected if item.get("source") == "RAKUTEN"]
+    if not external:
+        await session_repo.write_event(
+            request.session_id,
+            _event(
+                seq,
+                agent_name=APP_NAME,
+                event_kind="thinking",
+                text="Agent returned no purchasable suggestions; running Rakuten fallback",
+            ),
+        )
+        seq += 1
+        collected, seq = await _run_assisted_rakuten_fallback(
+            request, session_repo, seq, collected
+        )
+
+    candidates_by_id: dict[str, dict[str, Any]] = {}
+    for anchor in anchors:
+        item_id = str(anchor.get("item_id") or anchor.get("itemId") or "")
+        if item_id:
+            candidates_by_id[item_id] = {**anchor, "anchor": True, "recommended": True}
+    recommended_left = MAX_DEFAULT_RECOMMENDED_SUGGESTIONS
+    for candidate in collected:
+        item_id = str(candidate.get("item_id") or candidate.get("itemId") or "")
+        if not item_id or item_id in candidates_by_id:
+            continue
+        if candidate.get("source") == "RAKUTEN" and "recommended" not in candidate:
+            candidate = {**candidate, "recommended": recommended_left > 0}
+            recommended_left -= 1 if candidate["recommended"] else 0
+        candidates_by_id[item_id] = candidate
+    return list(candidates_by_id.values()), seq
+
+
+async def _run_assisted_rakuten_fallback(
+    request: RunSessionRequest,
+    session_repo: FirestoreSessionRepository,
+    seq: int,
+    collected: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Deterministic Rakuten query from the user preference (MK-4 fallback)."""
+    tool_args = {
+        "query": _style_description(request.user_preference),
+        "colors": _preference_colors(request.user_preference),
+        "limit": 5,
+    }
+    await session_repo.write_event(
+        request.session_id,
+        _event(
+            seq,
+            agent_name="ClosetAgent",
+            event_kind="tool_call",
+            tool_name="search_rakuten",
+            tool_args=tool_args,
+        ),
+    )
+    seq += 1
+    try:
+        suggestions = search_rakuten(**tool_args)
+    except RakutenUnavailableError as exc:
+        await session_repo.write_event(
+            request.session_id,
+            _event(
+                seq,
+                agent_name="ClosetAgent",
+                event_kind="thinking",
+                text=f"Rakuten suggestions unavailable: {exc}",
+            ),
+        )
+        return collected, seq + 1
+    await session_repo.write_event(
+        request.session_id,
+        _event(
+            seq,
+            agent_name="ClosetAgent",
+            event_kind="tool_result",
+            tool_name="search_rakuten",
+            tool_result={"result": suggestions},
+        ),
+    )
+    return [*collected, *suggestions], seq + 1
+
+
 def _selected_image_urls(selected_items: list[dict[str, Any]] | None) -> list[str]:
     return [item["image_url"] for item in selected_items or [] if item.get("image_url")]
 
@@ -360,6 +513,8 @@ def _message_context(
             "source": request.source,
             "sharedClosetId": request.shared_closet_id,
             "userPreference": request.user_preference,
+            "mode": request.mode,
+            "anchorItems": request.anchor_items or [],
             "selectedItems": request.selected_items or [],
             "selectedItemImageUrls": [
                 item["image_url"]
