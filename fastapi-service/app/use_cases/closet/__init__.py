@@ -4,8 +4,10 @@ from app.use_cases.closet.register_clothing_item import RegisterClothingItemUseC
 from app.use_cases.closet.process_uploaded_item import ProcessUploadedClothingItemUseCase
 from app.use_cases.closet.delete_closet_item import DeleteClosetItemUseCase
 from app.use_cases.closet.update_item_metadata import UpdateClosetItemMetadataUseCase
+from app.use_cases.closet.import_suggested_item import ImportSuggestedClosetItemUseCase
 
 __all__ = [
+    "ImportSuggestedClosetItemUseCase",
     "GetUploadUrlUseCase",
     "GetDownloadUrlUseCase",
     "RegisterClothingItemUseCase",
