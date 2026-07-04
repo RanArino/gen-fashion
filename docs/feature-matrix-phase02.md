@@ -4,6 +4,21 @@
 
 ---
 
+> **Assisted Coordinate planning (2026-07-03):** Added new milestone **MK**
+> for the second Web Coordinate mode requested by the user: up to three own
+> anchor clothes, Rakuten-backed item/accessory suggestions, default checked
+> recommendations, save suggestion as Interesting, ownership transition to
+> Owned, and reuse of Interesting items in closet-based Coordinate. ExecPlan:
+> [20260703-mk-assisted-coordinate-mode.md](plans/20260703-mk-assisted-coordinate-mode.md).
+> Rows **MK-1...MK-8** are ✅ as of 2026-07-03: backend, ADK, and Flutter code
+> landed with tests, and local smokes pass — including live Rakuten
+> suggestions (`mk_assisted_coordinate_smoke.py --require-rakuten`). The
+> earlier 403 was the migrated endpoint requiring `Origin`/`Referer` headers
+> (`RAKUTEN_APPLICATION_URL`), not invalid keys; the flow still degrades to
+> anchor/closet-only suggestions if Rakuten is unavailable.
+
+---
+
 ## MG — Client-Side Routing & Browser Navigation
 
 **Scope:** Make Flutter Web navigation URL-addressable so the browser back/forward buttons, deep links, and refresh-to-view all work. Today `flutter-web-app/lib/main.dart` is `MaterialApp(home: AuthGate())`, `AuthGate` flips `LoginScreen` ↔ `HomeScreen` off `authStateChanges`, and `HomeScreen` (`lib/home/home_screen.dart`) switches the Closet / Coordinate / History / Shared views with an `int _index` + `NavigationBar` only — the URL never leaves `/`, so the Chrome back button does nothing (`ToDo`: "no concept of page paths → back button broken → poor UX"). Adopt **go_router** + `usePathUrlStrategy()`, a **ShellRoute** to keep the persistent `NavigationBar`, and go_router `redirect` for auth gating. App behavior is unchanged; only the URL representation of navigation and browser-history integration are added. Reference: `req-phase01.md` §20, ADL-033. Firebase Hosting SPA fallback is already in place (`firebase.json` `rewrites: ** → /index.html`), so deep links won't 404.
@@ -21,6 +36,25 @@
 
 ---
 
+
+## MK — Assisted Coordinate Mode (Web)
+
+**Scope:** Add a second Coordinate mode that starts from 1-3 own closet anchor clothes, proposes complete styling with Rakuten-backed purchasable clothes/accessories, lets the user accept default checked recommendations or modify selection/preferences, generates through the existing candidate-selection gate, and lets Rakuten suggestions be saved to the user's closet as Interesting / later Owned. Reference: `req-phase02.md` §3, ADL-035, ADL-036.
+
+> **ExecPlan (2026-07-03):** [20260703-mk-assisted-coordinate-mode.md](plans/20260703-mk-assisted-coordinate-mode.md). Implemented 2026-07-03: Standard Coordinate behavior is intact, closet ownership status is separated from image-processing status, and Rakuten is a separate ADK tool (`search_rakuten`) rather than overloading `search_closet`. Live-Rakuten suggestions are verified locally (the earlier 403 was fixed by sending `Origin`/`Referer` from `RAKUTEN_APPLICATION_URL`); the assisted flow degrades to anchor-only proposals when Rakuten is unavailable.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| MK-1 | Assisted session mode contract | ✅ Implemented (2026-07-03) | Add `coordinationMode=ASSISTED`, `anchorItems`, and an assisted session route while leaving Standard Coordinate default behavior unchanged. | §3, ADL-036 |
+| MK-2 | Up-to-three own anchor clothes | ✅ Implemented (2026-07-03) | Flutter lets users upload/select 1-3 own READY closet items; FastAPI rejects 0, >3, non-owner, missing, or non-READY anchors before ADK launch. | §3.1 |
+| MK-3 | Rakuten search adapter/tool | ✅ Implemented (2026-07-03) | Add `search_rakuten` with Rakuten Ichiba Item Search / affiliate-aware output; credentials stay server-side; tests use mocked API responses. | §3.2 |
+| MK-4 | Agent text + item/accessory suggestions | ✅ Implemented (2026-07-03) | Assisted propose phase returns text styling plus image-backed clothes/accessories, not only closet garments. | §3.2 |
+| MK-5 | Default checked recommendations + generation gate | ✅ Implemented (2026-07-03) | Recommended suggestions are selected by default; users can change checks/preferences; generation reuses the existing explicit `PROPOSING` -> `/select` gate. | §3.3 |
+| MK-6 | Save suggested items as Interesting | ✅ Implemented (2026-07-03) | Users can import Rakuten suggestions into their private closet as READY + `ownershipStatus=INTERESTING`, copied to R2/MinIO and indexed. | §3.4, ADL-035 |
+| MK-7 | Interesting to Owned status UI and closet reuse | ✅ Implemented (2026-07-03; Rakuten link added 2026-07-04) | Closet UI clearly separates processing state from ownership state; users can change Interesting to Owned; closet-based Coordinate includes both Owned and Interesting READY items. Interesting-item closet cards now also link out to the Rakuten Ichiba product page (`ClosetItem.productUrl`, `flutter-web-app/lib/closet/closet_screen.dart`). | §3.4, §3.5, ADL-035 |
+| MK-8 | Assisted Coordinate E2E | ✅ Implemented (2026-07-03; live-Rakuten smoke passed) | Local smoke/browser E2E covers anchors -> Rakuten suggestions -> selection -> generation -> save Interesting -> mark Owned -> reuse from closet. | §3.6 |
+
+**Exit criteria:** A signed-in Web user completes the Assisted Coordinate flow end to end, imports a Rakuten suggestion as Interesting, marks it Owned, and can select it in Standard Coordinate `CLOSET` mode; FastAPI, ADK, Flutter, and Firestore rules checks pass.
 
 ---
 
@@ -44,4 +78,3 @@
 **Exit criteria:** A LINE user completes the full coordination flow and receives a coordinate image in the LINE chat.
 
 ---
-

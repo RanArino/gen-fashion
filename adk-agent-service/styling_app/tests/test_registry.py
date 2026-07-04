@@ -33,6 +33,7 @@ def test_all_four_m4_tools_registered():
     assert {
         "analyze_clothing_image",
         "search_closet",
+        "search_rakuten",
         "style_synthesizer",
         "ask_preference",
     } <= names

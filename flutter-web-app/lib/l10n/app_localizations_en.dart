@@ -164,6 +164,78 @@ class AppLocalizationsEn extends AppLocalizations {
   String get coordinationTitle => 'Coordination';
 
   @override
+  String get modeStandard => 'Closet Styling';
+
+  @override
+  String get modeAssisted => 'Style & Shop';
+
+  @override
+  String get modeStandardHint =>
+      'Creates a full outfit using only your closet items.';
+
+  @override
+  String get modeAssistedHint =>
+      'Pick up to 3 of your own clothes; AI styles a full outfit and suggests items you can buy on Rakuten.';
+
+  @override
+  String get analyzingItem => 'Analyzing...';
+
+  @override
+  String get anchorItemsLabel => 'Your clothes (up to 3)';
+
+  @override
+  String get anchorLimitReached => 'You can select up to 3 items.';
+
+  @override
+  String get noReadyAnchorItems =>
+      'No ready closet items yet. Upload one to begin.';
+
+  @override
+  String get sourceRakuten => 'Rakuten';
+
+  @override
+  String get addToCloset => 'Add to closet';
+
+  @override
+  String get savedAsInteresting => 'Saved as Interesting';
+
+  @override
+  String importFailed(Object error) {
+    return 'Save failed: $error';
+  }
+
+  @override
+  String get openProductPage => 'Open product page';
+
+  @override
+  String get saveInterestingDialogTitle => 'Save Rakuten items to your closet?';
+
+  @override
+  String get saveInterestingDialogBody =>
+      'These Rakuten items were part of this outfit. Save the ones you like as \"Interesting\" so you can find them again.';
+
+  @override
+  String get saveInterestingSkip => 'Skip';
+
+  @override
+  String get saveInterestingConfirm => 'Save selected';
+
+  @override
+  String get ownership => 'Ownership';
+
+  @override
+  String get ownershipOwned => 'Owned';
+
+  @override
+  String get ownershipInteresting => 'Interesting';
+
+  @override
+  String get filterAll => 'All';
+
+  @override
+  String get noItemsMatchFilter => 'No items match the selected filters.';
+
+  @override
   String get sourceShared => 'Shared';
 
   @override

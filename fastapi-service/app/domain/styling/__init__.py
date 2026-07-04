@@ -7,6 +7,7 @@ from app.domain.styling.value_objects import (
     CoordinateProposal,
     StyleResult,
     ClothingSource,
+    CoordinationMode,
 )
 from app.domain.styling.exceptions import (
     StylingException,
@@ -25,6 +26,7 @@ __all__ = [
     "CoordinateProposal",
     "StyleResult",
     "ClothingSource",
+    "CoordinationMode",
     "StylingException",
     "StyleSessionNotFound",
     "InvalidStateTransition",

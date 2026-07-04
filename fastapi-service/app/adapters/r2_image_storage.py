@@ -77,3 +77,13 @@ class R2ImageStorage(ImageStoragePort):
     async def get_image_bytes(self, image_path: str) -> bytes:
         response = self._client.get_object(Bucket=self._bucket, Key=image_path)
         return response["Body"].read()
+
+    async def put_image_bytes(
+        self, image_path: str, data: bytes, content_type: str = "image/jpeg"
+    ) -> None:
+        self._client.put_object(
+            Bucket=self._bucket,
+            Key=image_path,
+            Body=data,
+            ContentType=content_type,
+        )

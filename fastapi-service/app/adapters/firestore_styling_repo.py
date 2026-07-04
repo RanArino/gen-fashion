@@ -6,6 +6,7 @@ from app.ports import StylingRepositoryPort
 from app.config import get_settings
 from app.domain.styling import (
     ClothingSource,
+    CoordinationMode,
     StyleResult,
     StyleSession,
     StyleSessionId,
@@ -92,6 +93,8 @@ class FirestoreStylingRepository(StylingRepositoryPort):
             "userId": session.user_id,
             "status": session.state.value,
             "source": session.clothing_source.value,
+            "coordinationMode": session.coordination_mode.value,
+            "anchorItems": session.anchor_items,
             "sharedClosetId": session.shared_closet_id,
             "analysisResult": session.analysis_result,
             "userPreference": FirestoreStylingRepository._preference_to_document(
@@ -116,6 +119,10 @@ class FirestoreStylingRepository(StylingRepositoryPort):
             user_id=data["userId"],
             state=StyleSessionState(data.get("status", StyleSessionState.SOURCE_SELECTING)),
             clothing_source=ClothingSource(data.get("source", ClothingSource.UNSET)),
+            coordination_mode=CoordinationMode(
+                data.get("coordinationMode", CoordinationMode.STANDARD)
+            ),
+            anchor_items=data.get("anchorItems", []),
             shared_closet_id=data.get("sharedClosetId"),
             analysis_result=data.get("analysisResult"),
             selected_items=data.get("selectedItems", []),

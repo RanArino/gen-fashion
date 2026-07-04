@@ -131,8 +131,15 @@ class _HistoryCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   child: Image.network(
                     item.imageUrl,
+                    key: ValueKey('history-selected-item-${item.itemId}'),
                     width: 60,
                     fit: BoxFit.cover,
+                    // Rakuten's thumbnail CDN serves images without CORS
+                    // headers; render via an HTML <img> element instead of
+                    // the CanvasKit byte-fetch path (see CandidateCard).
+                    webHtmlElementStrategy: item.source == 'RAKUTEN'
+                        ? WebHtmlElementStrategy.prefer
+                        : WebHtmlElementStrategy.never,
                     errorBuilder: (_, __, ___) => const SizedBox(
                       width: 60,
                       child: ColoredBox(

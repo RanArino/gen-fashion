@@ -392,6 +392,138 @@ abstract class AppLocalizations {
   /// **'Coordination'**
   String get coordinationTitle;
 
+  /// No description provided for @modeStandard.
+  ///
+  /// In en, this message translates to:
+  /// **'Closet Styling'**
+  String get modeStandard;
+
+  /// No description provided for @modeAssisted.
+  ///
+  /// In en, this message translates to:
+  /// **'Style & Shop'**
+  String get modeAssisted;
+
+  /// No description provided for @modeStandardHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Creates a full outfit using only your closet items.'**
+  String get modeStandardHint;
+
+  /// No description provided for @modeAssistedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick up to 3 of your own clothes; AI styles a full outfit and suggests items you can buy on Rakuten.'**
+  String get modeAssistedHint;
+
+  /// No description provided for @analyzingItem.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing...'**
+  String get analyzingItem;
+
+  /// No description provided for @anchorItemsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Your clothes (up to 3)'**
+  String get anchorItemsLabel;
+
+  /// No description provided for @anchorLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'You can select up to 3 items.'**
+  String get anchorLimitReached;
+
+  /// No description provided for @noReadyAnchorItems.
+  ///
+  /// In en, this message translates to:
+  /// **'No ready closet items yet. Upload one to begin.'**
+  String get noReadyAnchorItems;
+
+  /// No description provided for @sourceRakuten.
+  ///
+  /// In en, this message translates to:
+  /// **'Rakuten'**
+  String get sourceRakuten;
+
+  /// No description provided for @addToCloset.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to closet'**
+  String get addToCloset;
+
+  /// No description provided for @savedAsInteresting.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved as Interesting'**
+  String get savedAsInteresting;
+
+  /// No description provided for @importFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Save failed: {error}'**
+  String importFailed(Object error);
+
+  /// No description provided for @openProductPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Open product page'**
+  String get openProductPage;
+
+  /// No description provided for @saveInterestingDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save Rakuten items to your closet?'**
+  String get saveInterestingDialogTitle;
+
+  /// No description provided for @saveInterestingDialogBody.
+  ///
+  /// In en, this message translates to:
+  /// **'These Rakuten items were part of this outfit. Save the ones you like as \"Interesting\" so you can find them again.'**
+  String get saveInterestingDialogBody;
+
+  /// No description provided for @saveInterestingSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get saveInterestingSkip;
+
+  /// No description provided for @saveInterestingConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Save selected'**
+  String get saveInterestingConfirm;
+
+  /// No description provided for @ownership.
+  ///
+  /// In en, this message translates to:
+  /// **'Ownership'**
+  String get ownership;
+
+  /// No description provided for @ownershipOwned.
+  ///
+  /// In en, this message translates to:
+  /// **'Owned'**
+  String get ownershipOwned;
+
+  /// No description provided for @ownershipInteresting.
+  ///
+  /// In en, this message translates to:
+  /// **'Interesting'**
+  String get ownershipInteresting;
+
+  /// No description provided for @filterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get filterAll;
+
+  /// No description provided for @noItemsMatchFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'No items match the selected filters.'**
+  String get noItemsMatchFilter;
+
   /// No description provided for @sourceShared.
   ///
   /// In en, this message translates to:

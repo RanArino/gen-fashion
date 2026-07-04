@@ -38,3 +38,10 @@ class ImageStoragePort(ABC):
     async def get_image_bytes(self, image_path: str) -> bytes:
         """Fetch image bytes from storage for asynchronous processing."""
         raise NotImplementedError("Implement in M2-7: Cloudflare R2 adapter")
+
+    @abstractmethod
+    async def put_image_bytes(
+        self, image_path: str, data: bytes, content_type: str = "image/jpeg"
+    ) -> None:
+        """Write image bytes server-side (MK-6 suggestion import)."""
+        raise NotImplementedError("Implement in M2-7: Cloudflare R2 adapter")

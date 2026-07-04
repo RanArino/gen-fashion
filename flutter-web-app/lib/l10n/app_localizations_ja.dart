@@ -164,6 +164,76 @@ class AppLocalizationsJa extends AppLocalizations {
   String get coordinationTitle => 'コーディネート';
 
   @override
+  String get modeStandard => 'クローゼットコーデ';
+
+  @override
+  String get modeAssisted => '買い足し提案';
+
+  @override
+  String get modeStandardHint => 'クローゼットの服だけで全身コーデを作ります。';
+
+  @override
+  String get modeAssistedHint =>
+      '手持ちの服（最大3点）を選ぶと、AIが楽天で購入できるアイテムを含めた全身コーデを提案します。';
+
+  @override
+  String get analyzingItem => '解析中...';
+
+  @override
+  String get anchorItemsLabel => '自分の服（最大3点）';
+
+  @override
+  String get anchorLimitReached => '選択できるのは最大3点です。';
+
+  @override
+  String get noReadyAnchorItems => '利用できるアイテムがまだありません。アップロードしてください。';
+
+  @override
+  String get sourceRakuten => '楽天';
+
+  @override
+  String get addToCloset => 'クローゼットに追加';
+
+  @override
+  String get savedAsInteresting => '「気になる」に保存しました';
+
+  @override
+  String importFailed(Object error) {
+    return '保存に失敗しました: $error';
+  }
+
+  @override
+  String get openProductPage => '商品ページを開く';
+
+  @override
+  String get saveInterestingDialogTitle => '楽天の商品をクローゼットに保存しますか?';
+
+  @override
+  String get saveInterestingDialogBody =>
+      'このコーディネートに含まれる楽天の商品です。気に入ったものを「気になる」として保存できます。';
+
+  @override
+  String get saveInterestingSkip => 'スキップ';
+
+  @override
+  String get saveInterestingConfirm => '選択した商品を保存';
+
+  @override
+  String get ownership => '所有状況';
+
+  @override
+  String get ownershipOwned => '所有';
+
+  @override
+  String get ownershipInteresting => '気になる';
+
+  @override
+  String get filterAll => 'すべて';
+
+  @override
+  String get noItemsMatchFilter => '条件に一致するアイテムがありません。';
+
+  @override
   String get sourceShared => '共有';
 
   @override

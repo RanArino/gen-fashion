@@ -56,12 +56,14 @@ class HistorySelectedItem {
     required this.imageUrl,
     this.category,
     this.gender,
+    this.source,
   });
 
   final String itemId;
   final String imageUrl;
   final String? category;
   final String? gender;
+  final String? source;
 
   factory HistorySelectedItem.fromJson(Map<String, dynamic> json) {
     return HistorySelectedItem(
@@ -69,6 +71,7 @@ class HistorySelectedItem {
       imageUrl: json['image_url'] as String,
       category: json['category'] as String?,
       gender: json['gender'] as String?,
+      source: json['source'] as String?,
     );
   }
 }

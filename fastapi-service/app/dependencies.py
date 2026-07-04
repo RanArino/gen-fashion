@@ -27,11 +27,13 @@ from app.use_cases.closet import (
     DeleteClosetItemUseCase,
     GetDownloadUrlUseCase,
     GetUploadUrlUseCase,
+    ImportSuggestedClosetItemUseCase,
     ProcessUploadedClothingItemUseCase,
     RegisterClothingItemUseCase,
     UpdateClosetItemMetadataUseCase,
 )
 from app.use_cases.styling import (
+    AssistSessionUseCase,
     CreateSessionUseCase,
     SelectCandidatesUseCase,
     SelectClothingSourceUseCase,
@@ -102,6 +104,15 @@ def get_delete_closet_item_use_case() -> DeleteClosetItemUseCase:
     )
 
 
+def get_import_suggested_item_use_case() -> ImportSuggestedClosetItemUseCase:
+    return ImportSuggestedClosetItemUseCase(
+        get_styling_repository(),
+        get_closet_repository(),
+        get_image_storage(),
+        get_embedding_search(),
+    )
+
+
 def get_update_item_metadata_use_case() -> UpdateClosetItemMetadataUseCase:
     return UpdateClosetItemMetadataUseCase(get_closet_repository(), get_embedding_search())
 
@@ -123,6 +134,16 @@ def get_select_source_use_case() -> SelectClothingSourceUseCase:
     return SelectClothingSourceUseCase(
         get_styling_repository(),
         get_closet_repository(),
+        get_agent_run(),
+        get_settings(),
+    )
+
+
+def get_assist_session_use_case() -> AssistSessionUseCase:
+    return AssistSessionUseCase(
+        get_styling_repository(),
+        get_closet_repository(),
+        get_image_storage(),
         get_agent_run(),
         get_settings(),
     )

@@ -4,10 +4,12 @@ from app.auth import verify_firebase_token
 from app.dependencies import (
     get_delete_closet_item_use_case,
     get_download_url_use_case,
+    get_import_suggested_item_use_case,
     get_register_clothing_item_use_case,
     get_upload_url_use_case,
 )
 from app.domain.closet import ClosetItemNotFound, MaxClosetItemsExceeded
+from app.domain.styling import StyleSessionNotFound
 from app.main import app
 
 
@@ -120,6 +122,67 @@ def test_register_route_returns_processing():
 
     assert response.status_code == 200
     assert response.json() == {"item_id": item_id, "status": "PROCESSING"}
+    reset_overrides()
+
+
+class ImportSuggestionUseCase:
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = []
+
+    async def execute(self, user_id, session_id, candidate_id):
+        self.calls.append((user_id, session_id, candidate_id))
+        if self.error:
+            raise self.error
+        return {
+            "item_id": "new-item",
+            "status": "READY",
+            "ownershipStatus": "INTERESTING",
+        }
+
+
+def test_import_suggestion_returns_interesting_item():
+    reset_overrides()
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    use_case = ImportSuggestionUseCase()
+    app.dependency_overrides[get_import_suggested_item_use_case] = lambda: use_case
+    client = TestClient(app)
+
+    response = client.post(
+        "/closet/import-suggestion",
+        json={"sessionId": "session-1", "candidateId": "rakuten:shop:1001"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "item_id": "new-item",
+        "status": "READY",
+        "ownershipStatus": "INTERESTING",
+    }
+    assert use_case.calls == [("user-123", "session-1", "rakuten:shop:1001")]
+    reset_overrides()
+
+
+def test_import_suggestion_maps_errors():
+    reset_overrides()
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    client = TestClient(app)
+    payload = {"sessionId": "session-1", "candidateId": "x"}
+
+    app.dependency_overrides[get_import_suggested_item_use_case] = (
+        lambda: ImportSuggestionUseCase(StyleSessionNotFound("missing"))
+    )
+    assert client.post("/closet/import-suggestion", json=payload).status_code == 404
+
+    app.dependency_overrides[get_import_suggested_item_use_case] = (
+        lambda: ImportSuggestionUseCase(ValueError("bad candidate"))
+    )
+    assert client.post("/closet/import-suggestion", json=payload).status_code == 400
+
+    app.dependency_overrides[get_import_suggested_item_use_case] = (
+        lambda: ImportSuggestionUseCase(MaxClosetItemsExceeded("cap"))
+    )
+    assert client.post("/closet/import-suggestion", json=payload).status_code == 429
     reset_overrides()
 
 

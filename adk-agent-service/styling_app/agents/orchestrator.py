@@ -33,8 +33,14 @@ _PROPOSAL_INSTRUCTION = (
 def build_orchestrator(
     include_generation: bool = True,
     search_tool: Callable | None = None,
+    rakuten_tool: Callable | None = None,
+    assisted: bool = False,
 ) -> Agent:
-    sub_agents = [build_closet_agent(search_tool=search_tool)]
+    sub_agents = [
+        build_closet_agent(
+            search_tool=search_tool, rakuten_tool=rakuten_tool, assisted=assisted
+        )
+    ]
     if include_generation:
         sub_agents.append(build_styling_agent(include_generation=True))
     return Agent(

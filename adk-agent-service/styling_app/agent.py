@@ -13,11 +13,15 @@ def build_agent_for_phase(
     *,
     search_tool: Callable | None = None,
     style_tool: Callable | None = None,
+    rakuten_tool: Callable | None = None,
+    assisted: bool = False,
 ) -> Agent:
     if phase == "propose":
         return build_orchestrator(
             include_generation=False,
             search_tool=search_tool,
+            rakuten_tool=rakuten_tool,
+            assisted=assisted,
         )
     if phase == "generate":
         return build_styling_agent(include_generation=True, style_tool=style_tool)

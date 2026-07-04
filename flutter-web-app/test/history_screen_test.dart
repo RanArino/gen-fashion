@@ -53,4 +53,48 @@ void main() {
     expect(find.text('2026-06-24 10:32'), findsOneWidget);
     expect(find.text('adult-01'), findsOneWidget);
   });
+
+  testWidgets(
+      'renders Rakuten-sourced selected items via the HTML <img> strategy',
+      (tester) async {
+    const session = SessionHistoryItem(
+      sessionId: 'session-2',
+      status: 'COMPLETED',
+      source: 'CLOSET',
+      coordinateImageUrl: 'https://example.test/result.jpg',
+      selectedItems: [
+        HistorySelectedItem(
+          itemId: 'closet-item',
+          imageUrl: 'https://example.test/closet-item.jpg',
+          source: 'CLOSET',
+        ),
+        HistorySelectedItem(
+          itemId: 'rakuten-item',
+          imageUrl: 'https://thumbnail.image.rakuten.co.jp/item.jpg',
+          source: 'RAKUTEN',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      localizedTestApp(HistoryScreen(apiClient: FakeApiClient([session]))),
+    );
+    await tester.pump();
+
+    final closetImage = tester.widget<Image>(
+      find.byKey(const ValueKey('history-selected-item-closet-item')),
+    );
+    final rakutenImage = tester.widget<Image>(
+      find.byKey(const ValueKey('history-selected-item-rakuten-item')),
+    );
+
+    expect(
+      (closetImage.image as NetworkImage).webHtmlElementStrategy,
+      WebHtmlElementStrategy.never,
+    );
+    expect(
+      (rakutenImage.image as NetworkImage).webHtmlElementStrategy,
+      WebHtmlElementStrategy.prefer,
+    );
+  });
 }

@@ -1,3 +1,4 @@
+from app.use_cases.styling.assist_session import AssistSessionUseCase
 from app.use_cases.styling.create_session import CreateSessionUseCase
 from app.use_cases.styling.select_source import AgentRunStartFailed, SelectClothingSourceUseCase
 from app.use_cases.styling.analyze_image import AnalyzeClothingImageUseCase
@@ -7,6 +8,7 @@ from app.use_cases.styling.select_candidates import SelectCandidatesUseCase
 from app.use_cases.styling.shared_closet_gallery import SharedClosetGalleryUseCase
 
 __all__ = [
+    "AssistSessionUseCase",
     "CreateSessionUseCase",
     "AgentRunStartFailed",
     "SelectClothingSourceUseCase",

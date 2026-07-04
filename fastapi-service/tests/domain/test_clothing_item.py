@@ -1,7 +1,13 @@
 import pytest
 from uuid import uuid4
 from datetime import datetime
-from app.domain.closet import ClothingItem, ClothingItemId, ClothingTag
+from app.domain.closet import (
+    ClosetOwnershipStatus,
+    ClothingItem,
+    ClothingItemId,
+    ClothingItemStatus,
+    ClothingTag,
+)
 
 
 def test_create_clothing_item():
@@ -58,3 +64,34 @@ def test_clothing_item_invalid_image_url():
             image_url="",
             tags=[],
         )
+
+
+def test_clothing_item_defaults_to_owned():
+    item = ClothingItem(
+        id=ClothingItemId(uuid4()),
+        user_id="user-123",
+        image_url="https://example.com/image.jpg",
+        tags=[],
+    )
+
+    assert item.ownership_status == ClosetOwnershipStatus.OWNED
+    assert item.origin is None
+
+
+def test_ownership_status_transitions_keep_analysis_status():
+    item = ClothingItem(
+        id=ClothingItemId(uuid4()),
+        user_id="user-123",
+        image_url="https://example.com/image.jpg",
+        tags=[],
+        status=ClothingItemStatus.READY,
+        ownership_status=ClosetOwnershipStatus.INTERESTING,
+        origin="RAKUTEN",
+    )
+
+    item.set_ownership_status(ClosetOwnershipStatus.OWNED)
+    assert item.ownership_status == ClosetOwnershipStatus.OWNED
+
+    item.set_ownership_status(ClosetOwnershipStatus.INTERESTING)
+    assert item.ownership_status == ClosetOwnershipStatus.INTERESTING
+    assert item.status == ClothingItemStatus.READY
