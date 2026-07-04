@@ -167,6 +167,21 @@
       }
     }
   },
+  "traceQuery": "Query",
+  "traceShopName": "Shop",
+  "traceSearchingRakuten": "{agentName} is searching Rakuten",
+  "@traceSearchingRakuten": {
+    "placeholders": {
+      "agentName": {}
+    }
+  },
+  "traceSearchedRakuten": "{agentName} searched Rakuten - {count} candidates",
+  "@traceSearchedRakuten": {
+    "placeholders": {
+      "agentName": {},
+      "count": {}
+    }
+  },
   "historyLoadFailed": "Failed to load history: {error}",
   "@historyLoadFailed": {
     "placeholders": {

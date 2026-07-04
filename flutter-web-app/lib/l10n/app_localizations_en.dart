@@ -349,6 +349,22 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get traceQuery => 'Query';
+
+  @override
+  String get traceShopName => 'Shop';
+
+  @override
+  String traceSearchingRakuten(Object agentName) {
+    return '$agentName is searching Rakuten';
+  }
+
+  @override
+  String traceSearchedRakuten(Object agentName, Object count) {
+    return '$agentName searched Rakuten - $count candidates';
+  }
+
+  @override
   String historyLoadFailed(Object error) {
     return 'Failed to load history: $error';
   }

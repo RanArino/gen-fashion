@@ -722,6 +722,30 @@ abstract class AppLocalizations {
   /// **'{count} items found'**
   String traceItemsFound(int count);
 
+  /// No description provided for @traceQuery.
+  ///
+  /// In en, this message translates to:
+  /// **'Query'**
+  String get traceQuery;
+
+  /// No description provided for @traceShopName.
+  ///
+  /// In en, this message translates to:
+  /// **'Shop'**
+  String get traceShopName;
+
+  /// No description provided for @traceSearchingRakuten.
+  ///
+  /// In en, this message translates to:
+  /// **'{agentName} is searching Rakuten'**
+  String traceSearchingRakuten(Object agentName);
+
+  /// No description provided for @traceSearchedRakuten.
+  ///
+  /// In en, this message translates to:
+  /// **'{agentName} searched Rakuten - {count} candidates'**
+  String traceSearchedRakuten(Object agentName, Object count);
+
   /// No description provided for @historyLoadFailed.
   ///
   /// In en, this message translates to:

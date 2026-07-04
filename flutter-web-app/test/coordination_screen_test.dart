@@ -345,6 +345,82 @@ void main() {
     expect(find.text('ClosetAgent is searching the closet'), findsOneWidget);
   });
 
+  testWidgets('search_rakuten call renders a Preview, not raw JSON',
+      (tester) async {
+    await tester.pumpWidget(
+      localizedTestApp(
+        AgentEventTile(
+          event: AgentEvent(
+            seq: 1,
+            agentName: 'ClosetAgent',
+            eventKind: 'tool_call',
+            toolName: 'search_rakuten',
+            toolArgs: const {
+              'query': 'white t-shirt',
+              'category': 'top',
+              'colors': ['white'],
+              'limit': 5,
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('ClosetAgent is searching Rakuten'), findsOneWidget);
+    await tester.tap(find.text('ClosetAgent is searching Rakuten'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('white t-shirt'), findsOneWidget);
+    expect(find.text('top'), findsOneWidget);
+    expect(find.text('white'), findsOneWidget);
+    expect(find.textContaining('"query"'), findsNothing);
+  });
+
+  testWidgets('search_rakuten result renders item rows, not raw JSON',
+      (tester) async {
+    await tester.pumpWidget(
+      localizedTestApp(
+        AgentEventTile(
+          event: AgentEvent(
+            seq: 2,
+            agentName: 'ClosetAgent',
+            eventKind: 'tool_result',
+            toolName: 'search_rakuten',
+            toolResult: const {
+              'result': [
+                {
+                  'item_id': 'rakuten:1',
+                  'source': 'RAKUTEN',
+                  'name': 'White T-Shirt',
+                  'image_url': 'https://example.com/shirt.jpg',
+                  'price': 2980,
+                  'category': 'top',
+                  'shop_name': 'Example Shop',
+                  'tags': ['white'],
+                },
+              ],
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.text('ClosetAgent searched Rakuten - 1 candidates'),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.text('ClosetAgent searched Rakuten - 1 candidates'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 items found'), findsOneWidget);
+    expect(find.text('White T-Shirt'), findsOneWidget);
+    expect(find.text('¥2980'), findsOneWidget);
+    expect(find.text('Shop: Example Shop'), findsOneWidget);
+    expect(find.textContaining('"item_id"'), findsNothing);
+  });
+
   test('AgentEvent parses backend payload', () {
     final event = AgentEvent.fromJson({
       'seq': 3,

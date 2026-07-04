@@ -111,6 +111,10 @@
       }
     }
   },
+  "traceQuery": "検索キーワード",
+  "traceShopName": "店舗",
+  "traceSearchingRakuten": "{agentName} が楽天を検索中",
+  "traceSearchedRakuten": "{agentName} が楽天を検索しました - {count} 件",
   "historyLoadFailed": "履歴の読み込みに失敗しました: {error}",
   "historyEmpty": "完了したコーディネートはまだありません。",
   "dateUnavailable": "日付不明",

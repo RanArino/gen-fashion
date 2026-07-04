@@ -58,6 +58,21 @@
 
 ---
 
+## ML — Style & Shop Trace Preview + Closet Edit Dialog UI Fixes
+
+**Scope:** Two UI bugs reported against already-shipped milestones: (1) in Style & Shop (Assisted Coordinate) mode, the agent-trace accordion's `search_rakuten` steps rendered raw JSON even in "Preview" mode, because MJ's per-tool Preview dispatcher (`docs/plans/20260702-mj-agent-trace-preview-raw-views.md`) predates MK's `search_rakuten` tool by one day and was never extended to it; (2) the closet item edit dialog's fields (Category/Colors/Season/Tags/Gender/Ownership) had no spacing or width constraint, rendering cramped. Both are front-end-only fixes within already-tracked Assisted Coordinate scope (§3). Reference: `req-phase02.md` §3, no new ADL (see ExecPlan Decision Log).
+
+> **ExecPlan (2026-07-04):** [20260704-ml-assisted-preview-and-closet-edit-fixes.md](plans/20260704-ml-assisted-preview-and-closet-edit-fixes.md). Implemented and verified 2026-07-04: `flutter analyze` clean, `flutter test` 43 passed (2 new), and a live browser run of an Assisted/Style & Shop session against real Rakuten data confirmed the `search_rakuten` trace steps render labeled Preview fields (query/category/colors on call; "N items found" + thumbnail/name/price/shop per item on result) with Raw still available as JSON, plus the closet edit dialog now has visible field spacing.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| ML-1 | `search_rakuten` trace preview | ✅ Implemented (2026-07-04) | `_SearchRakutenPreview`/`_RakutenItemRow` added to the `_AgentPreview` dispatcher (`coordination_screen.dart`); `AgentEvent.summary()` gains matching tile-title branches. Verified live against real Rakuten results. | §3 |
+| ML-2 | Closet edit dialog spacing | ✅ Implemented (2026-07-04) | `_onEdit`'s dialog content wrapped in a 360px-wide `SizedBox` with `SizedBox(height: 12)` gaps between all six fields, matching `_SaveInterestingDialog`'s convention. No field/save behavior change. | §3.4 |
+
+**Exit criteria:** Expanding a `search_rakuten` trace step in Preview mode shows labeled fields/items, never raw JSON (Raw still shows JSON); the closet edit dialog's fields are visibly spaced and consistently widthed.
+
+---
+
 ## M6 — LINE Channel Integration (Phase 1b)
 
 **Scope:** Bring the coordination experience to LINE; add Rakuten search. **Do not start before M5 is complete** (`req-phase01.md` §14). Reference: `req-phase01.md` §6.4, §6.6, §7.3, §7.4, §10.2, ADL-006, ADL-009.

@@ -995,6 +995,9 @@ class _AgentPreview extends StatelessWidget {
     if (event.toolName == 'search_closet') {
       return _SearchClosetPreview(event: event, l10n: l10n);
     }
+    if (event.toolName == 'search_rakuten') {
+      return _SearchRakutenPreview(event: event, l10n: l10n);
+    }
     if (event.toolName == 'style_synthesizer') {
       return _StyleSynthesizerPreview(event: event, l10n: l10n);
     }
@@ -1062,6 +1065,56 @@ class _SearchClosetPreview extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         ...items.map((item) => _ClosetItemRow(item: item)),
+      ],
+    );
+  }
+}
+
+class _SearchRakutenPreview extends StatelessWidget {
+  const _SearchRakutenPreview({required this.event, required this.l10n});
+
+  final AgentEvent event;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    if (event.eventKind == 'tool_call') {
+      final args = event.toolArgs ?? {};
+      final query = args['query'] as String?;
+      final category = args['category'] as String?;
+      final rawColors = args['colors'];
+      final colors =
+          rawColors is List ? rawColors.cast<String>() : <String>[];
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (query != null)
+            _PreviewField(label: l10n.traceQuery, child: Text(query)),
+          if (category != null)
+            _PreviewField(label: l10n.category, child: Text(category)),
+          if (colors.isNotEmpty)
+            _PreviewField(
+                label: l10n.colors, child: _ChipRow(values: colors)),
+        ],
+      );
+    }
+
+    // tool_result: N items found + compact per-item rows
+    final raw = event.toolResult?['result'];
+    final items = raw is List
+        ? raw.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.traceItemsFound(items.length),
+          style: Theme.of(context).textTheme.labelMedium,
+        ),
+        const SizedBox(height: 8),
+        ...items.map((item) => _RakutenItemRow(item: item)),
       ],
     );
   }
@@ -1262,6 +1315,95 @@ class _ClosetItemRow extends StatelessWidget {
                               Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                   ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RakutenItemRow extends StatelessWidget {
+  const _RakutenItemRow({required this.item});
+
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = item['image_url'] as String?;
+    final name = item['name'] as String?;
+    final price = item['price'] as num?;
+    final category = item['category'] as String?;
+    final shopName = item['shop_name'] as String?;
+    final tags = (item['tags'] as List?)?.cast<String>() ?? <String>[];
+    final l10n = AppLocalizations.of(context)!;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              width: 48,
+              height: 48,
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      // Rakuten's thumbnail CDN serves images without CORS
+                      // headers; see the matching workaround in CandidateCard.
+                      webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+                      errorBuilder: (_, __, ___) => ColoredBox(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            child: const Icon(Icons.checkroom, size: 20),
+                          ))
+                  : ColoredBox(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      child: const Icon(Icons.checkroom, size: 20),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (name != null)
+                  Text(name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall),
+                if (price != null) ...[
+                  const SizedBox(height: 2),
+                  Text('¥$price',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+                if (category != null) ...[
+                  const SizedBox(height: 2),
+                  Text(category,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+                if (shopName != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '${l10n.traceShopName}: $shopName',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+                if (tags.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  _ChipRow(values: tags),
                 ],
               ],
             ),
@@ -1683,6 +1825,14 @@ class AgentEvent {
     }
     if (toolName == 'search_closet') {
       return l10n.traceSearchingCloset(agentName);
+    }
+    if (toolName == 'search_rakuten' && eventKind == 'tool_result') {
+      final raw = toolResult?['result'];
+      final count = raw is List ? raw.length : 0;
+      return l10n.traceSearchedRakuten(agentName, count);
+    }
+    if (toolName == 'search_rakuten') {
+      return l10n.traceSearchingRakuten(agentName);
     }
     if (toolName == 'style_synthesizer') {
       return eventKind == 'tool_result'

@@ -347,6 +347,22 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get traceQuery => '検索キーワード';
+
+  @override
+  String get traceShopName => '店舗';
+
+  @override
+  String traceSearchingRakuten(Object agentName) {
+    return '$agentName が楽天を検索中';
+  }
+
+  @override
+  String traceSearchedRakuten(Object agentName, Object count) {
+    return '$agentName が楽天を検索しました - $count 件';
+  }
+
+  @override
   String historyLoadFailed(Object error) {
     return '履歴の読み込みに失敗しました: $error';
   }
