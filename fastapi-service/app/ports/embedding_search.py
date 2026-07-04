@@ -26,6 +26,10 @@ class EmbeddingSearchPort(ABC):
         season: Optional[str],
         embedding: Optional[List[float]],
         gender: Optional[str] = None,
+        ownership_status: Optional[str] = None,
+        origin: Optional[str] = None,
+        external_item_id: Optional[str] = None,
+        external_url: Optional[str] = None,
     ) -> None:
         """Index a clothing item document and optional embedding."""
         raise NotImplementedError("Implement in M2-9: Elasticsearch adapter")
@@ -45,6 +49,7 @@ class EmbeddingSearchPort(ABC):
         colors: List[str],
         season: Optional[str],
         gender: Optional[str],
+        ownership_status: Optional[str] = None,
     ) -> None:
         """Partially update searchable metadata without replacing the vector."""
         raise NotImplementedError

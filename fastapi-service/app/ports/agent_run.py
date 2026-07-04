@@ -11,6 +11,8 @@ class AgentRunRequest:
     shared_closet_id: str | None = None
     phase: str = "propose"
     selected_items: list[dict] | None = None
+    mode: str = "standard"
+    anchor_items: list[dict] | None = None
 
 
 class AgentRunPort(ABC):
