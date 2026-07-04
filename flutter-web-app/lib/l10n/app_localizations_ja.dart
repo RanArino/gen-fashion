@@ -206,6 +206,19 @@ class AppLocalizationsJa extends AppLocalizations {
   String get openProductPage => '商品ページを開く';
 
   @override
+  String get saveInterestingDialogTitle => '楽天の商品をクローゼットに保存しますか?';
+
+  @override
+  String get saveInterestingDialogBody =>
+      'このコーディネートに含まれる楽天の商品です。気に入ったものを「気になる」として保存できます。';
+
+  @override
+  String get saveInterestingSkip => 'スキップ';
+
+  @override
+  String get saveInterestingConfirm => '選択した商品を保存';
+
+  @override
   String get ownership => '所有状況';
 
   @override

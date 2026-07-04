@@ -228,12 +228,36 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           _reportE2eState();
         });
       }
+      await _maybeOfferSaveInteresting();
       await _recoverSessionState(sessionId);
     } catch (e) {
       if (mounted) setState(() => _error = e);
     } finally {
       if (mounted) setState(() => _running = false);
     }
+  }
+
+  /// After generation, offer to save the Rakuten items used in this outfit
+  /// into the closet as "Interesting" (all pre-checked, user can opt out).
+  Future<void> _maybeOfferSaveInteresting() async {
+    if (!mounted) return;
+    final offerable = _candidates
+        .where((candidate) =>
+            _selectedCandidateIds.contains(_candidateId(candidate)) &&
+            candidate['source'] == 'RAKUTEN' &&
+            !_savedCandidateIds.contains(_candidateId(candidate)))
+        .toList();
+    if (offerable.isEmpty) return;
+    final chosen = await showDialog<Set<String>>(
+      context: context,
+      builder: (ctx) => _SaveInterestingDialog(candidates: offerable),
+    );
+    if (chosen == null || chosen.isEmpty || !mounted) return;
+    await Future.wait(
+      offerable
+          .where((candidate) => chosen.contains(_candidateId(candidate)))
+          .map(_importSuggestion),
+    );
   }
 
   Future<void> _recoverSessionState(String sessionId) async {
@@ -1458,6 +1482,103 @@ class CandidateCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Post-generation confirmation modal (default: all pre-checked) for saving
+/// the Rakuten items used in an outfit into the closet as "Interesting".
+class _SaveInterestingDialog extends StatefulWidget {
+  const _SaveInterestingDialog({required this.candidates});
+
+  final List<Map<String, dynamic>> candidates;
+
+  static String _id(Map<String, dynamic> item) =>
+      (item['item_id'] ?? item['itemId']) as String;
+
+  @override
+  State<_SaveInterestingDialog> createState() =>
+      _SaveInterestingDialogState();
+}
+
+class _SaveInterestingDialogState extends State<_SaveInterestingDialog> {
+  late final Set<String> _checked =
+      widget.candidates.map(_SaveInterestingDialog._id).toSet();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return AlertDialog(
+      title: Text(l10n.saveInterestingDialogTitle),
+      content: SizedBox(
+        width: 360,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.saveInterestingDialogBody),
+              const SizedBox(height: 12),
+              for (final candidate in widget.candidates)
+                CheckboxListTile(
+                  value: _checked.contains(
+                    _SaveInterestingDialog._id(candidate),
+                  ),
+                  onChanged: (value) => setState(() {
+                    final id = _SaveInterestingDialog._id(candidate);
+                    if (value ?? false) {
+                      _checked.add(id);
+                    } else {
+                      _checked.remove(id);
+                    }
+                  }),
+                  secondary: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: _thumbnail(candidate),
+                  ),
+                  title: Text(
+                    (candidate['name'] as String?) ??
+                        (candidate['category'] as String?) ??
+                        l10n.item,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, <String>{}),
+          child: Text(l10n.saveInterestingSkip),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _checked),
+          child: Text(l10n.saveInterestingConfirm),
+        ),
+      ],
+    );
+  }
+
+  Widget _thumbnail(Map<String, dynamic> candidate) {
+    final imageUrl = candidate['image_url'] ?? candidate['imageUrl'];
+    if (imageUrl is! String || imageUrl.isEmpty) {
+      return const Icon(Icons.checkroom);
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        // Rakuten's thumbnail CDN serves images without CORS headers; see
+        // the matching workaround in CandidateCard.
+        webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+        errorBuilder: (_, __, ___) => const Icon(Icons.checkroom),
       ),
     );
   }

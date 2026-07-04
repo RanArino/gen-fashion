@@ -87,6 +87,10 @@
     }
   },
   "openProductPage": "Open product page",
+  "saveInterestingDialogTitle": "Save Rakuten items to your closet?",
+  "saveInterestingDialogBody": "These Rakuten items were part of this outfit. Save the ones you like as \"Interesting\" so you can find them again.",
+  "saveInterestingSkip": "Skip",
+  "saveInterestingConfirm": "Save selected",
   "ownership": "Ownership",
   "ownershipOwned": "Owned",
   "ownershipInteresting": "Interesting",

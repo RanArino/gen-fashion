@@ -470,6 +470,30 @@ abstract class AppLocalizations {
   /// **'Open product page'**
   String get openProductPage;
 
+  /// No description provided for @saveInterestingDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save Rakuten items to your closet?'**
+  String get saveInterestingDialogTitle;
+
+  /// No description provided for @saveInterestingDialogBody.
+  ///
+  /// In en, this message translates to:
+  /// **'These Rakuten items were part of this outfit. Save the ones you like as \"Interesting\" so you can find them again.'**
+  String get saveInterestingDialogBody;
+
+  /// No description provided for @saveInterestingSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get saveInterestingSkip;
+
+  /// No description provided for @saveInterestingConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Save selected'**
+  String get saveInterestingConfirm;
+
   /// No description provided for @ownership.
   ///
   /// In en, this message translates to:

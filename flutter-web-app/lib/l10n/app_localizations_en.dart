@@ -208,6 +208,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get openProductPage => 'Open product page';
 
   @override
+  String get saveInterestingDialogTitle => 'Save Rakuten items to your closet?';
+
+  @override
+  String get saveInterestingDialogBody =>
+      'These Rakuten items were part of this outfit. Save the ones you like as \"Interesting\" so you can find them again.';
+
+  @override
+  String get saveInterestingSkip => 'Skip';
+
+  @override
+  String get saveInterestingConfirm => 'Save selected';
+
+  @override
   String get ownership => 'Ownership';
 
   @override
