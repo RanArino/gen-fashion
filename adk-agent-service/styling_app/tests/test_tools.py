@@ -5,6 +5,7 @@ import pytest
 from styling_app.tools.analyze_clothing_image import analyze_clothing_image
 from styling_app.tools.ask_preference import ask_preference
 from styling_app.tools.search_closet import search_closet
+from styling_app.tools.search_rakuten import search_rakuten
 from styling_app.tools.style_synthesizer import style_synthesizer
 
 ANALYSIS = {
@@ -120,6 +121,92 @@ def test_search_closet_embedding_failure_is_fail_soft(monkeypatch):
 def test_search_closet_rejects_rakuten(monkeypatch):
     with pytest.raises(ValueError):
         search_closet("dress", "RAKUTEN", "user-1")
+
+
+# ── search_rakuten (MK-3) ──────────────────────────────────────────────────────
+
+
+def _patch_rakuten(monkeypatch, items):
+    import styling_app.tools.search_rakuten as mod
+
+    captured = {}
+
+    def fake_search_items(keyword, *, limit=None):
+        captured["keyword"] = keyword
+        captured["limit"] = limit
+        return items
+
+    monkeypatch.setattr(mod.rakuten, "search_items", fake_search_items)
+    return captured
+
+
+def test_search_rakuten_maps_candidate_fields(monkeypatch):
+    captured = _patch_rakuten(
+        monkeypatch,
+        [
+            {
+                "item_code": "shop:1001",
+                "name": "White T-Shirt",
+                "price": 2980,
+                "image_url": "https://thumbnail.image.rakuten.co.jp/1001.jpg",
+                "external_url": "https://item.rakuten.co.jp/shop/1001",
+                "affiliate_url": "https://hb.afl.rakuten.co.jp/xyz",
+                "shop_name": "Shop Name",
+            }
+        ],
+    )
+
+    results = search_rakuten("white t-shirt", category="top", colors=["white"])
+
+    assert captured["keyword"] == "white t-shirt white"
+    assert results == [
+        {
+            "item_id": "rakuten:shop:1001",
+            "source": "RAKUTEN",
+            "name": "White T-Shirt",
+            "image_url": "https://thumbnail.image.rakuten.co.jp/1001.jpg",
+            "price": 2980,
+            "category": "top",
+            "tags": ["white"],
+            "external_url": "https://item.rakuten.co.jp/shop/1001",
+            "affiliate_url": "https://hb.afl.rakuten.co.jp/xyz",
+            "shop_name": "Shop Name",
+            "attribution": "Rakuten Ichiba",
+        }
+    ]
+
+
+def test_search_rakuten_skips_items_without_image_or_code(monkeypatch):
+    _patch_rakuten(
+        monkeypatch,
+        [
+            {"item_code": "a", "image_url": None},
+            {"item_code": None, "image_url": "http://img"},
+            {"item_code": "b", "image_url": "http://img/b.jpg"},
+        ],
+    )
+
+    results = search_rakuten("black hat")
+
+    assert [item["item_id"] for item in results] == ["rakuten:b"]
+
+
+def test_search_rakuten_rejects_empty_query(monkeypatch):
+    _patch_rakuten(monkeypatch, [])
+    with pytest.raises(ValueError):
+        search_rakuten("   ")
+
+
+def test_search_rakuten_propagates_unavailable(monkeypatch):
+    import styling_app.tools.search_rakuten as mod
+    from styling_app.adapters.rakuten import RakutenUnavailableError
+
+    def boom(keyword, *, limit=None):
+        raise RakutenUnavailableError("no credentials")
+
+    monkeypatch.setattr(mod.rakuten, "search_items", boom)
+    with pytest.raises(RakutenUnavailableError):
+        search_rakuten("bag")
 
 
 # ── style_synthesizer (M4-7) ───────────────────────────────────────────────────

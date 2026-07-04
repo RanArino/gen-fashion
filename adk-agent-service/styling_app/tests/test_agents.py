@@ -18,6 +18,34 @@ def test_closet_agent_toolset():
     assert _tool_names(agent) == ["analyze_clothing_image", "search_closet"]
 
 
+def test_closet_agent_standard_mode_has_no_rakuten_tool():
+    agent = build_closet_agent()
+    assert "search_rakuten" not in _tool_names(agent)
+
+
+def test_closet_agent_assisted_mode_adds_rakuten_tool():
+    agent = build_closet_agent(assisted=True)
+    assert _tool_names(agent) == [
+        "analyze_clothing_image",
+        "search_closet",
+        "search_rakuten",
+    ]
+
+
+def test_assisted_propose_agent_tree_still_withholds_generation():
+    propose_agent = build_agent_for_phase("propose", assisted=True)
+
+    def all_tool_names(agent):
+        names = _tool_names(agent)
+        for sub_agent in agent.sub_agents:
+            names.extend(all_tool_names(sub_agent))
+        return names
+
+    names = all_tool_names(propose_agent)
+    assert "search_rakuten" in names
+    assert "style_synthesizer" not in names
+
+
 def test_styling_agent_toolset():
     agent = build_styling_agent()
     assert _tool_names(agent) == ["ask_preference", "style_synthesizer"]
