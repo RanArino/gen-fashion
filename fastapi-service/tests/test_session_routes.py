@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.auth import verify_firebase_token
 from app.config import get_settings
 from app.dependencies import (
+    get_assist_session_use_case,
     get_create_session_use_case,
     get_image_storage,
     get_select_candidates_use_case,
@@ -80,6 +81,22 @@ class DailyLimitSelectSourceRouteUseCase:
         raise DailyGenerationLimitExceeded(
             "Daily generation limit of 5 reached. Limit resets at midnight UTC."
         )
+
+
+class AssistRouteUseCase:
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = []
+
+    async def execute(self, *, user_id, session_id, anchor_item_ids, preference):
+        self.calls.append((user_id, session_id, anchor_item_ids, preference))
+        if self.error:
+            raise self.error
+        return type(
+            "Result",
+            (),
+            {"session_id": session_id, "status": "SEARCHING", "source": "CLOSET"},
+        )()
 
 
 class StreamRepo:
@@ -388,6 +405,66 @@ def test_select_source_returns_429_when_daily_generation_limit_reached():
     assert response.json()["detail"] == (
         "Daily generation limit of 5 reached. Limit resets at midnight UTC."
     )
+    reset_overrides()
+
+
+def test_assist_session_accepts_anchor_items():
+    reset_overrides()
+    session_id = str(uuid4())
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    use_case = AssistRouteUseCase()
+    app.dependency_overrides[get_assist_session_use_case] = lambda: use_case
+    client = TestClient(app)
+
+    response = client.post(
+        f"/sessions/{session_id}/assist",
+        json={
+            "anchorItemIds": ["anchor-1", "anchor-2"],
+            "userPreference": {"style": "clean", "gender": "female"},
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "session_id": session_id,
+        "status": "SEARCHING",
+        "source": "CLOSET",
+    }
+    user_id, called_session_id, anchor_ids, preference = use_case.calls[0]
+    assert user_id == "user-123"
+    assert called_session_id == session_id
+    assert anchor_ids == ["anchor-1", "anchor-2"]
+    assert preference.style == "clean"
+    assert preference.gender == "female"
+    reset_overrides()
+
+
+def test_assist_session_maps_errors():
+    reset_overrides()
+    session_id = str(uuid4())
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    client = TestClient(app)
+    payload = {"anchorItemIds": ["anchor-1"], "userPreference": {}}
+
+    app.dependency_overrides[get_assist_session_use_case] = lambda: AssistRouteUseCase(
+        ValueError("anchorItemIds must contain 1 to 3 items")
+    )
+    assert client.post(f"/sessions/{session_id}/assist", json=payload).status_code == 400
+
+    app.dependency_overrides[get_assist_session_use_case] = lambda: AssistRouteUseCase(
+        ValueError("Cannot select source from PROPOSING")
+    )
+    assert client.post(f"/sessions/{session_id}/assist", json=payload).status_code == 409
+
+    app.dependency_overrides[get_assist_session_use_case] = lambda: AssistRouteUseCase(
+        StyleSessionNotFound("missing")
+    )
+    assert client.post(f"/sessions/{session_id}/assist", json=payload).status_code == 404
+
+    app.dependency_overrides[get_assist_session_use_case] = lambda: AssistRouteUseCase(
+        DailyGenerationLimitExceeded("Daily generation limit of 5 reached.")
+    )
+    assert client.post(f"/sessions/{session_id}/assist", json=payload).status_code == 429
     reset_overrides()
 
 
