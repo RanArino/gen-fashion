@@ -4,6 +4,7 @@ from . import (  # noqa: F401
     analyze_clothing_image,
     ask_preference,
     search_closet,
+    search_rakuten,
     style_synthesizer,
 )
 from .registry import registry  # noqa: F401
