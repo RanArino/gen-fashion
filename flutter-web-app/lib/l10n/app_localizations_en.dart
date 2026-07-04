@@ -230,6 +230,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ownershipInteresting => 'Interesting';
 
   @override
+  String get filterAll => 'All';
+
+  @override
+  String get noItemsMatchFilter => 'No items match the selected filters.';
+
+  @override
   String get sourceShared => 'Shared';
 
   @override

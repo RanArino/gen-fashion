@@ -69,6 +69,8 @@
   "ownership": "所有状況",
   "ownershipOwned": "所有",
   "ownershipInteresting": "気になる",
+  "filterAll": "すべて",
+  "noItemsMatchFilter": "条件に一致するアイテムがありません。",
   "sourceShared": "共有",
   "sourceMine": "自分",
   "sharedCloset": "共有クローゼット",

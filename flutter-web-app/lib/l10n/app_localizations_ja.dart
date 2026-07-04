@@ -228,6 +228,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get ownershipInteresting => '気になる';
 
   @override
+  String get filterAll => 'すべて';
+
+  @override
+  String get noItemsMatchFilter => '条件に一致するアイテムがありません。';
+
+  @override
   String get sourceShared => '共有';
 
   @override

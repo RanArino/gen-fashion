@@ -512,6 +512,18 @@ abstract class AppLocalizations {
   /// **'Interesting'**
   String get ownershipInteresting;
 
+  /// No description provided for @filterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get filterAll;
+
+  /// No description provided for @noItemsMatchFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'No items match the selected filters.'**
+  String get noItemsMatchFilter;
+
   /// No description provided for @sourceShared.
   ///
   /// In en, this message translates to:

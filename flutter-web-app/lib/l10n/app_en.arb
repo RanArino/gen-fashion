@@ -94,6 +94,8 @@
   "ownership": "Ownership",
   "ownershipOwned": "Owned",
   "ownershipInteresting": "Interesting",
+  "filterAll": "All",
+  "noItemsMatchFilter": "No items match the selected filters.",
   "sourceShared": "Shared",
   "sourceMine": "Mine",
   "sharedCloset": "Shared closet",
