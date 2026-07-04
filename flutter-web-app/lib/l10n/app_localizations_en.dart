@@ -24,7 +24,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navShared => 'Shared';
 
   @override
-  String get sharedClosetAbout => 'About shared closet';
+  String get appHelpTooltip => 'How this app works';
+
+  @override
+  String get appHelpTitle => 'How this app works';
 
   @override
   String get signOut => 'Sign out';
@@ -60,6 +63,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get closetTitle => 'Closet';
+
+  @override
+  String get closetHelpPurpose =>
+      'Your Closet stores photos of clothes you own or are considering, up to 20 items. Coordinate uses these items to build outfits.';
+
+  @override
+  String get closetHelpUpload =>
+      'Tap \"Add item\" to upload a photo. The app analyzes it in the background and fills in category, color, season, and tags automatically; edit them anytime from the pencil icon.';
+
+  @override
+  String get closetHelpFilters =>
+      'Use the filters above to narrow the grid: \"Owned\" vs \"Interesting\" shows items you already have versus saved suggestions, and the category chips narrow further within the selected ownership filter.';
+
+  @override
+  String get emptyClosetHelpHint => 'New here? Tap the ⓘ icon above for help.';
 
   @override
   String get addItem => 'Add item';
@@ -164,6 +182,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get coordinationTitle => 'Coordination';
 
   @override
+  String get helpCoordinateIntro =>
+      'Choose a styling mode and a clothing source, then generate a complete outfit.';
+
+  @override
   String get modeStandard => 'Closet Styling';
 
   @override
@@ -230,6 +252,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ownershipInteresting => 'Interesting';
 
   @override
+  String get ownershipOwnedHint => 'Items you already own.';
+
+  @override
+  String get ownershipInterestingHint =>
+      'Saved suggestions you haven\'t purchased yet.';
+
+  @override
   String get filterAll => 'All';
 
   @override
@@ -240,6 +269,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sourceMine => 'Mine';
+
+  @override
+  String get sourceSharedHint =>
+      'Use demo items from our shared closet — no upload needed.';
+
+  @override
+  String get sourceMineHint => 'Use items from your own closet.';
 
   @override
   String get sharedCloset => 'Shared closet';
@@ -373,6 +409,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get historyEmpty => 'No completed coordinates yet.';
 
   @override
+  String get helpHistoryBody =>
+      'History lists the outfits you\'ve already generated, newest first.';
+
+  @override
   String get dateUnavailable => 'Date unavailable';
 
   @override
@@ -389,7 +429,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sharedAboutBody =>
-      'Shared closet lets you try coordination without uploading clothes.';
+      'The Shared closet contains sample clothing photos so you can try a full styling demo right away, without uploading any of your own items first.';
 
   @override
   String get sharedAboutDataset =>

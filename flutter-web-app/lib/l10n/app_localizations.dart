@@ -128,11 +128,17 @@ abstract class AppLocalizations {
   /// **'Shared'**
   String get navShared;
 
-  /// No description provided for @sharedClosetAbout.
+  /// No description provided for @appHelpTooltip.
   ///
   /// In en, this message translates to:
-  /// **'About shared closet'**
-  String get sharedClosetAbout;
+  /// **'How this app works'**
+  String get appHelpTooltip;
+
+  /// No description provided for @appHelpTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'How this app works'**
+  String get appHelpTitle;
 
   /// No description provided for @signOut.
   ///
@@ -199,6 +205,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Closet'**
   String get closetTitle;
+
+  /// No description provided for @closetHelpPurpose.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Closet stores photos of clothes you own or are considering, up to 20 items. Coordinate uses these items to build outfits.'**
+  String get closetHelpPurpose;
+
+  /// No description provided for @closetHelpUpload.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap \"Add item\" to upload a photo. The app analyzes it in the background and fills in category, color, season, and tags automatically; edit them anytime from the pencil icon.'**
+  String get closetHelpUpload;
+
+  /// No description provided for @closetHelpFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the filters above to narrow the grid: \"Owned\" vs \"Interesting\" shows items you already have versus saved suggestions, and the category chips narrow further within the selected ownership filter.'**
+  String get closetHelpFilters;
+
+  /// No description provided for @emptyClosetHelpHint.
+  ///
+  /// In en, this message translates to:
+  /// **'New here? Tap the ⓘ icon above for help.'**
+  String get emptyClosetHelpHint;
 
   /// No description provided for @addItem.
   ///
@@ -392,6 +422,12 @@ abstract class AppLocalizations {
   /// **'Coordination'**
   String get coordinationTitle;
 
+  /// No description provided for @helpCoordinateIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a styling mode and a clothing source, then generate a complete outfit.'**
+  String get helpCoordinateIntro;
+
   /// No description provided for @modeStandard.
   ///
   /// In en, this message translates to:
@@ -512,6 +548,18 @@ abstract class AppLocalizations {
   /// **'Interesting'**
   String get ownershipInteresting;
 
+  /// No description provided for @ownershipOwnedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Items you already own.'**
+  String get ownershipOwnedHint;
+
+  /// No description provided for @ownershipInterestingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved suggestions you haven\'t purchased yet.'**
+  String get ownershipInterestingHint;
+
   /// No description provided for @filterAll.
   ///
   /// In en, this message translates to:
@@ -535,6 +583,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Mine'**
   String get sourceMine;
+
+  /// No description provided for @sourceSharedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use demo items from our shared closet — no upload needed.'**
+  String get sourceSharedHint;
+
+  /// No description provided for @sourceMineHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use items from your own closet.'**
+  String get sourceMineHint;
 
   /// No description provided for @sharedCloset.
   ///
@@ -758,6 +818,12 @@ abstract class AppLocalizations {
   /// **'No completed coordinates yet.'**
   String get historyEmpty;
 
+  /// No description provided for @helpHistoryBody.
+  ///
+  /// In en, this message translates to:
+  /// **'History lists the outfits you\'ve already generated, newest first.'**
+  String get helpHistoryBody;
+
   /// No description provided for @dateUnavailable.
   ///
   /// In en, this message translates to:
@@ -785,7 +851,7 @@ abstract class AppLocalizations {
   /// No description provided for @sharedAboutBody.
   ///
   /// In en, this message translates to:
-  /// **'Shared closet lets you try coordination without uploading clothes.'**
+  /// **'The Shared closet contains sample clothing photos so you can try a full styling demo right away, without uploading any of your own items first.'**
   String get sharedAboutBody;
 
   /// No description provided for @sharedAboutDataset.
