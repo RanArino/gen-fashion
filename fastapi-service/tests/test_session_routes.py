@@ -182,6 +182,7 @@ def _completed_session(image_url: str, session_id: StyleSessionId | None = None)
                 "image_url": "https://example.test/item.jpg",
                 "category": "top",
                 "gender": "common",
+                "source": "CLOSET",
             }
         ],
         final_result=StyleResult(coordinate_image_url=image_url),
@@ -236,6 +237,7 @@ def test_list_sessions_returns_200_with_completed_sessions():
         "https://example.test/second.jpg",
     ]
     assert response.json()[0]["selected_items"][0]["item_id"] == "item-1"
+    assert response.json()[0]["selected_items"][0]["source"] == "CLOSET"
     reset_overrides()
 
 

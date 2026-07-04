@@ -84,6 +84,7 @@ class SelectedItemResponse(BaseModel):
     image_url: str
     category: str | None = None
     gender: str | None = None
+    source: str | None = None
 
 
 class StyleResultResponse(BaseModel):
@@ -120,6 +121,7 @@ async def _session_to_history_item(
                 ),
                 category=item.get("category"),
                 gender=item.get("gender"),
+                source=item.get("source"),
             )
             for item in session.selected_items
         ],
