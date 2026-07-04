@@ -24,14 +24,15 @@ Observable success: in Flutter Web, the Coordinate tab has an Assisted mode. A u
 
 - [x] (2026-07-03) ExecPlan authored after reading the current Coordinate, closet, session, ADK, Firestore, ES, Flutter, feature matrix, and architecture docs.
 - [x] (2026-07-03) `docs/req-phase02.md`, `docs/feature-matrix-phase02.md`, and `docs/architecture-overview.md` synchronized for planned MK work.
-- [ ] MK-1 - Assisted Coordinate mode contract and session fields are implemented and tested.
-- [ ] MK-2 - Up-to-three own-clothes anchor selection/upload is implemented in Flutter and enforced in FastAPI.
-- [ ] MK-3 - Rakuten Ichiba item search adapter/tool is implemented with affiliate-aware output and tests.
-- [ ] MK-4 - Agent proposal output supports text styling suggestions plus purchasable item images.
-- [ ] MK-5 - User selection, default recommendation checks, preference edits, and generation reuse the existing two-phase gate.
-- [ ] MK-6 - Save-suggestion-to-closet and ownership status transitions are implemented.
-- [ ] MK-7 - Existing Coordinate-from-closet includes Interesting items.
-- [ ] MK-8 - End-to-end validation passes locally.
+- [x] (2026-07-03) MK-1 - Assisted Coordinate mode contract and session fields are implemented and tested (`CoordinationMode`, `anchor_items`, `select_assisted`, Firestore mapping, `POST /sessions/{id}/assist`, ADK `mode`/`anchorItems`).
+- [x] (2026-07-03) MK-2 - Up-to-three own-clothes anchor selection/upload is implemented in Flutter and enforced in FastAPI (`AssistSessionUseCase` 1..3/owner/READY checks; Flutter mode toggle + `_AnchorPicker` with max-3 enforcement, upload via existing `UploadService`).
+- [x] (2026-07-03) MK-3 - Rakuten Ichiba item search adapter/tool is implemented with affiliate-aware output and tests (`adapters/rakuten.py`, `tools/search_rakuten.py`, config/env placeholders).
+- [x] (2026-07-03) MK-4 - Agent proposal output supports text styling suggestions plus purchasable item images (assisted ClosetAgent instruction + `search_rakuten` tool, anchor merge, deterministic Rakuten fallback, unavailable degradation).
+- [x] (2026-07-03) MK-5 - User selection, default recommendation checks, preference edits, and generation reuse the existing two-phase gate (recommended/anchor candidates checked by default in `CandidatePanel`; preference rerun starts a fresh session via Start; generation still goes through `POST /sessions/{id}/select`).
+- [x] (2026-07-03) MK-6 - Save-suggestion-to-closet and ownership status transitions are implemented (`POST /closet/import-suggestion`, `ownershipStatus` in `PATCH /closet/items/{id}`, Rakuten card "Add to closet" button, closet edit dialog ownership dropdown, `OwnershipChip`).
+- [x] (2026-07-03) MK-7 - Existing Coordinate-from-closet includes Interesting items (READY-only filtering everywhere; ownership never filters search/anchors; covered by `test_select_source_closet_accepts_interesting_ready_item`).
+- [x] (2026-07-03) MK-8 - End-to-end validation passes locally: fastapi pytest 106 passed, adk pytest 56 passed, `flutter analyze` clean + 24 tests passed, Firestore rules 7 passed (dockerized emulator), `m5_coordination_smoke.py` COMPLETED, new `mk_assisted_coordinate_smoke.py` COMPLETED on the Rakuten-degraded path. Live-Rakuten output pending valid credentials (configured keys return 403).
+- [x] (2026-07-03, post-review feedback) Rakuten 403 root-caused and fixed: the 20260701 endpoint requires `Origin`/`Referer` headers matching the registered application URL (`RAKUTEN_APPLICATION_URL`); adapter now sends them and upsizes `_ex=128x128` thumbnails to 400x400. `mk_assisted_coordinate_smoke.py --require-rakuten` COMPLETED with 10 live Rakuten candidates and a real suggestion import. Also from user feedback: mode labels renamed to self-explanatory names with per-mode hint text (Closet Styling / Style & Shop; クローゼットコーデ / 買い足し提案), and freshly uploaded anchors now appear as analyzing/loading tiles while PROCESSING instead of being hidden until READY. adk pytest 57 passed; flutter analyze clean + 25 tests passed.
 
 
 ## Surprises & Discoveries
@@ -51,6 +52,19 @@ Observable success: in Flutter Web, the Coordinate tab has an Assisted mode. A u
 
 - Observation: the Rakuten Ichiba Item Search API has a newer 2026-07-01 endpoint and requires an application id plus access key; affiliate id is optional but needed for affiliate links.
   Evidence: official Rakuten Web Service docs at `https://webservice.rakuten.co.jp/documentation/ichiba-item-search` list endpoint `https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260701` and shared `applicationId` / `accessKey` inputs.
+
+- Observation (2026-07-03, implementation): an exception raised inside an ADK tool aborts the whole agent run (`google.adk...functions.py` re-raises `tool_error`), so a raised `RakutenUnavailableError` marked the assisted session `ERROR` during the live smoke. Fixed by having the server-bound `search_rakuten` tool catch `RakutenUnavailableError` and return `[]`, letting the anchor/closet degradation path take over.
+  Evidence: first `mk_assisted_coordinate_smoke.py` run ended in `session.error`; adk-agent-service logs show the tool traceback; after the catch-and-degrade fix the smoke reaches `COMPLETED`.
+
+- Observation (2026-07-03): `RAKUTEN_APPLICATION_ID` / `RAKUTEN_ACCESS_KEY` / `RAKUTEN_AFFILIATE_ID` are configured in the repo `.env`, but the 20260701 endpoint returns 403 for both query-parameter and `accessKey`-header auth, so the keys are invalid/expired/not yet activated rather than the request format being wrong (docs confirm both auth styles). Live-Rakuten suggestion output is therefore unverified; the degradation path is verified live instead.
+  Evidence: `curl` probes with the configured keys return 403 in both styles; docs state accessKey "can be provided in either header or as query parameter".
+  RESOLVED (2026-07-03, later same day): the keys were valid all along. The 403 body is `REQUEST_CONTEXT_BODY_HTTP_REFERRER_MISSING`: the migrated `openapi.rakuten.co.jp` endpoint validates `Origin`/`Referer` headers even for server-to-server calls (undocumented in the official reference; confirmed by community migration notes). The adapter now sends `Origin`/`Referer` from `RAKUTEN_APPLICATION_URL` and live search returns real items; `--require-rakuten` smoke passes with 10 Rakuten candidates.
+
+- Observation (2026-07-03, post-live): with live Rakuten candidates the cards rendered but every thumbnail failed with Flutter Web `HTTP request failed, statusCode: 0`. The image URL was correct (`mediumImageUrls[0]`, the primary product image); the failure was CORS: Rakuten's `thumbnail.image.rakuten.co.jp` CDN serves `200 image/jpeg` with **no `Access-Control-Allow-Origin` header**, and the CanvasKit renderer fetches image bytes cross-origin (which needs CORS). Fixed by rendering Rakuten candidate images with `Image.network(..., webHtmlElementStrategy: WebHtmlElementStrategy.prefer)`, which displays them via an HTML `<img>` element that does not require CORS. Closet/anchor images keep the default byte path.
+  Evidence: `curl -D -` on the thumbnail URL shows 200 image/jpeg with no `access-control-allow-origin`; `statusCode: 0` is the CanvasKit cross-origin image-fetch failure signature.
+
+- Observation (2026-07-03): `firebase emulators:exec` needs a host Java runtime, which this machine lacks; the rules tests were run instead against the dockerized `firestore-emulator` (`npm test` connects to `127.0.0.1:8080`). Caveat: `initializeTestEnvironment` loads `firestore.rules` into that shared emulator and they persist, which then 403s the smoke scripts' unauthenticated emulator REST reads — restart the emulator container after rules tests before running smokes.
+  Evidence: `java -version` fails; rules 7/7 pass via the container; `m5_coordination_smoke.py` failed with `PERMISSION_DENIED` until `docker-compose restart firestore-emulator`.
 
 
 ## Decision Log
@@ -84,7 +98,46 @@ Observable success: in Flutter Web, the Coordinate tab has an Assisted mode. A u
 ## Outcomes & Retrospective
 
 
-Not yet implemented. This section must be updated when each milestone lands, including exact test output and any deviations from the plan.
+All milestones (A-G / MK-1…MK-8) landed on 2026-07-03. Code is uncommitted per instruction.
+
+What shipped, by milestone:
+
+- **A (ownership model):** `ClosetOwnershipStatus` (`OWNED`/`INTERESTING`) + `origin`/external metadata on `ClothingItem`; Firestore mapping defaults missing `ownershipStatus` to `OWNED`; ES mapping/index/update accept the new keyword fields fail-soft; `PATCH /closet/items/{id}` accepts `ownershipStatus`.
+- **B (import):** `ImportSuggestedClosetItemUseCase` + `POST /closet/import-suggestion`; only candidates proposed into the caller's own session import; image copied to `{uid}/closet/{uuid}.jpg` via new `ImageStoragePort.put_image_bytes`; item lands READY + INTERESTING + indexed.
+- **C (Rakuten):** `adk-agent-service/styling_app/adapters/rakuten.py` (20260701 endpoint, formatVersion 1/2 tolerant, affiliate pass-through, typed `RakutenUnavailableError`) + `tools/search_rakuten.py` (CandidateItem-shaped output, `rakuten:{itemCode}` ids, `Rakuten Ichiba` attribution); config + `.env.example`/docker-compose placeholders; assisted-only wiring into `ClosetAgent`.
+- **D (assisted session):** `CoordinationMode`/`anchor_items`/`select_assisted` on `StyleSession` + Firestore mapping; `AssistSessionUseCase` validating 1..3 owner READY anchors and the daily limit before the ADK launch; `POST /sessions/{id}/assist`; ADK `mode`/`anchorItems` on `RunSessionRequest`, assisted propose message, anchor merge with `recommended` defaults (anchors + up to 3 suggestions), deterministic Rakuten fallback, unavailable → anchor-only degradation.
+- **E/F (Flutter):** Standard/Assisted segmented mode, `_AnchorPicker` (injectable stream for tests, max 3, upload), `ApiClient.assistSession`/`importSuggestedItem`, mixed `CandidatePanel`/`CandidateCard` (source chip, name/price/outbound link, Add-to-closet → Saved-as-Interesting state, default checks from `recommended`/`anchor`), `OwnershipChip` + ownership dropdown in the closet edit dialog, en/ja l10n.
+- **G (validation):** new `scripts/mk_assisted_coordinate_smoke.py` (anchor upload → 0-anchor 400 → assisted propose → recommended anchor → import-or-degrade → INTERESTING→OWNED → generate COMPLETED → Standard CLOSET reuse → history), plus the full suites.
+
+Final verification (2026-07-03, local `make dev` stack):
+
+    fastapi-service:  pytest -q            -> 106 passed, 1 skipped
+    adk-agent-service: pytest -q           -> 56 passed
+    flutter-web-app:  flutter analyze      -> No issues found
+                      flutter test         -> 24 passed (All tests passed!)
+    firebase rules:   npm test (dockerized firestore emulator) -> 7 pass, 0 fail
+    scripts/m5_coordination_smoke.py --timeout-seconds 180     -> COMPLETED (no regression)
+    scripts/mk_assisted_coordinate_smoke.py --timeout-seconds 240 -> COMPLETED
+      (anchor recommended; ownership INTERESTING->OWNED persisted; Standard
+       CLOSET reuse proposed; history has the coordinate image; Rakuten
+       degraded path exercised because the configured keys return 403)
+
+Post-review feedback fixes (2026-07-03, later same day):
+
+    adk-agent-service: pytest -q           -> 57 passed (adapter header + thumbnail tests)
+    flutter-web-app:  flutter analyze      -> No issues found
+                      flutter test         -> 25 passed (processing-anchor tile test added)
+    scripts/mk_assisted_coordinate_smoke.py --require-rakuten -> COMPLETED
+      (11 candidates, 10 live Rakuten; real suggestion imported as INTERESTING
+       then flipped to OWNED; generation and Standard reuse verified)
+
+Deviations from the plan:
+
+- The server-bound assisted `search_rakuten` tool catches `RakutenUnavailableError` and returns `[]` instead of letting it propagate — a raised tool error aborts the whole ADK run (discovered live; see Surprises).
+- Live-Rakuten candidates could not be validated at first: the configured `RAKUTEN_*` keys return 403 for both documented auth styles. RESOLVED later the same day — the endpoint requires `Origin`/`Referer` headers (see Surprises); with the adapter fix, `--require-rakuten` passes with live candidates.
+- Firestore rules tests ran against the dockerized emulator (`npm test` directly) because the host has no Java for `firebase emulators:exec`; restart the emulator container afterwards before running smokes (loaded rules persist and 403 the smoke's emulator REST reads).
+- `CandidatePanel`/`CandidateCard` were made public (previously private `_`-classes) so widget tests can drive them directly, matching the existing `AgentEventTile` precedent.
+- No `fastapi-service` Rakuten config was needed (search lives in the ADK service; import consumes session-held candidate URLs), so `app/config.py` was left untouched.
 
 
 ## Context and Orientation
