@@ -5,7 +5,8 @@
   "navCoordinate": "Coordinate",
   "navHistory": "History",
   "navShared": "Shared",
-  "sharedClosetAbout": "About shared closet",
+  "appHelpTooltip": "How this app works",
+  "appHelpTitle": "How this app works",
   "signOut": "Sign out",
   "language": "Language",
   "languageJapanese": "Japanese",
@@ -22,6 +23,10 @@
     }
   },
   "closetTitle": "Closet",
+  "closetHelpPurpose": "Your Closet stores photos of clothes you own or are considering, up to 20 items. Coordinate uses these items to build outfits.",
+  "closetHelpUpload": "Tap \"Add item\" to upload a photo. The app analyzes it in the background and fills in category, color, season, and tags automatically; edit them anytime from the pencil icon.",
+  "closetHelpFilters": "Use the filters above to narrow the grid: \"Owned\" vs \"Interesting\" shows items you already have versus saved suggestions, and the category chips narrow further within the selected ownership filter.",
+  "emptyClosetHelpHint": "New here? Tap the ⓘ icon above for help.",
   "addItem": "Add item",
   "uploading": "Uploading...",
   "uploadQueued": "Upload queued; analyzing...",
@@ -69,8 +74,40 @@
   "deleteTooltip": "Delete",
   "editMetadataTooltip": "Edit metadata",
   "coordinationTitle": "Coordination",
+  "helpCoordinateIntro": "Choose a styling mode and a clothing source, then generate a complete outfit.",
+  "modeStandard": "Closet Styling",
+  "modeAssisted": "Style & Shop",
+  "modeStandardHint": "Creates a full outfit using only your closet items.",
+  "modeAssistedHint": "Pick up to 3 of your own clothes; AI styles a full outfit and suggests items you can buy on Rakuten.",
+  "analyzingItem": "Analyzing...",
+  "anchorItemsLabel": "Your clothes (up to 3)",
+  "anchorLimitReached": "You can select up to 3 items.",
+  "noReadyAnchorItems": "No ready closet items yet. Upload one to begin.",
+  "sourceRakuten": "Rakuten",
+  "addToCloset": "Add to closet",
+  "savedAsInteresting": "Saved as Interesting",
+  "importFailed": "Save failed: {error}",
+  "@importFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "openProductPage": "Open product page",
+  "saveInterestingDialogTitle": "Save Rakuten items to your closet?",
+  "saveInterestingDialogBody": "These Rakuten items were part of this outfit. Save the ones you like as \"Interesting\" so you can find them again.",
+  "saveInterestingSkip": "Skip",
+  "saveInterestingConfirm": "Save selected",
+  "ownership": "Ownership",
+  "ownershipOwned": "Owned",
+  "ownershipInteresting": "Interesting",
+  "ownershipOwnedHint": "Items you already own.",
+  "ownershipInterestingHint": "Saved suggestions you haven't purchased yet.",
+  "filterAll": "All",
+  "noItemsMatchFilter": "No items match the selected filters.",
   "sourceShared": "Shared",
   "sourceMine": "Mine",
+  "sourceSharedHint": "Use demo items from our shared closet — no upload needed.",
+  "sourceMineHint": "Use items from your own closet.",
   "sharedCloset": "Shared closet",
   "occasion": "Occasion",
   "style": "Style",
@@ -140,6 +177,21 @@
       }
     }
   },
+  "traceQuery": "Query",
+  "traceShopName": "Shop",
+  "traceSearchingRakuten": "{agentName} is searching Rakuten",
+  "@traceSearchingRakuten": {
+    "placeholders": {
+      "agentName": {}
+    }
+  },
+  "traceSearchedRakuten": "{agentName} searched Rakuten - {count} candidates",
+  "@traceSearchedRakuten": {
+    "placeholders": {
+      "agentName": {},
+      "count": {}
+    }
+  },
   "historyLoadFailed": "Failed to load history: {error}",
   "@historyLoadFailed": {
     "placeholders": {
@@ -147,6 +199,7 @@
     }
   },
   "historyEmpty": "No completed coordinates yet.",
+  "helpHistoryBody": "History lists the outfits you've already generated, newest first.",
   "dateUnavailable": "Date unavailable",
   "myCloset": "My Closet",
   "sharedGalleryError": "Error: {error}",
@@ -156,7 +209,7 @@
     }
   },
   "sharedAttribution": "Shared closet images use the Clothing Dataset (CC BY-SA 4.0)",
-  "sharedAboutBody": "Shared closet lets you try coordination without uploading clothes.",
+  "sharedAboutBody": "The Shared closet contains sample clothing photos so you can try a full styling demo right away, without uploading any of your own items first.",
   "sharedAboutDataset": "Image material: Clothing Dataset (CC BY-SA 4.0)",
   "sharedAboutAuthor": "Author: Alexey Grigorev",
   "viewDataset": "View dataset on Kaggle",

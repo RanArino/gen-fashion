@@ -1,23 +1,36 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api_client.dart';
+import '../closet/closet_item.dart';
+import '../closet/thumbnail.dart';
+import '../closet/upload_service.dart';
 import '../config.dart';
 import '../e2e_probe_stub.dart' if (dart.library.html) '../e2e_probe_web.dart';
 import '../l10n/app_localizations.dart';
 import '../locale/locale_controller.dart';
-import '../shared/attribution.dart';
 import '../theme/components.dart';
 
 const List<String> _sharedClosets = ['adult-01', 'adult-02', 'child-01'];
+const int _kMaxAnchorItems = 3;
 
 class CoordinationScreen extends StatefulWidget {
-  const CoordinationScreen({super.key, required this.uid, ApiClient? api})
-      : _api = api;
+  const CoordinationScreen({
+    super.key,
+    required this.uid,
+    ApiClient? api,
+    Stream<List<ClosetItem>>? anchorItemsStream,
+  })  : _api = api,
+        _anchorItemsStream = anchorItemsStream;
 
   final String uid;
   final ApiClient? _api;
+
+  /// Injectable READY-closet stream so widget tests avoid Firestore.
+  final Stream<List<ClosetItem>>? _anchorItemsStream;
 
   @override
   State<CoordinationScreen> createState() => _CoordinationScreenState();
@@ -25,6 +38,8 @@ class CoordinationScreen extends StatefulWidget {
 
 class _CoordinationScreenState extends State<CoordinationScreen> {
   late final ApiClient _api = widget._api ?? ApiClient();
+  late final DownloadUrlCache _thumbnailCache = DownloadUrlCache(_api);
+  late final UploadService _uploads = UploadService(api: _api);
   final _occasion = TextEditingController(text: 'casual weekend');
   final _style = TextEditingController(text: 'clean casual');
   final _season = TextEditingController(text: 'spring');
@@ -32,6 +47,11 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
   final List<AgentEvent> _events = [];
   final List<Map<String, dynamic>> _candidates = [];
   final Set<String> _selectedCandidateIds = {};
+  final Set<String> _anchorItemIds = {};
+  final Set<String> _savedCandidateIds = {};
+  final Set<String> _importingCandidateIds = {};
+  Stream<List<ClosetItem>>? _anchorStream;
+  String _mode = 'STANDARD';
   String _source = 'SHARED_CLOSET';
   String _sharedClosetId = _sharedClosets.first;
   String _gender = 'common';
@@ -39,8 +59,29 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
   String? _status;
   String? _coordinateImageUrl;
   bool _running = false;
+  bool _uploadingAnchor = false;
   Object? _error;
   bool _autoRunStarted = false;
+
+  Stream<List<ClosetItem>> _readyClosetItems() {
+    return _anchorStream ??= widget._anchorItemsStream ??
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.uid)
+            .collection('closet')
+            .orderBy('createdAt', descending: true)
+            .snapshots()
+            .map(
+              (snapshot) => snapshot.docs
+                  .map((doc) => ClosetItem.fromFirestore(doc.id, doc.data()))
+                  // Keep PROCESSING items so a freshly uploaded anchor shows
+                  // an analyzing placeholder instead of silently missing.
+                  .where((item) =>
+                      item.status == ItemStatus.ready ||
+                      item.status == ItemStatus.processing)
+                  .toList(),
+            );
+  }
 
   @override
   void initState() {
@@ -73,23 +114,32 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
       _events.clear();
       _candidates.clear();
       _selectedCandidateIds.clear();
+      _savedCandidateIds.clear();
       _coordinateImageUrl = null;
     });
+    final userPreference = {
+      'occasion': _occasion.text,
+      'style': _style.text,
+      'season': _season.text,
+      'colorPreference': _color.text,
+      'gender': _gender,
+      'language': languageCode,
+    };
     try {
       final created = await _api.createSession();
-      final selected = await _api.selectSource(
-        sessionId: created.sessionId,
-        source: _source,
-        sharedClosetId: _source == 'SHARED_CLOSET' ? _sharedClosetId : null,
-        userPreference: {
-          'occasion': _occasion.text,
-          'style': _style.text,
-          'season': _season.text,
-          'colorPreference': _color.text,
-          'gender': _gender,
-          'language': languageCode,
-        },
-      );
+      final selected = _mode == 'ASSISTED'
+          ? await _api.assistSession(
+              sessionId: created.sessionId,
+              anchorItemIds: _anchorItemIds.toList(),
+              userPreference: userPreference,
+            )
+          : await _api.selectSource(
+              sessionId: created.sessionId,
+              source: _source,
+              sharedClosetId:
+                  _source == 'SHARED_CLOSET' ? _sharedClosetId : null,
+              userPreference: userPreference,
+            );
       setState(() {
         _sessionId = selected.sessionId;
         _status = selected.status;
@@ -115,9 +165,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
                 (message.data['candidates'] as List? ?? const [])
                     .map((item) => (item as Map).cast<String, dynamic>()),
               );
-            if (_candidates.isNotEmpty) {
-              _selectedCandidateIds.add(_candidateId(_candidates.first));
-            }
+            _applyDefaultSelection();
           } else if (message.event == 'session.snapshot' ||
               message.event == 'session.completed' ||
               message.event == 'session.error') {
@@ -179,12 +227,36 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           _reportE2eState();
         });
       }
+      await _maybeOfferSaveInteresting();
       await _recoverSessionState(sessionId);
     } catch (e) {
       if (mounted) setState(() => _error = e);
     } finally {
       if (mounted) setState(() => _running = false);
     }
+  }
+
+  /// After generation, offer to save the Rakuten items used in this outfit
+  /// into the closet as "Interesting" (all pre-checked, user can opt out).
+  Future<void> _maybeOfferSaveInteresting() async {
+    if (!mounted) return;
+    final offerable = _candidates
+        .where((candidate) =>
+            _selectedCandidateIds.contains(_candidateId(candidate)) &&
+            candidate['source'] == 'RAKUTEN' &&
+            !_savedCandidateIds.contains(_candidateId(candidate)))
+        .toList();
+    if (offerable.isEmpty) return;
+    final chosen = await showDialog<Set<String>>(
+      context: context,
+      builder: (ctx) => _SaveInterestingDialog(candidates: offerable),
+    );
+    if (chosen == null || chosen.isEmpty || !mounted) return;
+    await Future.wait(
+      offerable
+          .where((candidate) => chosen.contains(_candidateId(candidate)))
+          .map(_importSuggestion),
+    );
   }
 
   Future<void> _recoverSessionState(String sessionId) async {
@@ -198,7 +270,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           ..clear()
           ..addAll(session.proposedCandidates);
         if (_selectedCandidateIds.isEmpty) {
-          _selectedCandidateIds.add(_candidateId(_candidates.first));
+          _applyDefaultSelection();
         }
       }
       if (_coordinateImageUrl == null &&
@@ -212,6 +284,92 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
 
   String _candidateId(Map<String, dynamic> candidate) =>
       (candidate['item_id'] ?? candidate['itemId']) as String;
+
+  /// Recommended/anchor candidates are checked by default (MK-5); Standard
+  /// proposals without flags keep the previous first-item default.
+  void _applyDefaultSelection() {
+    _selectedCandidateIds.clear();
+    final flagged = _candidates.where(
+      (candidate) =>
+          candidate['recommended'] == true || candidate['anchor'] == true,
+    );
+    if (flagged.isNotEmpty) {
+      _selectedCandidateIds.addAll(flagged.map(_candidateId));
+    } else if (_candidates.isNotEmpty) {
+      _selectedCandidateIds.add(_candidateId(_candidates.first));
+    }
+  }
+
+  void _toggleAnchor(String itemId) {
+    setState(() {
+      if (_anchorItemIds.contains(itemId)) {
+        _anchorItemIds.remove(itemId);
+      } else if (_anchorItemIds.length < _kMaxAnchorItems) {
+        _anchorItemIds.add(itemId);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.anchorLimitReached),
+          ),
+        );
+      }
+    });
+  }
+
+  Future<void> _onUploadAnchor() async {
+    if (_uploadingAnchor) return;
+    setState(() => _uploadingAnchor = true);
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      final id = await _uploads.upload();
+      if (!mounted || id == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.uploadQueued)),
+      );
+    } on ClosetFullException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.closetFull)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.uploadFailed('$e'))),
+      );
+    } finally {
+      if (mounted) setState(() => _uploadingAnchor = false);
+    }
+  }
+
+  Future<void> _importSuggestion(Map<String, dynamic> candidate) async {
+    final sessionId = _sessionId;
+    final candidateId = _candidateId(candidate);
+    if (sessionId == null || _importingCandidateIds.contains(candidateId)) {
+      return;
+    }
+    setState(() => _importingCandidateIds.add(candidateId));
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      await _api.importSuggestedItem(
+        sessionId: sessionId,
+        candidateId: candidateId,
+      );
+      if (!mounted) return;
+      setState(() => _savedCandidateIds.add(candidateId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.savedAsInteresting)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.importFailed('$e'))),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _importingCandidateIds.remove(candidateId));
+      }
+    }
+  }
 
   void _reportE2eState() {
     if (!AppConfig.e2eAutoRun) return;
@@ -236,6 +394,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 900;
         final controls = _Controls(
+          mode: _mode,
           source: _source,
           sharedClosetId: _sharedClosetId,
           running: _running,
@@ -245,6 +404,20 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           color: _color,
           gender: _gender,
           languageCode: LocaleScope.of(context).languageCode,
+          anchorPicker: _mode == 'ASSISTED'
+              ? _AnchorPicker(
+                  itemsStream: _readyClosetItems(),
+                  selectedIds: _anchorItemIds,
+                  cache: _thumbnailCache,
+                  running: _running,
+                  uploading: _uploadingAnchor,
+                  onToggle: _toggleAnchor,
+                  onUpload: _onUploadAnchor,
+                )
+              : null,
+          startEnabled:
+              _mode == 'STANDARD' || _anchorItemIds.isNotEmpty,
+          onModeChanged: (value) => setState(() => _mode = value),
           onSourceChanged: (value) => setState(() => _source = value),
           onSharedClosetChanged: (value) =>
               setState(() => _sharedClosetId = value),
@@ -259,18 +432,20 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           error: _error,
         );
         final result = _ResultPanel(
-          source: _source,
           coordinateImageUrl: _coordinateImageUrl,
         );
-        final candidates = _CandidatePanel(
+        final candidates = CandidatePanel(
           candidates: _candidates,
           selectedIds: _selectedCandidateIds,
+          savedIds: _savedCandidateIds,
+          importingIds: _importingCandidateIds,
           running: _running,
           onChanged: (id, selected) => setState(() {
             selected
                 ? _selectedCandidateIds.add(id)
                 : _selectedCandidateIds.remove(id);
           }),
+          onImport: _sessionId == null ? null : _importSuggestion,
           onGenerate: _generateSelected,
         );
         return SingleChildScrollView(
@@ -322,6 +497,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
 
 class _Controls extends StatelessWidget {
   const _Controls({
+    required this.mode,
     required this.source,
     required this.sharedClosetId,
     required this.running,
@@ -331,12 +507,16 @@ class _Controls extends StatelessWidget {
     required this.color,
     required this.gender,
     required this.languageCode,
+    required this.startEnabled,
+    required this.onModeChanged,
     required this.onSourceChanged,
     required this.onSharedClosetChanged,
     required this.onGenderChanged,
     required this.onStart,
+    this.anchorPicker,
   });
 
+  final String mode;
   final String source;
   final String sharedClosetId;
   final bool running;
@@ -346,6 +526,9 @@ class _Controls extends StatelessWidget {
   final TextEditingController color;
   final String gender;
   final String languageCode;
+  final bool startEnabled;
+  final Widget? anchorPicker;
+  final ValueChanged<String> onModeChanged;
   final ValueChanged<String> onSourceChanged;
   final ValueChanged<String> onSharedClosetChanged;
   final ValueChanged<String> onGenderChanged;
@@ -372,37 +555,76 @@ class _Controls extends StatelessWidget {
             SegmentedButton<String>(
               segments: [
                 ButtonSegment(
-                  value: 'SHARED_CLOSET',
-                  icon: const Icon(Icons.groups_outlined),
-                  label: Text(l10n.sourceShared),
+                  value: 'STANDARD',
+                  icon: const Icon(Icons.style_outlined),
+                  label: Text(l10n.modeStandard),
+                  tooltip: l10n.modeStandardHint,
                 ),
                 ButtonSegment(
-                  value: 'CLOSET',
-                  icon: const Icon(Icons.checkroom_outlined),
-                  label: Text(l10n.sourceMine),
+                  value: 'ASSISTED',
+                  icon: const Icon(Icons.shopping_bag_outlined),
+                  label: Text(l10n.modeAssisted),
+                  tooltip: l10n.modeAssistedHint,
                 ),
               ],
-              selected: {source},
+              selected: {mode},
               onSelectionChanged:
-                  running ? null : (values) => onSourceChanged(values.first),
+                  running ? null : (values) => onModeChanged(values.first),
             ),
-            if (source == 'SHARED_CLOSET') ...[
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: sharedClosetId,
-                decoration: InputDecoration(
-                  labelText: l10n.sharedCloset,
-                ),
-                items: _sharedClosets
-                    .map((id) => DropdownMenuItem(value: id, child: Text(id)))
-                    .toList(),
-                onChanged: running || source != 'SHARED_CLOSET'
-                    ? null
-                    : (value) {
-                        if (value != null) onSharedClosetChanged(value);
-                      },
+            const SizedBox(height: 8),
+            Text(
+              mode == 'ASSISTED'
+                  ? l10n.modeAssistedHint
+                  : l10n.modeStandardHint,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            if (mode == 'STANDARD') ...[
+              SegmentedButton<String>(
+                segments: [
+                  ButtonSegment(
+                    value: 'SHARED_CLOSET',
+                    icon: const Icon(Icons.groups_outlined),
+                    label: Text(l10n.sourceShared),
+                    tooltip: l10n.sourceSharedHint,
+                  ),
+                  ButtonSegment(
+                    value: 'CLOSET',
+                    icon: const Icon(Icons.checkroom_outlined),
+                    label: Text(l10n.sourceMine),
+                    tooltip: l10n.sourceMineHint,
+                  ),
+                ],
+                selected: {source},
+                onSelectionChanged:
+                    running ? null : (values) => onSourceChanged(values.first),
               ),
-            ],
+              const SizedBox(height: 8),
+              Text(
+                source == 'SHARED_CLOSET'
+                    ? l10n.sourceSharedHint
+                    : l10n.sourceMineHint,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (source == 'SHARED_CLOSET') ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: sharedClosetId,
+                  decoration: InputDecoration(
+                    labelText: l10n.sharedCloset,
+                  ),
+                  items: _sharedClosets
+                      .map((id) => DropdownMenuItem(value: id, child: Text(id)))
+                      .toList(),
+                  onChanged: running || source != 'SHARED_CLOSET'
+                      ? null
+                      : (value) {
+                          if (value != null) onSharedClosetChanged(value);
+                        },
+                ),
+              ],
+            ] else if (anchorPicker != null)
+              anchorPicker!,
             const SizedBox(height: 12),
             _TextField(controller: occasion, label: l10n.occasion),
             _TextField(controller: style, label: l10n.style),
@@ -434,7 +656,7 @@ class _Controls extends StatelessWidget {
             EyebrowLabel(l10n.selectedGenerationLanguage(languageLabel)),
             const SizedBox(height: 8),
             FilledButton.icon(
-              onPressed: running ? null : onStart,
+              onPressed: running || !startEnabled ? null : onStart,
               icon: running
                   ? const SizedBox(
                       width: 18,
@@ -445,6 +667,163 @@ class _Controls extends StatelessWidget {
               label: Text(running ? l10n.running : l10n.start),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnchorPicker extends StatelessWidget {
+  const _AnchorPicker({
+    required this.itemsStream,
+    required this.selectedIds,
+    required this.cache,
+    required this.running,
+    required this.uploading,
+    required this.onToggle,
+    required this.onUpload,
+  });
+
+  final Stream<List<ClosetItem>> itemsStream;
+  final Set<String> selectedIds;
+  final DownloadUrlCache cache;
+  final bool running;
+  final bool uploading;
+  final ValueChanged<String> onToggle;
+  final VoidCallback onUpload;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.anchorItemsLabel,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: running || uploading ? null : onUpload,
+              icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+              label: Text(uploading ? l10n.uploading : l10n.addItem),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        StreamBuilder<List<ClosetItem>>(
+          stream: itemsStream,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const SizedBox(
+                height: 72,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final items = snapshot.data ?? const <ClosetItem>[];
+            if (items.isEmpty) {
+              return Text(
+                l10n.noReadyAnchorItems,
+                style: Theme.of(context).textTheme.bodySmall,
+              );
+            }
+            return Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final item in items)
+                  _AnchorTile(
+                    key: ValueKey('anchor-${item.id}'),
+                    item: item,
+                    selected: selectedIds.contains(item.id),
+                    processing: item.status == ItemStatus.processing,
+                    cache: cache,
+                    onTap: running || item.status != ItemStatus.ready
+                        ? null
+                        : () => onToggle(item.id),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _AnchorTile extends StatelessWidget {
+  const _AnchorTile({
+    super.key,
+    required this.item,
+    required this.selected,
+    required this.processing,
+    required this.cache,
+    required this.onTap,
+  });
+
+  final ClosetItem item;
+  final bool selected;
+  final bool processing;
+  final DownloadUrlCache cache;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
+    return Tooltip(
+      message: processing
+          ? l10n.analyzingItem
+          : item.category ?? item.id,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              width: selected ? 2 : 1,
+              color: selected ? colorScheme.primary : colorScheme.outlineVariant,
+            ),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(7),
+                child: Thumbnail(itemId: item.id, cache: cache),
+              ),
+              if (processing)
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(7),
+                    color: colorScheme.surface.withValues(alpha: 0.7),
+                  ),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+              if (selected)
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: Icon(
+                    Icons.check_circle,
+                    size: 18,
+                    color: colorScheme.primary,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -625,6 +1004,9 @@ class _AgentPreview extends StatelessWidget {
     if (event.toolName == 'search_closet') {
       return _SearchClosetPreview(event: event, l10n: l10n);
     }
+    if (event.toolName == 'search_rakuten') {
+      return _SearchRakutenPreview(event: event, l10n: l10n);
+    }
     if (event.toolName == 'style_synthesizer') {
       return _StyleSynthesizerPreview(event: event, l10n: l10n);
     }
@@ -692,6 +1074,56 @@ class _SearchClosetPreview extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         ...items.map((item) => _ClosetItemRow(item: item)),
+      ],
+    );
+  }
+}
+
+class _SearchRakutenPreview extends StatelessWidget {
+  const _SearchRakutenPreview({required this.event, required this.l10n});
+
+  final AgentEvent event;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    if (event.eventKind == 'tool_call') {
+      final args = event.toolArgs ?? {};
+      final query = args['query'] as String?;
+      final category = args['category'] as String?;
+      final rawColors = args['colors'];
+      final colors =
+          rawColors is List ? rawColors.cast<String>() : <String>[];
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (query != null)
+            _PreviewField(label: l10n.traceQuery, child: Text(query)),
+          if (category != null)
+            _PreviewField(label: l10n.category, child: Text(category)),
+          if (colors.isNotEmpty)
+            _PreviewField(
+                label: l10n.colors, child: _ChipRow(values: colors)),
+        ],
+      );
+    }
+
+    // tool_result: N items found + compact per-item rows
+    final raw = event.toolResult?['result'];
+    final items = raw is List
+        ? raw.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.traceItemsFound(items.length),
+          style: Theme.of(context).textTheme.labelMedium,
+        ),
+        const SizedBox(height: 8),
+        ...items.map((item) => _RakutenItemRow(item: item)),
       ],
     );
   }
@@ -902,20 +1334,120 @@ class _ClosetItemRow extends StatelessWidget {
   }
 }
 
-class _CandidatePanel extends StatelessWidget {
-  const _CandidatePanel({
+class _RakutenItemRow extends StatelessWidget {
+  const _RakutenItemRow({required this.item});
+
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = item['image_url'] as String?;
+    final name = item['name'] as String?;
+    final price = item['price'] as num?;
+    final category = item['category'] as String?;
+    final shopName = item['shop_name'] as String?;
+    final tags = (item['tags'] as List?)?.cast<String>() ?? <String>[];
+    final l10n = AppLocalizations.of(context)!;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              width: 48,
+              height: 48,
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      // Rakuten's thumbnail CDN serves images without CORS
+                      // headers; see the matching workaround in CandidateCard.
+                      webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+                      errorBuilder: (_, __, ___) => ColoredBox(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            child: const Icon(Icons.checkroom, size: 20),
+                          ))
+                  : ColoredBox(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      child: const Icon(Icons.checkroom, size: 20),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (name != null)
+                  Text(name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall),
+                if (price != null) ...[
+                  const SizedBox(height: 2),
+                  Text('¥$price',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+                if (category != null) ...[
+                  const SizedBox(height: 2),
+                  Text(category,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+                if (shopName != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '${l10n.traceShopName}: $shopName',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+                if (tags.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  _ChipRow(values: tags),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CandidatePanel extends StatelessWidget {
+  const CandidatePanel({
+    super.key,
     required this.candidates,
     required this.selectedIds,
+    required this.savedIds,
+    required this.importingIds,
     required this.running,
     required this.onChanged,
     required this.onGenerate,
+    this.onImport,
   });
 
   final List<Map<String, dynamic>> candidates;
   final Set<String> selectedIds;
+  final Set<String> savedIds;
+  final Set<String> importingIds;
   final bool running;
   final void Function(String id, bool selected) onChanged;
+  final void Function(Map<String, dynamic> candidate)? onImport;
   final VoidCallback onGenerate;
+
+  bool get _hasFlaggedCandidates => candidates.any(
+        (item) => item['recommended'] == true || item['anchor'] == true,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -934,12 +1466,20 @@ class _CandidatePanel extends StatelessWidget {
               runSpacing: 12,
               children: [
                 for (var index = 0; index < candidates.length; index++)
-                  _CandidateCard(
+                  CandidateCard(
                     candidate: candidates[index],
-                    recommended: index == 0,
+                    recommended: _hasFlaggedCandidates
+                        ? candidates[index]['recommended'] == true ||
+                            candidates[index]['anchor'] == true
+                        : index == 0,
                     selected: selectedIds.contains(_id(candidates[index])),
+                    saved: savedIds.contains(_id(candidates[index])),
+                    importing: importingIds.contains(_id(candidates[index])),
                     onChanged: (selected) =>
                         onChanged(_id(candidates[index]), selected),
+                    onImport: onImport == null || running
+                        ? null
+                        : () => onImport!(candidates[index]),
                   ),
               ],
             ),
@@ -959,23 +1499,38 @@ class _CandidatePanel extends StatelessWidget {
       (item['item_id'] ?? item['itemId']) as String;
 }
 
-class _CandidateCard extends StatelessWidget {
-  const _CandidateCard({
+class CandidateCard extends StatelessWidget {
+  const CandidateCard({
+    super.key,
     required this.candidate,
     required this.recommended,
     required this.selected,
     required this.onChanged,
+    this.saved = false,
+    this.importing = false,
+    this.onImport,
   });
 
   final Map<String, dynamic> candidate;
   final bool recommended;
   final bool selected;
+  final bool saved;
+  final bool importing;
   final ValueChanged<bool> onChanged;
+  final VoidCallback? onImport;
+
+  bool get _isRakuten => candidate['source'] == 'RAKUTEN';
 
   @override
   Widget build(BuildContext context) {
     final imageUrl = candidate['image_url'] ?? candidate['imageUrl'];
     final l10n = AppLocalizations.of(context)!;
+    final name = candidate['name'] as String?;
+    final price = candidate['price'] as num?;
+    final externalUrl = (candidate['affiliate_url'] ??
+        candidate['affiliateUrl'] ??
+        candidate['external_url'] ??
+        candidate['externalUrl']) as String?;
     return SizedBox(
       width: 180,
       child: Card.outlined(
@@ -986,16 +1541,94 @@ class _CandidateCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (imageUrl is String && imageUrl.isNotEmpty)
-                Image.network(imageUrl, height: 150, fit: BoxFit.cover)
+                Image.network(
+                  imageUrl,
+                  height: 150,
+                  fit: BoxFit.cover,
+                  // Rakuten's thumbnail CDN serves images without CORS headers,
+                  // so the CanvasKit byte-fetch path fails (statusCode 0).
+                  // Render Rakuten images via an HTML <img>, which does not
+                  // require CORS for display.
+                  webHtmlElementStrategy: _isRakuten
+                      ? WebHtmlElementStrategy.prefer
+                      : WebHtmlElementStrategy.never,
+                  errorBuilder: (_, __, ___) =>
+                      const SizedBox(height: 150, child: Icon(Icons.checkroom)),
+                )
               else
                 const SizedBox(height: 150, child: Icon(Icons.checkroom)),
               CheckboxListTile(
                 value: selected,
                 onChanged: (value) => onChanged(value ?? false),
-                title: Text(candidate['category'] as String? ?? l10n.item),
+                title: Text(
+                  name ?? candidate['category'] as String? ?? l10n.item,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 subtitle: recommended ? Text(l10n.recommended) : null,
                 controlAffinity: ListTileControlAffinity.leading,
                 dense: true,
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Chip(
+                          label: Text(
+                            _isRakuten ? l10n.sourceRakuten : l10n.myCloset,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          labelStyle: Theme.of(context).textTheme.labelSmall,
+                        ),
+                        const Spacer(),
+                        if (_isRakuten && externalUrl != null)
+                          IconButton(
+                            tooltip: l10n.openProductPage,
+                            iconSize: 18,
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => launchUrl(
+                              Uri.parse(externalUrl),
+                              mode: LaunchMode.externalApplication,
+                            ),
+                            icon: const Icon(Icons.open_in_new),
+                          ),
+                      ],
+                    ),
+                    if (_isRakuten && price != null)
+                      Text(
+                        '¥$price',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                    if (_isRakuten && onImport != null) ...[
+                      const SizedBox(height: 4),
+                      OutlinedButton.icon(
+                        onPressed: saved || importing ? null : onImport,
+                        icon: importing
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(
+                                saved
+                                    ? Icons.bookmark_added
+                                    : Icons.bookmark_add_outlined,
+                                size: 16,
+                              ),
+                        label: Text(
+                          saved ? l10n.savedAsInteresting : l10n.addToCloset,
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -1005,13 +1638,108 @@ class _CandidateCard extends StatelessWidget {
   }
 }
 
+/// Post-generation confirmation modal (default: all pre-checked) for saving
+/// the Rakuten items used in an outfit into the closet as "Interesting".
+class _SaveInterestingDialog extends StatefulWidget {
+  const _SaveInterestingDialog({required this.candidates});
+
+  final List<Map<String, dynamic>> candidates;
+
+  static String _id(Map<String, dynamic> item) =>
+      (item['item_id'] ?? item['itemId']) as String;
+
+  @override
+  State<_SaveInterestingDialog> createState() =>
+      _SaveInterestingDialogState();
+}
+
+class _SaveInterestingDialogState extends State<_SaveInterestingDialog> {
+  late final Set<String> _checked =
+      widget.candidates.map(_SaveInterestingDialog._id).toSet();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return AlertDialog(
+      title: Text(l10n.saveInterestingDialogTitle),
+      content: SizedBox(
+        width: 360,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.saveInterestingDialogBody),
+              const SizedBox(height: 12),
+              for (final candidate in widget.candidates)
+                CheckboxListTile(
+                  value: _checked.contains(
+                    _SaveInterestingDialog._id(candidate),
+                  ),
+                  onChanged: (value) => setState(() {
+                    final id = _SaveInterestingDialog._id(candidate);
+                    if (value ?? false) {
+                      _checked.add(id);
+                    } else {
+                      _checked.remove(id);
+                    }
+                  }),
+                  secondary: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: _thumbnail(candidate),
+                  ),
+                  title: Text(
+                    (candidate['name'] as String?) ??
+                        (candidate['category'] as String?) ??
+                        l10n.item,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, <String>{}),
+          child: Text(l10n.saveInterestingSkip),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _checked),
+          child: Text(l10n.saveInterestingConfirm),
+        ),
+      ],
+    );
+  }
+
+  Widget _thumbnail(Map<String, dynamic> candidate) {
+    final imageUrl = candidate['image_url'] ?? candidate['imageUrl'];
+    if (imageUrl is! String || imageUrl.isEmpty) {
+      return const Icon(Icons.checkroom);
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        // Rakuten's thumbnail CDN serves images without CORS headers; see
+        // the matching workaround in CandidateCard.
+        webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+        errorBuilder: (_, __, ___) => const Icon(Icons.checkroom),
+      ),
+    );
+  }
+}
+
 class _ResultPanel extends StatelessWidget {
   const _ResultPanel({
-    required this.source,
     required this.coordinateImageUrl,
   });
 
-  final String source;
   final String? coordinateImageUrl;
 
   @override
@@ -1041,10 +1769,6 @@ class _ResultPanel extends StatelessWidget {
                       SelectableText(coordinateImageUrl!),
                 ),
               ),
-            if (source == 'SHARED_CLOSET') ...[
-              const SizedBox(height: 12),
-              const AttributionFooter(),
-            ],
           ],
         ),
       ),
@@ -1104,6 +1828,14 @@ class AgentEvent {
     }
     if (toolName == 'search_closet') {
       return l10n.traceSearchingCloset(agentName);
+    }
+    if (toolName == 'search_rakuten' && eventKind == 'tool_result') {
+      final raw = toolResult?['result'];
+      final count = raw is List ? raw.length : 0;
+      return l10n.traceSearchedRakuten(agentName, count);
+    }
+    if (toolName == 'search_rakuten') {
+      return l10n.traceSearchingRakuten(agentName);
     }
     if (toolName == 'style_synthesizer') {
       return eventKind == 'tool_result'

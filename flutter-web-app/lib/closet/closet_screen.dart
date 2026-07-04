@@ -1,16 +1,31 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_service.dart';
 import '../l10n/app_localizations.dart';
-import '../shared/attribution.dart';
+import '../shared/help_dialog.dart';
 import '../theme/app_theme.dart';
 import 'closet_item.dart';
 import 'thumbnail.dart';
 import 'upload_service.dart';
 
 const int _kMaxItems = 20;
+
+/// Applies the ownership/category filters to [items]. Pure function so it
+/// can be unit-tested without a widget tree.
+List<ClosetItem> applyClosetFilters(
+  List<ClosetItem> items, {
+  ItemOwnership? ownership,
+  String? category,
+}) {
+  return items.where((item) {
+    if (ownership != null && item.ownership != ownership) return false;
+    if (category != null && item.category != category) return false;
+    return true;
+  }).toList();
+}
 
 class ClosetScreen extends StatefulWidget {
   const ClosetScreen({super.key, required this.uid, this.embedded = false});
@@ -28,6 +43,8 @@ class _ClosetScreenState extends State<ClosetScreen> {
   late final UploadService _uploads = UploadService(api: _api);
   final AuthService _auth = AuthService();
   bool _busy = false;
+  ItemOwnership? _ownershipFilter;
+  String? _categoryFilter;
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _stream() {
     return FirebaseFirestore.instance
@@ -104,47 +121,86 @@ class _ClosetScreenState extends State<ClosetScreen> {
     final season = TextEditingController(text: item.season ?? '');
     final tags = TextEditingController(text: item.tags.join(', '));
     var gender = item.gender ?? 'common';
+    var ownership =
+        item.ownership == ItemOwnership.interesting ? 'INTERESTING' : 'OWNED';
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text(l10n.editMetadata),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                    controller: category,
-                    decoration: InputDecoration(labelText: l10n.category)),
-                TextField(
-                    controller: colors,
-                    decoration: InputDecoration(labelText: l10n.colorsComma)),
-                TextField(
-                    controller: season,
-                    decoration: InputDecoration(labelText: l10n.season)),
-                TextField(
-                    controller: tags,
-                    decoration: InputDecoration(labelText: l10n.tagsComma)),
-                DropdownButtonFormField<String>(
-                  initialValue: gender,
-                  decoration: InputDecoration(labelText: l10n.gender),
-                  items: [
-                    DropdownMenuItem(
-                      value: 'common',
-                      child: Text(l10n.genderCommon),
-                    ),
-                    DropdownMenuItem(
-                      value: 'female',
-                      child: Text(l10n.genderFemale),
-                    ),
-                    DropdownMenuItem(
-                        value: 'male', child: Text(l10n.genderMale)),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setDialogState(() => gender = value);
-                  },
-                ),
-              ],
+          content: SizedBox(
+            width: 360,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                      controller: category,
+                      decoration: InputDecoration(labelText: l10n.category)),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: colors,
+                      decoration:
+                          InputDecoration(labelText: l10n.colorsComma)),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: season,
+                      decoration: InputDecoration(labelText: l10n.season)),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: tags,
+                      decoration: InputDecoration(labelText: l10n.tagsComma)),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: gender,
+                    decoration: InputDecoration(labelText: l10n.gender),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'common',
+                        child: Text(l10n.genderCommon),
+                      ),
+                      DropdownMenuItem(
+                        value: 'female',
+                        child: Text(l10n.genderFemale),
+                      ),
+                      DropdownMenuItem(
+                          value: 'male', child: Text(l10n.genderMale)),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setDialogState(() => gender = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: ownership,
+                    decoration: InputDecoration(labelText: l10n.ownership),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'OWNED',
+                        child: Text(l10n.ownershipOwned),
+                      ),
+                      DropdownMenuItem(
+                        value: 'INTERESTING',
+                        child: Text(l10n.ownershipInteresting),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => ownership = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    ownership == 'INTERESTING'
+                        ? l10n.ownershipInterestingHint
+                        : l10n.ownershipOwnedHint,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
             ),
           ),
           actions: [
@@ -171,6 +227,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
         'season': season.text.trim(),
         'tags': values(tags.text),
         'gender': gender,
+        'ownershipStatus': ownership,
       });
     } catch (e) {
       if (!mounted) return;
@@ -188,16 +245,10 @@ class _ClosetScreenState extends State<ClosetScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final content = Column(
-      children: [
-        Expanded(child: _buildBody()),
-        const AttributionFooter(),
-      ],
-    );
     if (widget.embedded) {
       return Stack(
         children: [
-          content,
+          _buildBody(),
           Positioned(
             right: 16,
             bottom: 16,
@@ -225,8 +276,11 @@ class _ClosetScreenState extends State<ClosetScreen> {
             },
           ),
           IconButton(
-            tooltip: l10n.sharedClosetAbout,
-            onPressed: () => showSharedClosetAboutDialog(context),
+            tooltip: l10n.appHelpTooltip,
+            onPressed: () => showAppHelpDialog(
+              context,
+              initialSection: helpSectionCloset,
+            ),
             icon: const Icon(Icons.info_outline),
           ),
           IconButton(
@@ -236,12 +290,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(child: _buildBody()),
-          const AttributionFooter(),
-        ],
-      ),
+      body: _buildBody(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _busy ? null : _onUploadPressed,
         icon: const Icon(Icons.add_a_photo),
@@ -270,15 +319,55 @@ class _ClosetScreenState extends State<ClosetScreen> {
         }
         final items =
             docs.map((d) => ClosetItem.fromFirestore(d.id, d.data())).toList();
-        return ClosetGrid(
-          items: items,
-          cache: _cache,
-          onDelete: _onDelete,
-          onEdit: _onEdit,
+        final ownershipFiltered =
+            applyClosetFilters(items, ownership: _ownershipFilter);
+        final categories = _distinctCategories(ownershipFiltered);
+        if (_categoryFilter != null && !categories.contains(_categoryFilter)) {
+          _categoryFilter = null;
+        }
+        final filtered =
+            applyClosetFilters(ownershipFiltered, category: _categoryFilter);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClosetFilterBar(
+              categories: categories,
+              ownershipFilter: _ownershipFilter,
+              categoryFilter: _categoryFilter,
+              onOwnershipChanged: (value) => setState(() {
+                _ownershipFilter = value;
+                _categoryFilter = null;
+              }),
+              onCategoryChanged: (value) =>
+                  setState(() => _categoryFilter = value),
+            ),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const _NoFilterMatchState()
+                  : ClosetGrid(
+                      items: filtered,
+                      cache: _cache,
+                      onDelete: _onDelete,
+                      onEdit: _onEdit,
+                    ),
+            ),
+          ],
         );
       },
     );
   }
+}
+
+List<String> _distinctCategories(List<ClosetItem> items) {
+  final seen = <String>{};
+  for (final item in items) {
+    final category = item.category;
+    if (category != null && category.trim().isNotEmpty) {
+      seen.add(category);
+    }
+  }
+  final sorted = seen.toList()..sort();
+  return sorted;
 }
 
 class _EmptyState extends StatelessWidget {
@@ -294,6 +383,126 @@ class _EmptyState extends StatelessWidget {
           const Icon(Icons.checkroom, size: 64, color: AppColors.muted),
           const SizedBox(height: 12),
           Text(AppLocalizations.of(context)!.emptyCloset),
+          const SizedBox(height: 8),
+          Text(
+            AppLocalizations.of(context)!.emptyClosetHelpHint,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoFilterMatchState extends StatelessWidget {
+  const _NoFilterMatchState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      key: const ValueKey('no-filter-match-state'),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.filter_alt_off, size: 64, color: AppColors.muted),
+          const SizedBox(height: 12),
+          Text(AppLocalizations.of(context)!.noItemsMatchFilter),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ownership + category filter bar shown above [ClosetGrid]. Stateless:
+/// [ClosetScreen] owns the filter selection and passes down the distinct
+/// category values already narrowed by the current ownership filter.
+class ClosetFilterBar extends StatelessWidget {
+  const ClosetFilterBar({
+    super.key,
+    required this.categories,
+    required this.ownershipFilter,
+    required this.categoryFilter,
+    required this.onOwnershipChanged,
+    required this.onCategoryChanged,
+  });
+
+  final List<String> categories;
+  final ItemOwnership? ownershipFilter;
+  final String? categoryFilter;
+  final ValueChanged<ItemOwnership?> onOwnershipChanged;
+  final ValueChanged<String?> onCategoryChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: const BoxDecoration(
+        color: AppColors.panel,
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              SegmentedButton<ItemOwnership?>(
+                segments: [
+                  ButtonSegment(value: null, label: Text(l10n.filterAll)),
+                  ButtonSegment(
+                    value: ItemOwnership.owned,
+                    label: Text(l10n.ownershipOwned),
+                    tooltip: l10n.ownershipOwnedHint,
+                  ),
+                  ButtonSegment(
+                    value: ItemOwnership.interesting,
+                    label: Text(l10n.ownershipInteresting),
+                    tooltip: l10n.ownershipInterestingHint,
+                  ),
+                ],
+                selected: {ownershipFilter},
+                onSelectionChanged: (values) =>
+                    onOwnershipChanged(values.first),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              if (categories.isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilterChip(
+                      label: Text(l10n.filterAll),
+                      selected: categoryFilter == null,
+                      onSelected: (_) => onCategoryChanged(null),
+                    ),
+                    for (final category in categories)
+                      FilterChip(
+                        label: Text(category),
+                        selected: categoryFilter == category,
+                        onSelected: (selected) =>
+                            onCategoryChanged(selected ? category : null),
+                      ),
+                  ],
+                ),
+            ],
+          ),
+          if (ownershipFilter != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              ownershipFilter == ItemOwnership.owned
+                  ? l10n.ownershipOwnedHint
+                  : l10n.ownershipInterestingHint,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ],
       ),
     );
@@ -379,7 +588,14 @@ class ClosetCard extends StatelessWidget {
                 Positioned(
                   top: 8,
                   left: 8,
-                  child: StatusBadge(status: item.status),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      StatusBadge(status: item.status),
+                      const SizedBox(height: 4),
+                      OwnershipChip(ownership: item.ownership),
+                    ],
+                  ),
                 ),
                 if (onDelete != null)
                   Positioned(
@@ -414,9 +630,29 @@ class ClosetCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (item.status == ItemStatus.ready) ...[
-                  Text(
-                    item.category ?? l10n.unknown,
-                    style: Theme.of(context).textTheme.titleSmall,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.category ?? l10n.unknown,
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                      if (item.ownership == ItemOwnership.interesting &&
+                          item.productUrl != null)
+                        IconButton(
+                          tooltip: l10n.openProductPage,
+                          iconSize: 18,
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => launchUrl(
+                            Uri.parse(item.productUrl!),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          icon: const Icon(Icons.open_in_new),
+                        ),
+                    ],
                   ),
                   if (item.tags.isNotEmpty)
                     Text(
@@ -438,6 +674,45 @@ class ClosetCard extends StatelessWidget {
                 else if (item.status == ItemStatus.error)
                   Text(l10n.analysisFailed),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ownership classification chip (MK): distinct from the analysis
+/// [StatusBadge], never shows a spinner.
+class OwnershipChip extends StatelessWidget {
+  const OwnershipChip({super.key, required this.ownership});
+  final ItemOwnership ownership;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final interesting = ownership == ItemOwnership.interesting;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: interesting ? AppColors.accent : AppColors.tertiary,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            interesting ? Icons.bookmark : Icons.check,
+            size: 14,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            interesting ? l10n.ownershipInteresting : l10n.ownershipOwned,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ],

@@ -10,6 +10,7 @@ from app.domain.styling.value_objects import (
     CoordinateProposal,
     StyleResult,
     ClothingSource,
+    CoordinationMode,
 )
 
 
@@ -25,6 +26,8 @@ class StyleSession(AggregateRoot):
     state: StyleSessionState
     uploaded_image_url: Optional[str] = None
     clothing_source: ClothingSource = ClothingSource.UNSET
+    coordination_mode: CoordinationMode = CoordinationMode.STANDARD
+    anchor_items: list[dict[str, Any]] = None
     shared_closet_id: Optional[str] = None
     analysis_result: Optional[dict[str, Any]] = None
     selected_items: list[dict[str, Any]] = None
@@ -49,6 +52,8 @@ class StyleSession(AggregateRoot):
             object.__setattr__(self, 'selected_items', [])
         if self.proposed_candidates is None:
             object.__setattr__(self, 'proposed_candidates', [])
+        if self.anchor_items is None:
+            object.__setattr__(self, 'anchor_items', [])
 
     def select_source(
         self,
@@ -61,6 +66,23 @@ class StyleSession(AggregateRoot):
             raise ValueError(f"Cannot select source from {self.state}")
         object.__setattr__(self, 'clothing_source', source)
         object.__setattr__(self, 'shared_closet_id', shared_closet_id)
+        if preference is not None:
+            object.__setattr__(self, 'user_preference', preference)
+        self._transition_to(StyleSessionState.SEARCHING)
+
+    def select_assisted(
+        self,
+        anchor_items: list[dict[str, Any]],
+        preference: Optional[UserPreference] = None,
+    ) -> None:
+        """Store assisted-mode anchors and advance the Web flow to SEARCHING (MK)."""
+        if self.state != StyleSessionState.SOURCE_SELECTING:
+            raise ValueError(f"Cannot select source from {self.state}")
+        if not anchor_items:
+            raise ValueError("Assisted mode requires at least one anchor item")
+        object.__setattr__(self, 'coordination_mode', CoordinationMode.ASSISTED)
+        object.__setattr__(self, 'clothing_source', ClothingSource.CLOSET)
+        object.__setattr__(self, 'anchor_items', anchor_items)
         if preference is not None:
             object.__setattr__(self, 'user_preference', preference)
         self._transition_to(StyleSessionState.SEARCHING)

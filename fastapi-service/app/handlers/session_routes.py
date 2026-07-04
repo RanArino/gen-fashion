@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from app.auth import verify_firebase_token
 from app.config import get_settings
 from app.dependencies import (
+    get_assist_session_use_case,
     get_create_session_use_case,
     get_image_storage,
     get_select_candidates_use_case,
@@ -29,6 +30,7 @@ from app.domain.styling.exceptions import DailyGenerationLimitExceeded
 from app.ports import ImageStoragePort, StylingRepositoryPort
 from app.use_cases.styling import (
     AgentRunStartFailed,
+    AssistSessionUseCase,
     CreateSessionUseCase,
     SelectCandidatesUseCase,
     SelectClothingSourceUseCase,
@@ -72,11 +74,17 @@ class SelectCandidatesRequest(BaseModel):
     selected_item_ids: list[str] = Field(alias="selectedItemIds")
 
 
+class AssistSessionRequest(BaseModel):
+    anchor_item_ids: list[str] = Field(alias="anchorItemIds")
+    user_preference: UserPreferenceRequest = Field(alias="userPreference")
+
+
 class SelectedItemResponse(BaseModel):
     item_id: str
     image_url: str
     category: str | None = None
     gender: str | None = None
+    source: str | None = None
 
 
 class StyleResultResponse(BaseModel):
@@ -113,6 +121,7 @@ async def _session_to_history_item(
                 ),
                 category=item.get("category"),
                 gender=item.get("gender"),
+                source=item.get("source"),
             )
             for item in session.selected_items
         ],
@@ -270,6 +279,38 @@ async def select_source(
             source=request.source,
             preference=request.user_preference.to_domain(),
             shared_closet_id=request.shared_closet_id,
+        )
+    except StyleSessionNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 409 if "Cannot select source" in message else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc
+    except DailyGenerationLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except AgentRunStartFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "session_id": result.session_id,
+        "status": result.status,
+        "source": result.source,
+    }
+
+
+@router.post("/{session_id}/assist", status_code=202)
+async def assist_session(
+    session_id: str,
+    request: AssistSessionRequest,
+    user_id: str = Depends(verify_firebase_token),
+    use_case: AssistSessionUseCase = Depends(get_assist_session_use_case),
+):
+    """Start Assisted Coordinate from 1..3 own anchor items (MK)."""
+    try:
+        result = await use_case.execute(
+            user_id=user_id,
+            session_id=session_id,
+            anchor_item_ids=request.anchor_item_ids,
+            preference=request.user_preference.to_domain(),
         )
     except StyleSessionNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

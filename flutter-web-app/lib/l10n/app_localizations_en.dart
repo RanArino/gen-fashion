@@ -24,7 +24,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navShared => 'Shared';
 
   @override
-  String get sharedClosetAbout => 'About shared closet';
+  String get appHelpTooltip => 'How this app works';
+
+  @override
+  String get appHelpTitle => 'How this app works';
 
   @override
   String get signOut => 'Sign out';
@@ -60,6 +63,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get closetTitle => 'Closet';
+
+  @override
+  String get closetHelpPurpose =>
+      'Your Closet stores photos of clothes you own or are considering, up to 20 items. Coordinate uses these items to build outfits.';
+
+  @override
+  String get closetHelpUpload =>
+      'Tap \"Add item\" to upload a photo. The app analyzes it in the background and fills in category, color, season, and tags automatically; edit them anytime from the pencil icon.';
+
+  @override
+  String get closetHelpFilters =>
+      'Use the filters above to narrow the grid: \"Owned\" vs \"Interesting\" shows items you already have versus saved suggestions, and the category chips narrow further within the selected ownership filter.';
+
+  @override
+  String get emptyClosetHelpHint => 'New here? Tap the ⓘ icon above for help.';
 
   @override
   String get addItem => 'Add item';
@@ -164,10 +182,100 @@ class AppLocalizationsEn extends AppLocalizations {
   String get coordinationTitle => 'Coordination';
 
   @override
+  String get helpCoordinateIntro =>
+      'Choose a styling mode and a clothing source, then generate a complete outfit.';
+
+  @override
+  String get modeStandard => 'Closet Styling';
+
+  @override
+  String get modeAssisted => 'Style & Shop';
+
+  @override
+  String get modeStandardHint =>
+      'Creates a full outfit using only your closet items.';
+
+  @override
+  String get modeAssistedHint =>
+      'Pick up to 3 of your own clothes; AI styles a full outfit and suggests items you can buy on Rakuten.';
+
+  @override
+  String get analyzingItem => 'Analyzing...';
+
+  @override
+  String get anchorItemsLabel => 'Your clothes (up to 3)';
+
+  @override
+  String get anchorLimitReached => 'You can select up to 3 items.';
+
+  @override
+  String get noReadyAnchorItems =>
+      'No ready closet items yet. Upload one to begin.';
+
+  @override
+  String get sourceRakuten => 'Rakuten';
+
+  @override
+  String get addToCloset => 'Add to closet';
+
+  @override
+  String get savedAsInteresting => 'Saved as Interesting';
+
+  @override
+  String importFailed(Object error) {
+    return 'Save failed: $error';
+  }
+
+  @override
+  String get openProductPage => 'Open product page';
+
+  @override
+  String get saveInterestingDialogTitle => 'Save Rakuten items to your closet?';
+
+  @override
+  String get saveInterestingDialogBody =>
+      'These Rakuten items were part of this outfit. Save the ones you like as \"Interesting\" so you can find them again.';
+
+  @override
+  String get saveInterestingSkip => 'Skip';
+
+  @override
+  String get saveInterestingConfirm => 'Save selected';
+
+  @override
+  String get ownership => 'Ownership';
+
+  @override
+  String get ownershipOwned => 'Owned';
+
+  @override
+  String get ownershipInteresting => 'Interesting';
+
+  @override
+  String get ownershipOwnedHint => 'Items you already own.';
+
+  @override
+  String get ownershipInterestingHint =>
+      'Saved suggestions you haven\'t purchased yet.';
+
+  @override
+  String get filterAll => 'All';
+
+  @override
+  String get noItemsMatchFilter => 'No items match the selected filters.';
+
+  @override
   String get sourceShared => 'Shared';
 
   @override
   String get sourceMine => 'Mine';
+
+  @override
+  String get sourceSharedHint =>
+      'Use demo items from our shared closet — no upload needed.';
+
+  @override
+  String get sourceMineHint => 'Use items from your own closet.';
 
   @override
   String get sharedCloset => 'Shared closet';
@@ -277,12 +385,32 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get traceQuery => 'Query';
+
+  @override
+  String get traceShopName => 'Shop';
+
+  @override
+  String traceSearchingRakuten(Object agentName) {
+    return '$agentName is searching Rakuten';
+  }
+
+  @override
+  String traceSearchedRakuten(Object agentName, Object count) {
+    return '$agentName searched Rakuten - $count candidates';
+  }
+
+  @override
   String historyLoadFailed(Object error) {
     return 'Failed to load history: $error';
   }
 
   @override
   String get historyEmpty => 'No completed coordinates yet.';
+
+  @override
+  String get helpHistoryBody =>
+      'History lists the outfits you\'ve already generated, newest first.';
 
   @override
   String get dateUnavailable => 'Date unavailable';
@@ -301,7 +429,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sharedAboutBody =>
-      'Shared closet lets you try coordination without uploading clothes.';
+      'The Shared closet contains sample clothing photos so you can try a full styling demo right away, without uploading any of your own items first.';
 
   @override
   String get sharedAboutDataset =>

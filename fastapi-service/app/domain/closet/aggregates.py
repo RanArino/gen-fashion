@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from app.domain.shared.base_models import AggregateRoot
 from app.domain.closet.value_objects import (
+    ClosetOwnershipStatus,
     ClothingItemId,
     ClothingItemStatus,
     ClothingTag,
@@ -30,6 +31,13 @@ class ClothingItem(AggregateRoot):
     gender: Optional[str] = None
     created_at: datetime = None
     updated_at: datetime = None
+    ownership_status: ClosetOwnershipStatus = ClosetOwnershipStatus.OWNED
+    origin: Optional[str] = None  # USER_UPLOAD | RAKUTEN
+    external_item_id: Optional[str] = None
+    external_url: Optional[str] = None
+    affiliate_url: Optional[str] = None
+    price: Optional[float] = None
+    brand_or_shop: Optional[str] = None
 
     def __post_init__(self):
         """Validate invariants."""
@@ -96,6 +104,11 @@ class ClothingItem(AggregateRoot):
             object.__setattr__(self, 'season', season)
         if tags is not None:
             object.__setattr__(self, 'tags', tags)
+        self._mark_updated()
+
+    def set_ownership_status(self, ownership_status: ClosetOwnershipStatus) -> None:
+        """Switch between OWNED and INTERESTING."""
+        object.__setattr__(self, 'ownership_status', ownership_status)
         self._mark_updated()
 
     def mark_error(self) -> None:

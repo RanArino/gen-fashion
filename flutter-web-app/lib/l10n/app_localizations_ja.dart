@@ -24,7 +24,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get navShared => '共有';
 
   @override
-  String get sharedClosetAbout => '共有クローゼットについて';
+  String get appHelpTooltip => 'このアプリの使い方';
+
+  @override
+  String get appHelpTitle => 'このアプリの使い方';
 
   @override
   String get signOut => 'サインアウト';
@@ -60,6 +63,21 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get closetTitle => 'クローゼット';
+
+  @override
+  String get closetHelpPurpose =>
+      'クローゼットには、所有している服や気になっている服の写真を最大20点まで保存できます。コーディネートはこれらのアイテムを使って全身コーデを作ります。';
+
+  @override
+  String get closetHelpUpload =>
+      '「アイテムを追加」をタップして写真をアップロードすると、カテゴリ・色・季節・タグが自動で解析されます。鉛筆アイコンからいつでも編集できます。';
+
+  @override
+  String get closetHelpFilters =>
+      '上部のフィルターで絞り込めます。「所有」と「気になる」は、すでに持っているアイテムと保存した候補を切り替え、カテゴリチップはその中でさらに絞り込みます。';
+
+  @override
+  String get emptyClosetHelpHint => 'はじめての方は、上部の ⓘ アイコンをタップしてください。';
 
   @override
   String get addItem => 'アイテムを追加';
@@ -164,10 +182,95 @@ class AppLocalizationsJa extends AppLocalizations {
   String get coordinationTitle => 'コーディネート';
 
   @override
+  String get helpCoordinateIntro => 'スタイリングのモードと服の取得元を選んで、全身コーデを生成します。';
+
+  @override
+  String get modeStandard => 'クローゼットコーデ';
+
+  @override
+  String get modeAssisted => '買い足し提案';
+
+  @override
+  String get modeStandardHint => 'クローゼットの服だけで全身コーデを作ります。';
+
+  @override
+  String get modeAssistedHint =>
+      '手持ちの服（最大3点）を選ぶと、AIが楽天で購入できるアイテムを含めた全身コーデを提案します。';
+
+  @override
+  String get analyzingItem => '解析中...';
+
+  @override
+  String get anchorItemsLabel => '自分の服（最大3点）';
+
+  @override
+  String get anchorLimitReached => '選択できるのは最大3点です。';
+
+  @override
+  String get noReadyAnchorItems => '利用できるアイテムがまだありません。アップロードしてください。';
+
+  @override
+  String get sourceRakuten => '楽天';
+
+  @override
+  String get addToCloset => 'クローゼットに追加';
+
+  @override
+  String get savedAsInteresting => '「気になる」に保存しました';
+
+  @override
+  String importFailed(Object error) {
+    return '保存に失敗しました: $error';
+  }
+
+  @override
+  String get openProductPage => '商品ページを開く';
+
+  @override
+  String get saveInterestingDialogTitle => '楽天の商品をクローゼットに保存しますか?';
+
+  @override
+  String get saveInterestingDialogBody =>
+      'このコーディネートに含まれる楽天の商品です。気に入ったものを「気になる」として保存できます。';
+
+  @override
+  String get saveInterestingSkip => 'スキップ';
+
+  @override
+  String get saveInterestingConfirm => '選択した商品を保存';
+
+  @override
+  String get ownership => '所有状況';
+
+  @override
+  String get ownershipOwned => '所有';
+
+  @override
+  String get ownershipInteresting => '気になる';
+
+  @override
+  String get ownershipOwnedHint => 'すでに所有しているアイテムです。';
+
+  @override
+  String get ownershipInterestingHint => 'まだ購入していない、保存した候補です。';
+
+  @override
+  String get filterAll => 'すべて';
+
+  @override
+  String get noItemsMatchFilter => '条件に一致するアイテムがありません。';
+
+  @override
   String get sourceShared => '共有';
 
   @override
   String get sourceMine => '自分';
+
+  @override
+  String get sourceSharedHint => '共有クローゼットのデモアイテムを使います。アップロード不要です。';
+
+  @override
+  String get sourceMineHint => '自分のクローゼットのアイテムを使います。';
 
   @override
   String get sharedCloset => '共有クローゼット';
@@ -277,12 +380,31 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get traceQuery => '検索キーワード';
+
+  @override
+  String get traceShopName => '店舗';
+
+  @override
+  String traceSearchingRakuten(Object agentName) {
+    return '$agentName が楽天を検索中';
+  }
+
+  @override
+  String traceSearchedRakuten(Object agentName, Object count) {
+    return '$agentName が楽天を検索しました - $count 件';
+  }
+
+  @override
   String historyLoadFailed(Object error) {
     return '履歴の読み込みに失敗しました: $error';
   }
 
   @override
   String get historyEmpty => '完了したコーディネートはまだありません。';
+
+  @override
+  String get helpHistoryBody => '履歴には、これまでに生成したコーディネートが新しい順に並びます。';
 
   @override
   String get dateUnavailable => '日付不明';
@@ -300,7 +422,8 @@ class AppLocalizationsJa extends AppLocalizations {
       '共有クローゼットの画像は Clothing Dataset (CC BY-SA 4.0) を使用しています';
 
   @override
-  String get sharedAboutBody => '共有クローゼットでは、アップロードなしにコーディネートを試すことができます。';
+  String get sharedAboutBody =>
+      '共有クローゼットにはサンプルの服の写真が入っており、自分の服をアップロードしなくても、すぐにスタイリングのデモを体験できます。';
 
   @override
   String get sharedAboutDataset => '画像素材: Clothing Dataset (CC BY-SA 4.0)';

@@ -14,7 +14,9 @@ from app.domain.styling import (
 )
 from app.domain.styling.exceptions import DailyGenerationLimitExceeded
 from app.ports import AgentRunRequest
+from app.domain.styling import CoordinationMode
 from app.use_cases.styling import (
+    AssistSessionUseCase,
     CreateSessionUseCase,
     SelectCandidatesUseCase,
     SelectClothingSourceUseCase,
@@ -207,6 +209,32 @@ async def test_select_source_accepts_ready_closet_item():
 
 
 @pytest.mark.asyncio
+async def test_select_source_closet_accepts_interesting_ready_item():
+    from app.domain.closet import ClosetOwnershipStatus
+
+    repo = FakeStylingRepo()
+    session_id = uuid4()
+    await repo.create(
+        StyleSession(
+            id=StyleSessionId(session_id),
+            user_id="user-123",
+            state=StyleSessionState.SOURCE_SELECTING,
+        )
+    )
+    interesting = ready_item()
+    interesting.set_ownership_status(ClosetOwnershipStatus.INTERESTING)
+    agent_run = FakeAgentRun()
+
+    await SelectClothingSourceUseCase(
+        repo,
+        FakeClosetRepo([interesting]),
+        agent_run,
+    ).execute("user-123", str(session_id), ClothingSource.CLOSET, UserPreference())
+
+    assert agent_run.requests[0].source == "CLOSET"
+
+
+@pytest.mark.asyncio
 async def test_select_source_rejects_when_daily_generation_limit_reached_before_agent_run():
     repo = FakeStylingRepo()
     repo.completed_today_count = 5
@@ -248,6 +276,148 @@ async def test_select_source_rejects_non_owner_or_missing_session():
             FakeClosetRepo(),
             FakeAgentRun(),
         ).execute("user-123", str(uuid4()), ClothingSource.SHARED_CLOSET, UserPreference())
+
+
+class FakeImageStorage:
+    async def get_download_url(self, image_path):
+        return f"http://storage/{image_path}?sig=abc"
+
+
+def assist_use_case(repo, closet_repo, agent_run, settings=None):
+    return AssistSessionUseCase(
+        repo, closet_repo, FakeImageStorage(), agent_run, settings or Settings()
+    )
+
+
+def source_selecting_session(session_id, user_id="user-123"):
+    return StyleSession(
+        id=StyleSessionId(session_id),
+        user_id=user_id,
+        state=StyleSessionState.SOURCE_SELECTING,
+    )
+
+
+@pytest.mark.asyncio
+async def test_assist_session_stores_assisted_mode_and_triggers_agent():
+    repo = FakeStylingRepo()
+    session_id = uuid4()
+    await repo.create(source_selecting_session(session_id))
+    anchor = ready_item()
+    agent_run = FakeAgentRun()
+
+    result = await assist_use_case(repo, FakeClosetRepo([anchor]), agent_run).execute(
+        "user-123",
+        str(session_id),
+        [str(anchor.id)],
+        UserPreference(style="clean", gender="female"),
+    )
+
+    session = await repo.get_by_id("user-123", StyleSessionId(session_id))
+    assert result.status == "SEARCHING"
+    assert result.source == "CLOSET"
+    assert session.coordination_mode == CoordinationMode.ASSISTED
+    assert session.anchor_items[0]["item_id"] == str(anchor.id)
+    assert session.anchor_items[0]["anchor"] is True
+    assert session.anchor_items[0]["recommended"] is True
+    assert session.anchor_items[0]["image_url"].startswith("http://storage/")
+    request = agent_run.requests[0]
+    assert request.phase == "propose"
+    assert request.mode == "assisted"
+    assert request.source == "CLOSET"
+    assert request.anchor_items == session.anchor_items
+    assert request.user_preference["gender"] == "female"
+
+
+@pytest.mark.asyncio
+async def test_assist_session_rejects_zero_and_four_anchors():
+    repo = FakeStylingRepo()
+    session_id = uuid4()
+    await repo.create(source_selecting_session(session_id))
+    use_case = assist_use_case(repo, FakeClosetRepo(), FakeAgentRun())
+
+    with pytest.raises(ValueError, match="1 to 3"):
+        await use_case.execute("user-123", str(session_id), [], UserPreference())
+    with pytest.raises(ValueError, match="1 to 3"):
+        await use_case.execute(
+            "user-123", str(session_id), [str(uuid4()) for _ in range(4)], UserPreference()
+        )
+
+
+@pytest.mark.asyncio
+async def test_assist_session_rejects_missing_and_non_ready_anchors():
+    repo = FakeStylingRepo()
+    session_id = uuid4()
+    await repo.create(source_selecting_session(session_id))
+    processing = ready_item()
+    object.__setattr__(processing, "status", ClothingItemStatus.PROCESSING)
+    use_case = assist_use_case(repo, FakeClosetRepo([processing]), FakeAgentRun())
+
+    with pytest.raises(ValueError, match="not found in your closet"):
+        await use_case.execute("user-123", str(session_id), [str(uuid4())], UserPreference())
+    with pytest.raises(ValueError, match="not READY"):
+        await use_case.execute(
+            "user-123", str(session_id), [str(processing.id)], UserPreference()
+        )
+
+
+@pytest.mark.asyncio
+async def test_assist_session_rejects_other_users_anchor():
+    repo = FakeStylingRepo()
+    session_id = uuid4()
+    await repo.create(source_selecting_session(session_id))
+    other_users_item = ready_item(user_id="other-user")
+    use_case = assist_use_case(repo, FakeClosetRepo([other_users_item]), FakeAgentRun())
+
+    with pytest.raises(ValueError, match="not found in your closet"):
+        await use_case.execute(
+            "user-123", str(session_id), [str(other_users_item.id)], UserPreference()
+        )
+
+
+@pytest.mark.asyncio
+async def test_assist_session_rejects_non_owner_or_missing_session():
+    with pytest.raises(StyleSessionNotFound):
+        await assist_use_case(FakeStylingRepo(), FakeClosetRepo(), FakeAgentRun()).execute(
+            "user-123", str(uuid4()), [str(uuid4())], UserPreference()
+        )
+
+
+@pytest.mark.asyncio
+async def test_assist_session_enforces_daily_generation_limit_before_agent_run():
+    repo = FakeStylingRepo()
+    repo.completed_today_count = 5
+    session_id = uuid4()
+    await repo.create(source_selecting_session(session_id))
+    anchor = ready_item()
+    agent_run = FakeAgentRun()
+
+    with pytest.raises(DailyGenerationLimitExceeded):
+        await assist_use_case(
+            repo,
+            FakeClosetRepo([anchor]),
+            agent_run,
+            Settings(max_daily_generations_per_user=5),
+        ).execute("user-123", str(session_id), [str(anchor.id)], UserPreference())
+
+    session = await repo.get_by_id("user-123", StyleSessionId(session_id))
+    assert session.state == StyleSessionState.SOURCE_SELECTING
+    assert agent_run.requests == []
+
+
+@pytest.mark.asyncio
+async def test_assist_session_marks_error_when_agent_trigger_fails():
+    repo = FakeStylingRepo()
+    session_id = uuid4()
+    await repo.create(source_selecting_session(session_id))
+    anchor = ready_item()
+
+    with pytest.raises(RuntimeError, match="Failed to start assisted styling run"):
+        await assist_use_case(repo, FakeClosetRepo([anchor]), FailingAgentRun()).execute(
+            "user-123", str(session_id), [str(anchor.id)], UserPreference()
+        )
+
+    session = await repo.get_by_id("user-123", StyleSessionId(session_id))
+    assert session.state == StyleSessionState.ERROR
 
 
 @pytest.mark.asyncio

@@ -220,6 +220,143 @@ async def test_propose_phase_runs_agent_and_stops_without_generation(monkeypatch
     assert '"gender":"female"' in runner.kwargs["new_message"].parts[0].text
 
 
+ANCHOR = {
+    "item_id": "anchor-1",
+    "source": "CLOSET",
+    "image_url": "http://storage/anchor-1.jpg",
+    "anchor": True,
+    "recommended": True,
+}
+
+
+def _assisted_request():
+    return RunSessionRequest(
+        sessionId="session-1",
+        userId="user-123",
+        source="CLOSET",
+        userPreference={"style": "clean", "gender": "female", "colorPreference": "white"},
+        mode="assisted",
+        anchorItems=[ANCHOR],
+    )
+
+
+@pytest.mark.asyncio
+async def test_assisted_propose_merges_anchors_with_rakuten_candidates(monkeypatch):
+    request = _assisted_request()
+    repo = FakeRepo()
+    runner = FakeRunner(
+        [
+            _adk_event(
+                "ClosetAgent",
+                response={
+                    "name": "search_rakuten",
+                    "response": {
+                        "result": [
+                            {
+                                "item_id": "rakuten:shop:1",
+                                "source": "RAKUTEN",
+                                "name": "White T-Shirt",
+                                "image_url": "http://thumb/1.jpg",
+                                "price": 2980,
+                                "external_url": "http://item/1",
+                            }
+                        ]
+                    },
+                },
+            ),
+            _adk_event("ClosetAgent", text="Suggestions ready."),
+        ]
+    )
+    monkeypatch.setattr(
+        "styling_app.server.search_rakuten",
+        lambda **kwargs: pytest.fail("rakuten fallback must not run"),
+    )
+    monkeypatch.setattr(
+        "styling_app.server.search_closet",
+        lambda **kwargs: pytest.fail("closet fallback must not run"),
+    )
+
+    await execute_run_session(request, session_repo=repo, runner=runner)
+
+    assert repo.errors == []
+    candidates = repo.proposals[0][1]
+    assert candidates[0]["item_id"] == "anchor-1"
+    assert candidates[0]["anchor"] is True
+    assert candidates[0]["recommended"] is True
+    assert candidates[1]["item_id"] == "rakuten:shop:1"
+    assert candidates[1]["recommended"] is True
+    message = runner.kwargs["new_message"].parts[0].text
+    assert '"mode":"assisted"' in message
+    assert '"anchorItems":[{' in message
+
+
+@pytest.mark.asyncio
+async def test_assisted_propose_runs_rakuten_fallback_when_agent_has_no_suggestions(
+    monkeypatch,
+):
+    request = _assisted_request()
+    repo = FakeRepo()
+    runner = FakeRunner([_adk_event("styling_app", text="No suggestions.")])
+    captured = {}
+
+    def fake_search_rakuten(**kwargs):
+        captured.update(kwargs)
+        return [
+            {
+                "item_id": "rakuten:fb:1",
+                "source": "RAKUTEN",
+                "image_url": "http://thumb/fb.jpg",
+            }
+        ]
+
+    monkeypatch.setattr("styling_app.server.search_rakuten", fake_search_rakuten)
+
+    await execute_run_session(request, session_repo=repo, runner=runner)
+
+    assert captured["query"] == "clean white"
+    assert captured["colors"] == ["white"]
+    candidates = repo.proposals[0][1]
+    assert [c["item_id"] for c in candidates] == ["anchor-1", "rakuten:fb:1"]
+    assert candidates[1]["recommended"] is True
+
+
+def test_propose_rakuten_tool_returns_empty_when_unavailable(monkeypatch):
+    from styling_app.adapters.rakuten import RakutenUnavailableError
+    from styling_app.server import _build_propose_rakuten_tool
+
+    def unavailable(**kwargs):
+        raise RakutenUnavailableError("403")
+
+    monkeypatch.setattr("styling_app.server.search_rakuten", unavailable)
+    tool = _build_propose_rakuten_tool()
+
+    assert tool(query="white t-shirt") == []
+
+
+@pytest.mark.asyncio
+async def test_assisted_propose_degrades_to_anchors_when_rakuten_unavailable(monkeypatch):
+    from styling_app.adapters.rakuten import RakutenUnavailableError
+
+    request = _assisted_request()
+    repo = FakeRepo()
+    runner = FakeRunner([_adk_event("styling_app", text="No suggestions.")])
+
+    def unavailable(**kwargs):
+        raise RakutenUnavailableError("no credentials")
+
+    monkeypatch.setattr("styling_app.server.search_rakuten", unavailable)
+
+    await execute_run_session(request, session_repo=repo, runner=runner)
+
+    assert repo.errors == []
+    candidates = repo.proposals[0][1]
+    assert [c["item_id"] for c in candidates] == ["anchor-1"]
+    assert any(
+        (event[1]["text"] or "").startswith("Rakuten suggestions unavailable")
+        for event in repo.events
+    )
+
+
 @pytest.mark.asyncio
 async def test_generate_phase_runs_agent_with_selection_gender_and_child_age(monkeypatch):
     request = RunSessionRequest(

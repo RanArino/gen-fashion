@@ -105,7 +105,7 @@ def normalize_adk_event(event: Any, seq_start: int, created_at: datetime | None 
 def extract_search_candidates(event_payload: dict) -> list[dict[str, Any]]:
     if event_payload.get("eventKind") != "tool_result":
         return []
-    if event_payload.get("toolName") != "search_closet":
+    if event_payload.get("toolName") not in ("search_closet", "search_rakuten"):
         return []
     result = event_payload.get("toolResult") or {}
     candidates = result.get("result") if isinstance(result, dict) else result

@@ -1,7 +1,12 @@
 import logging
 from uuid import UUID
 
-from app.domain.closet import ClosetItemNotFound, ClothingItemId, ClothingTag
+from app.domain.closet import (
+    ClosetItemNotFound,
+    ClosetOwnershipStatus,
+    ClothingItemId,
+    ClothingTag,
+)
 from app.ports import ClosetRepositoryPort, EmbeddingSearchPort
 
 
@@ -25,10 +30,13 @@ class UpdateClosetItemMetadataUseCase:
         colors: list[str] | None = None,
         season: str | None = None,
         tags: list[str] | None = None,
+        ownership_status: str | None = None,
     ) -> dict:
         item = await self.closet_repo.get_by_id(user_id, ClothingItemId(UUID(item_id)))
         if item is None:
             raise ClosetItemNotFound(f"Closet item not found: {item_id}")
+        if ownership_status is not None:
+            item.set_ownership_status(ClosetOwnershipStatus(ownership_status))
         item.set_metadata(
             gender=gender,
             category=category,
@@ -45,7 +53,12 @@ class UpdateClosetItemMetadataUseCase:
                 colors=item.colors,
                 season=item.season,
                 gender=item.gender,
+                ownership_status=item.ownership_status.value,
             )
         except Exception:
             logger.exception("Failed to reindex closet item %s", item_id)
-        return {"item_id": item_id, "status": item.status.value}
+        return {
+            "item_id": item_id,
+            "status": item.status.value,
+            "ownershipStatus": item.ownership_status.value,
+        }

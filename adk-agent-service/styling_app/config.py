@@ -46,6 +46,21 @@ class Settings(BaseSettings):
 
     internal_task_secret: str | None = None
 
+    # Rakuten Ichiba Item Search (MK-3). Credentials are backend/agent secrets
+    # only; the browser never receives them. Endpoint is the official
+    # 2026-07-01 Ichiba Item Search version.
+    rakuten_application_id: str | None = None
+    rakuten_access_key: str | None = None
+    rakuten_affiliate_id: str | None = None
+    # Registered application URL; the 2026 endpoint rejects requests without
+    # matching Origin/Referer headers (403 REQUEST_CONTEXT_BODY_HTTP_REFERRER_MISSING).
+    rakuten_application_url: str = "https://gen-fashion-app.web.app/"
+    rakuten_search_endpoint: str = (
+        "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260701"
+    )
+    rakuten_request_timeout_seconds: int = 10
+    rakuten_max_results: int = 10
+
     # Wall-clock budget for the ADK agent run before falling back to the
     # deterministic coordination path. 45s was too tight on cold start; 90s
     # gives the primary LLM path more room. MUST stay below the fastapi SSE

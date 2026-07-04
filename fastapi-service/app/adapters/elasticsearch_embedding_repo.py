@@ -43,6 +43,11 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
                     "colors": {"type": "keyword"},
                     "season": {"type": "keyword"},
                     "gender": {"type": "keyword"},
+                    # MK ownership/origin classification for imported suggestions.
+                    "ownershipStatus": {"type": "keyword"},
+                    "origin": {"type": "keyword"},
+                    "externalItemId": {"type": "keyword"},
+                    "externalUrl": {"type": "keyword"},
                     "embedding": {
                         "type": "dense_vector",
                         "dims": self._dims,
@@ -83,6 +88,10 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
         season: Optional[str],
         embedding: Optional[List[float]],
         gender: Optional[str] = None,
+        ownership_status: Optional[str] = None,
+        origin: Optional[str] = None,
+        external_item_id: Optional[str] = None,
+        external_url: Optional[str] = None,
     ) -> None:
         document = {
             "item_id": item_id,
@@ -94,6 +103,14 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
             "season": season,
             "gender": gender,
         }
+        if ownership_status is not None:
+            document["ownershipStatus"] = ownership_status
+        if origin is not None:
+            document["origin"] = origin
+        if external_item_id is not None:
+            document["externalItemId"] = external_item_id
+        if external_url is not None:
+            document["externalUrl"] = external_url
         if embedding is not None:
             document["embedding"] = embedding
         await self._client.index(index=self._index, id=item_id, document=document)
@@ -113,15 +130,19 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
         colors: List[str],
         season: Optional[str],
         gender: Optional[str],
+        ownership_status: Optional[str] = None,
     ) -> None:
+        doc = {
+            "tags": tags,
+            "category": category,
+            "colors": colors,
+            "season": season,
+            "gender": gender,
+        }
+        if ownership_status is not None:
+            doc["ownershipStatus"] = ownership_status
         await self._client.update(
             index=self._index,
             id=item_id,
-            doc={
-                "tags": tags,
-                "category": category,
-                "colors": colors,
-                "season": season,
-                "gender": gender,
-            },
+            doc=doc,
         )

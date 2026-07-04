@@ -1,5 +1,6 @@
 from app.domain.closet.aggregates import ClothingItem
 from app.domain.closet.value_objects import (
+    ClosetOwnershipStatus,
     ClothingItemId,
     ClothingItemStatus,
     ClothingTag,
@@ -14,6 +15,7 @@ from app.domain.closet.exceptions import (
 
 __all__ = [
     "ClothingItem",
+    "ClosetOwnershipStatus",
     "ClothingItemId",
     "ClothingItemStatus",
     "ClothingTag",

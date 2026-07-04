@@ -1,4 +1,4 @@
-# Architecture Overview — gen-fashion (Phase 1)
+# Architecture Overview — gen-fashion (Phase 1 / Phase 2 planning)
 
 > **ME completion sync (2026-06-24):** ME-1…ME-7 are implemented and locally
 > verified. The diagrams below include the two-phase candidate-selection gate,
@@ -15,10 +15,23 @@
 > snapshotted to the named `gen-fashion_firestore-data` volume and imported on
 > startup. The shared seed now contains 3×70 items; container recreation restored
 > all 3 metadata docs and 210 item docs without reseeding.
+>
+> **MK implemented (2026-07-03):** Assisted Coordinate mode
+> (`docs/plans/20260703-mk-assisted-coordinate-mode.md`) is implemented and
+> locally verified: `POST /sessions/{id}/assist` (1-3 own READY anchors),
+> ADK assisted propose with the new `search_rakuten` tool plus deterministic
+> Rakuten fallback, `POST /closet/import-suggestion` (save as `INTERESTING`),
+> closet `ownershipStatus` (`OWNED`/`INTERESTING`) across Firestore/ES/UI, and
+> Flutter mode toggle + anchor picker + mixed candidate cards. fastapi 106 /
+> adk 57 / flutter 25 tests + rules 7 pass; M5 and MK smokes reach `COMPLETED`,
+> including `--require-rakuten` with live Rakuten candidates. The earlier 403
+> was the migrated endpoint requiring `Origin`/`Referer` headers
+> (`RAKUTEN_APPLICATION_URL`), not invalid keys; the flow still degrades to
+> anchor/closet-only proposals when Rakuten is unavailable.
 
 > **生成日:** 2026-06-08
-> **最終同期:** 2026-06-30 — **Security hardening follow-up（`docs/plans/20260630-security-hardening-followup.md`）で既存構成の防御設定を更新。** Cloud Run → Compute Engine ES は引き続き Direct VPC egress だが、ES VM は network tag `gen-fashion-es` を持ち、`allow-es-from-cloudrun`（priority 800, source `10.146.0.0/20`, tcp:9200）と `deny-es-other-internal`（priority 900, source `10.128.0.0/9`, tcp:9200 deny）で default VPC の broad internal allow を上書きする。ES HTTPS は `verify_certs=False` ではなく、`:9200` で提示される leaf certificate の SHA-256 fingerprint を `ELASTICSEARCH_SSL_ASSERT_FINGERPRINT` で pin する。FastAPI CORS は `CORS_ALLOW_ORIGINS` で Firebase Hosting domains に制限する。GitHub Actions WIF は `RanArino/gen-fashion` の `refs/heads/main` のみに制限し、Firebase Web API key は Hosting domains + localhost dev referrer に制限済み。Prior: 2026-06-27 — **MD Milestone B のプライベート接続を Serverless VPC Access connector → Direct VPC egress に変更（ハッカソン低コスト化、ADL-023 改訂）。** Cloud Run → Compute Engine ES の閉域経路は connector ではなく Direct VPC egress（`--network`/`--subnet` + `--vpc-egress=private-ranges-only`）で実現する。connector のアイドル固定費（最小 e2-micro×2）を排除しつつ「ES VM は外部 IP なし・`tcp:9200` は Cloud Run egress サブネットレンジのみ」という閉域姿勢は維持。ES VM は `pd-standard` 30GB + **静的内部 IP**、停止運用 + 任意の `Asia/Tokyo` 深夜停止スケジュールでコスト最小化。**構成図上は `Serverless VPC Access connector` ノードを削除し、Cloud Run → ES を Direct VPC egress 経路として読み替えること。** Prior: 2026-06-27 — Milestone 0（デプロイ前パッチ）+ Milestone A（GCP 基盤: API 有効化・SA×3 + IAM・Firestore + rules・Firebase + Web app・R2 + Secret Manager）完了（MD-1 ✅ / MD-9 ✅、MD-2 🟡）。Prior: 2026-06-21 — **デプロイ前ローカル実機検証で実バグ3件を発見・修正**（`docs/plans/20260621-md-phase1a-local-verification-checklist.md`）。(1) 内部 worker base-URL 混在が `make dev` でも実害（アップロード→READY が常時 404）→ MD-8 の base-URL 分離ローカル分を先行着手（`FASTAPI_INTERNAL_BASE_URL`）。(2) Firestore がバックエンドの Vertex プロジェクト（`animation-agent`）にバインドされフロント/Auth（`gen-fashion-local`）と名前空間分離 → `firestore_project_id`（Firebase プロジェクト）へ修正。(3) `closetId` が動的 `text` 化で SHARED_CLOSET 検索 0 件 → M2-9 マッピングに keyword 宣言を追加し再シード。修正後、fastapi pytest 59 / adk pytest 28 / flutter clean、M5 コーデ smoke + ブラウザ E2E が `COMPLETED` + **実 Nano Banana 画像**（§8 #2–#4 参照）。同日是正: 埋め込みを `gemini-embedding-001`＋**テキスト埋め込み**（インデックスもクエリも同一空間）に修正し、`--with-embeddings` で 90×768次元 + kNN 意味検索を確認（MD-10 de-risk）。ADK タイムアウトを config 化（45→90）し SSE 上限を 150 に整合 → 主LLM経路で COMPLETED。Prior: 2026-06-15 — **MD（Phase 1a Production Deployment & Hardening）起票**（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-1…MD-14 🟡 In progress）。ローカル検証済みの Phase 1a スタックを Google Cloud へデプロイする計画: Compute Engine ES + Serverless VPC Access connector（ADL-023、M1-3 完了）、フル vector seed（`--with-embeddings`、M3-2）、Cloud Run ×2 + Secret Manager + OIDC（ADL-024、M2-5 ゲート）、Vertex AI 上の Nano Banana 実生成（M4-7/M5-6）、Firebase Hosting（ADL-025）。計画中に判明した配線課題: `ADK_INTERNAL_BASE_URL` が run-session と process-upload で混在（worker ルートは `fastapi-service` 実装だが adapter は ADK URL を参照）→ MD-8 で `FASTAPI_INTERNAL_BASE_URL` を分離。**M6（LINE, Phase 1b）には着手しない。** Prior: 2026-06-14 — M5 完了（`docs/plans/20260612-m5-coordination-flow-accordion-ui.md`）。FastAPI `/sessions`、ADK `/internal/run-session`、`agentEvents` 書き込み、SSE polling stream、Flutter Coordination/Accordion UI は実装済み。review hardening として final SSE drain、cursor event reads、ADK trigger failure compensation、ADK internal-secret guard、selected shared-closet filtering、ADK status sequencing を追加済み。local Docker/API smoke と rendered Flutter Web browser E2E は authenticated `SHARED_CLOSET` session → Accordion event evidence → `COMPLETED` result image まで通過。
-> **ベース:** [req-phase01.md](req-phase01.md)（仕様の source of truth）・[feature-matrix-phase01.md](feature-matrix-phase01.md)（実装状況）
+> **最終同期:** 2026-07-03 — **MK（Assisted Coordinate Mode, Phase 2 Web）実装完了・ローカル検証済み（冒頭の MK note 参照）。** Prior: 2026-06-30 — **Security hardening follow-up（`docs/plans/20260630-security-hardening-followup.md`）で既存構成の防御設定を更新。** Cloud Run → Compute Engine ES は引き続き Direct VPC egress だが、ES VM は network tag `gen-fashion-es` を持ち、`allow-es-from-cloudrun`（priority 800, source `10.146.0.0/20`, tcp:9200）と `deny-es-other-internal`（priority 900, source `10.128.0.0/9`, tcp:9200 deny）で default VPC の broad internal allow を上書きする。ES HTTPS は `verify_certs=False` ではなく、`:9200` で提示される leaf certificate の SHA-256 fingerprint を `ELASTICSEARCH_SSL_ASSERT_FINGERPRINT` で pin する。FastAPI CORS は `CORS_ALLOW_ORIGINS` で Firebase Hosting domains に制限する。GitHub Actions WIF は `RanArino/gen-fashion` の `refs/heads/main` のみに制限し、Firebase Web API key は Hosting domains + localhost dev referrer に制限済み。Prior: 2026-06-27 — **MD Milestone B のプライベート接続を Serverless VPC Access connector → Direct VPC egress に変更（ハッカソン低コスト化、ADL-023 改訂）。** Cloud Run → Compute Engine ES の閉域経路は connector ではなく Direct VPC egress（`--network`/`--subnet` + `--vpc-egress=private-ranges-only`）で実現する。connector のアイドル固定費（最小 e2-micro×2）を排除しつつ「ES VM は外部 IP なし・`tcp:9200` は Cloud Run egress サブネットレンジのみ」という閉域姿勢は維持。ES VM は `pd-standard` 30GB + **静的内部 IP**、停止運用 + 任意の `Asia/Tokyo` 深夜停止スケジュールでコスト最小化。**構成図上は `Serverless VPC Access connector` ノードを削除し、Cloud Run → ES を Direct VPC egress 経路として読み替えること。** Prior: 2026-06-27 — Milestone 0（デプロイ前パッチ）+ Milestone A（GCP 基盤: API 有効化・SA×3 + IAM・Firestore + rules・Firebase + Web app・R2 + Secret Manager）完了（MD-1 ✅ / MD-9 ✅、MD-2 🟡）。Prior: 2026-06-21 — **デプロイ前ローカル実機検証で実バグ3件を発見・修正**（`docs/plans/20260621-md-phase1a-local-verification-checklist.md`）。(1) 内部 worker base-URL 混在が `make dev` でも実害（アップロード→READY が常時 404）→ MD-8 の base-URL 分離ローカル分を先行着手（`FASTAPI_INTERNAL_BASE_URL`）。(2) Firestore がバックエンドの Vertex プロジェクト（`animation-agent`）にバインドされフロント/Auth（`gen-fashion-local`）と名前空間分離 → `firestore_project_id`（Firebase プロジェクト）へ修正。(3) `closetId` が動的 `text` 化で SHARED_CLOSET 検索 0 件 → M2-9 マッピングに keyword 宣言を追加し再シード。修正後、fastapi pytest 59 / adk pytest 28 / flutter clean、M5 コーデ smoke + ブラウザ E2E が `COMPLETED` + **実 Nano Banana 画像**（§8 #2–#4 参照）。同日是正: 埋め込みを `gemini-embedding-001`＋**テキスト埋め込み**（インデックスもクエリも同一空間）に修正し、`--with-embeddings` で 90×768次元 + kNN 意味検索を確認（MD-10 de-risk）。ADK タイムアウトを config 化（45→90）し SSE 上限を 150 に整合 → 主LLM経路で COMPLETED。Prior: 2026-06-15 — **MD（Phase 1a Production Deployment & Hardening）起票**（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-1…MD-14 🟡 In progress）。ローカル検証済みの Phase 1a スタックを Google Cloud へデプロイする計画: Compute Engine ES + Serverless VPC Access connector（ADL-023、M1-3 完了）、フル vector seed（`--with-embeddings`、M3-2）、Cloud Run ×2 + Secret Manager + OIDC（ADL-024、M2-5 ゲート）、Vertex AI 上の Nano Banana 実生成（M4-7/M5-6）、Firebase Hosting（ADL-025）。計画中に判明した配線課題: `ADK_INTERNAL_BASE_URL` が run-session と process-upload で混在（worker ルートは `fastapi-service` 実装だが adapter は ADK URL を参照）→ MD-8 で `FASTAPI_INTERNAL_BASE_URL` を分離。**M6（LINE, Phase 1b）には着手しない。** Prior: 2026-06-14 — M5 完了（`docs/plans/20260612-m5-coordination-flow-accordion-ui.md`）。FastAPI `/sessions`、ADK `/internal/run-session`、`agentEvents` 書き込み、SSE polling stream、Flutter Coordination/Accordion UI は実装済み。review hardening として final SSE drain、cursor event reads、ADK trigger failure compensation、ADK internal-secret guard、selected shared-closet filtering、ADK status sequencing を追加済み。local Docker/API smoke と rendered Flutter Web browser E2E は authenticated `SHARED_CLOSET` session → Accordion event evidence → `COMPLETED` result image まで通過。
+> **ベース:** [req-phase01.md](req-phase01.md) / [req-phase02.md](req-phase02.md)（仕様の source of truth）・[feature-matrix-phase01.md](feature-matrix-phase01.md) / [feature-matrix-phase02.md](feature-matrix-phase02.md)（実装状況）
 > **目的:** アーキテクチャ／システム構成を可視化し、**既に実装済みのコード**と**これから実装予定のコード**の境界を明確に強調する。
 
 ---
@@ -61,9 +74,10 @@ flowchart LR
 | **ME** | Pre-Deployment Experience & Domain Hardening | 1a | 🟩 **Done**（ME-1…ME-7 実装・ローカル検証完了。性別/child 伝播、必須候補選択ゲート、トレース/結果分離、共有/履歴ギャラリー、自分のメタデータ編集。履歴の weather / duplication 拡張は将来。） |
 | **MD** | Phase 1a Production Deployment & Hardening | 1a | 🟨 **WIP（ME gate closed; resume next）**（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-1…MD-14。Milestone 0/A 完了（MD-1/MD-9 ✅）。GCE ES + Cloud Run **Direct VPC egress**（ADL-023、connector 不採用）、フル vector seed、Cloud Run ×2、Secret Manager + OIDC、Vertex AI Nano Banana、Firebase Hosting。） |
 | **MF** | CI/CD（Continuous Delivery） | 1a | ⬜ **Planned（tracking only, no ExecPlan yet）**（MF-1…MF-6。GitHub Actions + Workload Identity Federation で MD の手動デプロイを自動化: CI ゲート（per-service tests + image build）+ CD（Artifact Registry → Cloud Run ×2 + Firebase Hosting）+ デプロイ後スモーク/ロールバック。req §19 / ADL-030–032。**MD 依存**、ExecPlan は MD 完了後。） |
+| **MK** | Assisted Coordinate Mode（Web） | 2 | 🟩 **Done（local, 2026-07-03）**（`docs/plans/20260703-mk-assisted-coordinate-mode.md`、MK-1…MK-8 実装・ローカル検証済み。1-3 own anchor clothes、`search_rakuten` tool + fallback、save suggestion as `INTERESTING`、change to `OWNED`、Interesting READY items reusable in closet Coordinate。live Rakuten 出力も検証済み（403 の原因は `Origin`/`Referer` ヘッダー必須化。Rakuten 不通時は anchor-only degradation）。） |
 | **M6** | LINE チャネル統合 | 1b | ⬜ **Not started**（ファイル無し） |
 
-**現在地:** Phase 1a は **ME（ME-1…ME-7）までローカル検証完了**。ME-3/ME-6 の must-fix は閉じ、次は **MD（本番デプロイ）を再開**する。MD 完了後に **MF（CI/CD）** を別 ExecPlan として起票し、MD の手動デプロイを GitHub Actions + WIF で自動化する（req §19、追跡のみ）。履歴の weather / duplication 拡張は将来。Phase 1b の LINE / LIFF / Rakuten（M6）には着手しない。
+**現在地:** Phase 1a は **ME（ME-1…ME-7）までローカル検証完了**。ME-3/ME-6 の must-fix は閉じ、次は **MD（本番デプロイ）を再開**する。MD 完了後に **MF（CI/CD）** を別 ExecPlan として起票し、MD の手動デプロイを GitHub Actions + WIF で自動化する（req §19、追跡のみ）。履歴の weather / duplication 拡張は将来。Phase 2 Web の Assisted Coordinate（MK）は実装・ローカル検証済み（live Rakuten 込み）。Phase 1b の LINE / LIFF（M6）には着手しない。
 
 **ME 実装追加（implemented and locally verified）:**
 - **入力アダプタ（routes）:** `POST /sessions/{id}/select`（候補確定 → generate フェーズ起動）、`GET /sessions`（認証ユーザーの完了履歴、`completedAt` 降順）、`GET /shared-closets` ＋ `GET /shared-closets/{closetId}/items`（共有クローゼット閲覧、読み取り専用・バックエンド経由）、`PATCH /closet/items/{id}`（自分のアイテムの検索用メタデータ編集、ADL-028）。
@@ -82,14 +96,17 @@ flowchart TB
   subgraph client["クライアント"]
     flutter_auth["Flutter Web: 認証 + クローゼット管理UI<br/>(flutter-web-app/lib/auth, /closet)"]
     flutter_acc["Flutter Web: Coordination + Accordion + 結果UI + History<br/>(M5/ME Done)"]
+    flutter_assisted["Flutter Web: Assisted Coordinate + ownership UI<br/>(MK Done local)"]
     lineapp["LINE App / LIFF (M6)"]
   end
 
   subgraph cloudrun["Google Cloud Run"]
     subgraph fastapi["fastapi-service (Python/FastAPI) — 稼働中"]
       r_closet["/closet/* + PATCH metadata (M2/ME)"]
+      r_import["/closet/import-suggestion + ownership status (MK)"]
       r_internal["/internal/tasks/process-upload (M2-5)"]
       r_session["/sessions/* (create/list/source/select/stream)"]
+      r_assist["/sessions/{id}/assist (MK)"]
       r_shared["/shared-closets/* gallery reads"]
       r_line["LINE Webhook ルート (M6)"]
     end
@@ -105,7 +122,7 @@ flowchart TB
     ct["Cloud Tasks / LocalHttpTaskQueue"]
     gem_an["Gemini 2.0 Flash (画像分析・Embedding)"]
     gem_img["Nano Banana (コーデ画像生成)"]
-    rakuten["楽天 Ichiba API (M6)"]
+    rakuten["Rakuten Ichiba API / Affiliate<br/>(MK adapter/tool implemented; live verified; M6 LINE later)"]
     fauth["Firebase Authentication"]
     shared_seed["scripts/seed_shared_closet/run_seed.py<br/>(live seed 済み: 3クローゼット210件; フル vector seed は deployment 待ち)"]
   end
@@ -117,10 +134,16 @@ flowchart TB
   flutter_acc -.->|"SSE (M5-9)"| r_session
   flutter_acc -->|"history reads (ME-7)"| r_session
   flutter_acc -->|"gallery reads"| r_shared
+  flutter_assisted -.->|"assist proposal + selection"| r_assist
+  flutter_assisted -.->|"save suggested item"| r_import
+  flutter_assisted -->|"ownership updates"| r_closet
   lineapp -.-> r_line
 
   r_closet --> fs
   r_closet --> r2
+  r_import -.-> fs
+  r_import -.-> r2
+  r_import -.-> es
   r_closet -->|"enqueue"| ct
   ct --> r_internal
   r_internal --> gem_an
@@ -131,6 +154,7 @@ flowchart TB
   shared_seed -.-> fs
 
   r_session -.-> adk
+  r_assist -.-> adk
   r_shared --> es
   r_shared --> fs
   r_line -.-> ct
@@ -145,10 +169,10 @@ flowchart TB
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
 
-  class flutter_auth,flutter_acc,r_closet,r_internal,r_session,r_shared,fs,r2,ct,gem_an,fauth,shared_seed,adk,orch done;
+  class flutter_auth,flutter_acc,flutter_assisted,r_closet,r_import,r_internal,r_session,r_assist,r_shared,fs,r2,ct,gem_an,fauth,shared_seed,adk,orch,rakuten done;
   class es,gem_img wip;
   class r_line stub;
-  class lineapp,rakuten todo;
+  class lineapp todo;
 ```
 
 **読み取りポイント:**
@@ -157,7 +181,8 @@ flowchart TB
 - 🟩 **エージェント中核（M4）**: `adk-agent-service` は Python ADK で実装済み・ローカル稼働（`adk web` / `adk api_server`、コンテナも healthy）。`search_closet` は ES の実データ（M3 シード含む）を返し、`style_synthesizer` は MinIO/R2 に結果画像を保存する。ADK が自前で発行した署名付き MinIO/R2 URL は内部 storage key として再取得できるため、Compose コンテナ内でも `localhost:9000` URL に依存しない。
 - 🟩 **Nano Banana 画像生成**: `style_synthesizer` の生成呼び出しは実装済み。**2026-06-21 のローカル検証で Vertex AI（SA = プロジェクト `animation-agent`）の `gemini-2.5-flash-image` で実生成を確認**（コーデ画像 ~1.15 MB、`modelUsed=gemini-2.5-flash-image`、collage fallback ではない）。以前の「ローカルは free-tier quota の都合で collage のみ」という制約は解消。本番（MD-11）はモデル可用リージョン + 課金で再確認する。
 - 🟩 **M5 Done**: `/sessions/*`、ADK `/internal/run-session`、`agentEvents` 書き込み、SSE、Accordion UI は実装済み。review hardening で SSE terminal race、orphaned `SEARCHING`、unbounded stream、unprotected ADK internal route、shared-closet picker filtering、ADK/FastAPI status-sequence mismatch を修正済み。local API/SSE smoke と rendered browser E2E は authenticated `SHARED_CLOSET` session → `COMPLETED` result まで通過。
-- ⬜ **未着手**: LINE / LIFF / 楽天。
+- 🟩 **MK Done (local)**: Assisted Coordinate は実装済み。`/sessions/{id}/assist`、`/closet/import-suggestion`、Rakuten `search_rakuten` tool + deterministic fallback、closet `ownershipStatus`（`INTERESTING` / `OWNED`）が Firestore / ES / Flutter UI まで配線済み。Rakuten API 不通時は anchor/closet-only 提案へ degrade し、セッションを ERROR にしない。live Rakuten 出力も `--require-rakuten` smoke で検証済み（20260701 endpoint は `Origin`/`Referer` ヘッダー必須 — `RAKUTEN_APPLICATION_URL` から送出）。
+- ⬜ **未着手**: LINE / LIFF。
 - 🟨 ES はローカル Docker では動作。GCE VM + VPC + Cloud Run プライベート接続はデプロイ期に延期（M1-3）。
 
 ---
@@ -170,8 +195,10 @@ req §5 / §6 の Ports & Adapters を、実コードの状態で塗り分けた
 flowchart LR
   subgraph in["Input Adapters (handlers/)"]
     h_closet["closet_routes + PATCH metadata (M2/ME)"]
+    h_import["closet_routes import-suggestion + ownership (MK)"]
     h_internal["internal_routes /process-upload (M2-5)"]
     h_session["session_routes create/list/source/select/stream (M5/ME)"]
+    h_assist["session_routes assist mode (MK)"]
     h_shared["shared_closet_routes list/items (ME)"]
     h_line["LINE webhook (M6)"]
   end
@@ -184,6 +211,8 @@ flowchart LR
       u4["DeleteClosetItem (6.10)"]
       u5["GetDownloadUrl (追加)"]
       u6["UpdateClosetItemMetadata (ME)"]
+      u7["ImportSuggestedClosetItem (MK)"]
+      u8["UpdateOwnershipStatus (MK)"]
     end
     subgraph uc_style["styling/"]
       s1["CreateSession (6.11)"]
@@ -193,6 +222,7 @@ flowchart LR
       s5["GenerateCoordinate (6.5)"]
       s6["SelectCandidates (ME)"]
       s7["SharedClosetGallery (ME)"]
+      s8["StartAssistedCoordinate (MK)"]
     end
   end
 
@@ -207,11 +237,14 @@ flowchart LR
     p8["ImageGenerationPort → image_generation_stub"]
     p9["LineReplyPort → LineReplyAdapter"]
     p10["SharedClosetGalleryPort → SharedClosetSearchAdapter"]
+    p11["RakutenSearchPort / search_rakuten tool (MK)"]
   end
 
-  h_closet --> u1 & u2 & u4 & u5 & u6
+  h_closet --> u1 & u2 & u4 & u5 & u6 & u8
+  h_import --> u7
   h_internal --> u3
   h_session --> s1 & s2 & s6
+  h_assist --> s8
   h_shared --> s7
   u1 --> p3 & p1
   u2 --> p1 & p4
@@ -219,25 +252,28 @@ flowchart LR
   u4 --> p1 & p2 & p3
   u5 --> p3
   u6 --> p1 & p2
+  u7 --> p1 & p2 & p3 & p6
+  u8 --> p1 & p2
   s1 --> p6
   s3 --> p5 & p6
   s4 --> p7 & p2
   s5 --> p8 & p6
   s6 --> p6
   s7 --> p10
+  s8 --> p1 & p6 & p11
 
   classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20;
   classDef wip fill:#fff3cd,stroke:#f9a825,color:#795548;
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
 
-  class h_closet,h_internal,h_session,h_shared,u1,u2,u3,u4,u5,u6,s1,s2,s3,s4,s5,s6,s7,p1,p3,p4,p5,p6,p10 done;
+  class h_closet,h_import,h_internal,h_session,h_assist,h_shared,u1,u2,u3,u4,u5,u6,u7,u8,s1,s2,s3,s4,s5,s6,s7,s8,p1,p3,p4,p5,p6,p10,p11 done;
   class p2,p7 wip;
   class p8 stub;
   class h_line,p9 todo;
 ```
 
-> `ClothingSearchPort`(p7) は `SharedClosetSearchAdapter` が実装済み（署名付き共有画像 URL + attribution 返却）だが、`ClosetSearchAdapter` / `RakutenItemAdapter` は未作成（⬜）のため全体としては 🟨。`EmbeddingSearchPort`(p2) はキーワード検索まで実装済みだがベクトル/ハイブリッド検索の本番運用は ES デプロイ（M1-3）待ちで 🟨。
+> `ClothingSearchPort`(p7) は `SharedClosetSearchAdapter` が実装済み（署名付き共有画像 URL + attribution 返却）だが、`ClosetSearchAdapter` / `RakutenItemAdapter` は未作成（⬜）のため全体としては 🟨。MK の `search_rakuten` / Rakuten adapter（p11）は ADK 側に実装済み（credentials 無効時は unavailable として degrade）。`EmbeddingSearchPort`(p2) はキーワード検索まで実装済みだがベクトル/ハイブリッド検索の本番運用は ES デプロイ（M1-3）待ちで 🟨。
 
 ---
 
@@ -255,15 +291,17 @@ flowchart TB
   t2["search_closet (M4-6)"]
   t3["style_synthesizer (M4-7)"]
   t4["ask_preference (M4-8)"]
+  t5["search_rakuten (MK Done local)"]
 
   orch --> closet
   orch --> styling
   closet --> reg
   styling --> reg
-  reg --> t1 & t2 & t3 & t4
+  reg --> t1 & t2 & t3 & t4 & t5
 
   classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20;
-  class orch,closet,styling,reg,t1,t2,t3,t4 done;
+  classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
+  class orch,closet,styling,reg,t1,t2,t3,t4,t5 done;
 ```
 
 ---
@@ -381,16 +419,17 @@ flowchart LR
   M4 --> M5
   M5 --> ME["ME プレデプロイUX/硬化 (Phase 1a)"]
   ME --> MD["MD 本番デプロイ (Phase 1a)"]
+  M5 --> MK["MK Assisted Coordinate (Phase 2 Web)"]
   M5 --> M6["M6 LINE統合 (Phase 1b)"]
 
   classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20;
   classDef wip fill:#fff3cd,stroke:#f9a825,color:#795548;
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
-  class M0,M2,M3,M4,M5 done; class M1,ME,MD wip; class M6 todo;
+  class M0,M2,M3,M4,M5,MK done; class M1,ME,MD wip; class M6 todo;
 ```
 
-**次の一手:** ME-1…ME-7 と must-fix（ME-3/ME-6）は完了したため、**MD（`docs/plans/20260615-md-phase1a-production-deployment.md`）を再開する**。履歴の weather / duplication 拡張と M6（LINE / LIFF / Rakuten, Phase 1b）には着手しない。
+**次の一手:** ME-1…ME-7 と must-fix（ME-3/ME-6）は完了したため、**MD（`docs/plans/20260615-md-phase1a-production-deployment.md`）を再開する**。MK（Assisted Coordinate）は実装・ローカル検証済み（live Rakuten credentials のみ未検証）。履歴の weather / duplication 拡張と M6（LINE / LIFF, Phase 1b）には着手しない。
 
 ---
 

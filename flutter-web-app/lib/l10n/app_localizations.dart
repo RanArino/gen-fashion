@@ -128,11 +128,17 @@ abstract class AppLocalizations {
   /// **'Shared'**
   String get navShared;
 
-  /// No description provided for @sharedClosetAbout.
+  /// No description provided for @appHelpTooltip.
   ///
   /// In en, this message translates to:
-  /// **'About shared closet'**
-  String get sharedClosetAbout;
+  /// **'How this app works'**
+  String get appHelpTooltip;
+
+  /// No description provided for @appHelpTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'How this app works'**
+  String get appHelpTitle;
 
   /// No description provided for @signOut.
   ///
@@ -199,6 +205,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Closet'**
   String get closetTitle;
+
+  /// No description provided for @closetHelpPurpose.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Closet stores photos of clothes you own or are considering, up to 20 items. Coordinate uses these items to build outfits.'**
+  String get closetHelpPurpose;
+
+  /// No description provided for @closetHelpUpload.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap \"Add item\" to upload a photo. The app analyzes it in the background and fills in category, color, season, and tags automatically; edit them anytime from the pencil icon.'**
+  String get closetHelpUpload;
+
+  /// No description provided for @closetHelpFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the filters above to narrow the grid: \"Owned\" vs \"Interesting\" shows items you already have versus saved suggestions, and the category chips narrow further within the selected ownership filter.'**
+  String get closetHelpFilters;
+
+  /// No description provided for @emptyClosetHelpHint.
+  ///
+  /// In en, this message translates to:
+  /// **'New here? Tap the ⓘ icon above for help.'**
+  String get emptyClosetHelpHint;
 
   /// No description provided for @addItem.
   ///
@@ -392,6 +422,156 @@ abstract class AppLocalizations {
   /// **'Coordination'**
   String get coordinationTitle;
 
+  /// No description provided for @helpCoordinateIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a styling mode and a clothing source, then generate a complete outfit.'**
+  String get helpCoordinateIntro;
+
+  /// No description provided for @modeStandard.
+  ///
+  /// In en, this message translates to:
+  /// **'Closet Styling'**
+  String get modeStandard;
+
+  /// No description provided for @modeAssisted.
+  ///
+  /// In en, this message translates to:
+  /// **'Style & Shop'**
+  String get modeAssisted;
+
+  /// No description provided for @modeStandardHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Creates a full outfit using only your closet items.'**
+  String get modeStandardHint;
+
+  /// No description provided for @modeAssistedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick up to 3 of your own clothes; AI styles a full outfit and suggests items you can buy on Rakuten.'**
+  String get modeAssistedHint;
+
+  /// No description provided for @analyzingItem.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing...'**
+  String get analyzingItem;
+
+  /// No description provided for @anchorItemsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Your clothes (up to 3)'**
+  String get anchorItemsLabel;
+
+  /// No description provided for @anchorLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'You can select up to 3 items.'**
+  String get anchorLimitReached;
+
+  /// No description provided for @noReadyAnchorItems.
+  ///
+  /// In en, this message translates to:
+  /// **'No ready closet items yet. Upload one to begin.'**
+  String get noReadyAnchorItems;
+
+  /// No description provided for @sourceRakuten.
+  ///
+  /// In en, this message translates to:
+  /// **'Rakuten'**
+  String get sourceRakuten;
+
+  /// No description provided for @addToCloset.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to closet'**
+  String get addToCloset;
+
+  /// No description provided for @savedAsInteresting.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved as Interesting'**
+  String get savedAsInteresting;
+
+  /// No description provided for @importFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Save failed: {error}'**
+  String importFailed(Object error);
+
+  /// No description provided for @openProductPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Open product page'**
+  String get openProductPage;
+
+  /// No description provided for @saveInterestingDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save Rakuten items to your closet?'**
+  String get saveInterestingDialogTitle;
+
+  /// No description provided for @saveInterestingDialogBody.
+  ///
+  /// In en, this message translates to:
+  /// **'These Rakuten items were part of this outfit. Save the ones you like as \"Interesting\" so you can find them again.'**
+  String get saveInterestingDialogBody;
+
+  /// No description provided for @saveInterestingSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get saveInterestingSkip;
+
+  /// No description provided for @saveInterestingConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Save selected'**
+  String get saveInterestingConfirm;
+
+  /// No description provided for @ownership.
+  ///
+  /// In en, this message translates to:
+  /// **'Ownership'**
+  String get ownership;
+
+  /// No description provided for @ownershipOwned.
+  ///
+  /// In en, this message translates to:
+  /// **'Owned'**
+  String get ownershipOwned;
+
+  /// No description provided for @ownershipInteresting.
+  ///
+  /// In en, this message translates to:
+  /// **'Interesting'**
+  String get ownershipInteresting;
+
+  /// No description provided for @ownershipOwnedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Items you already own.'**
+  String get ownershipOwnedHint;
+
+  /// No description provided for @ownershipInterestingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved suggestions you haven\'t purchased yet.'**
+  String get ownershipInterestingHint;
+
+  /// No description provided for @filterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get filterAll;
+
+  /// No description provided for @noItemsMatchFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'No items match the selected filters.'**
+  String get noItemsMatchFilter;
+
   /// No description provided for @sourceShared.
   ///
   /// In en, this message translates to:
@@ -403,6 +583,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Mine'**
   String get sourceMine;
+
+  /// No description provided for @sourceSharedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use demo items from our shared closet — no upload needed.'**
+  String get sourceSharedHint;
+
+  /// No description provided for @sourceMineHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use items from your own closet.'**
+  String get sourceMineHint;
 
   /// No description provided for @sharedCloset.
   ///
@@ -590,6 +782,30 @@ abstract class AppLocalizations {
   /// **'{count} items found'**
   String traceItemsFound(int count);
 
+  /// No description provided for @traceQuery.
+  ///
+  /// In en, this message translates to:
+  /// **'Query'**
+  String get traceQuery;
+
+  /// No description provided for @traceShopName.
+  ///
+  /// In en, this message translates to:
+  /// **'Shop'**
+  String get traceShopName;
+
+  /// No description provided for @traceSearchingRakuten.
+  ///
+  /// In en, this message translates to:
+  /// **'{agentName} is searching Rakuten'**
+  String traceSearchingRakuten(Object agentName);
+
+  /// No description provided for @traceSearchedRakuten.
+  ///
+  /// In en, this message translates to:
+  /// **'{agentName} searched Rakuten - {count} candidates'**
+  String traceSearchedRakuten(Object agentName, Object count);
+
   /// No description provided for @historyLoadFailed.
   ///
   /// In en, this message translates to:
@@ -601,6 +817,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No completed coordinates yet.'**
   String get historyEmpty;
+
+  /// No description provided for @helpHistoryBody.
+  ///
+  /// In en, this message translates to:
+  /// **'History lists the outfits you\'ve already generated, newest first.'**
+  String get helpHistoryBody;
 
   /// No description provided for @dateUnavailable.
   ///
@@ -629,7 +851,7 @@ abstract class AppLocalizations {
   /// No description provided for @sharedAboutBody.
   ///
   /// In en, this message translates to:
-  /// **'Shared closet lets you try coordination without uploading clothes.'**
+  /// **'The Shared closet contains sample clothing photos so you can try a full styling demo right away, without uploading any of your own items first.'**
   String get sharedAboutBody;
 
   /// No description provided for @sharedAboutDataset.

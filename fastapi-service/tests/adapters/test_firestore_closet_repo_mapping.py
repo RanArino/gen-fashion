@@ -1,7 +1,13 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 from app.adapters.firestore_closet_repo import FirestoreClosetRepository
-from app.domain.closet import ClothingItem, ClothingItemId, ClothingItemStatus, ClothingTag
+from app.domain.closet import (
+    ClosetOwnershipStatus,
+    ClothingItem,
+    ClothingItemId,
+    ClothingItemStatus,
+    ClothingTag,
+)
 
 
 class FakeParent:
@@ -53,6 +59,50 @@ def test_firestore_document_mapping_round_trips_domain_shape():
     assert restored.category == "shirt"
     assert restored.colors == ["blue"]
     assert restored.gender == "common"
+
+
+def test_firestore_document_without_ownership_status_defaults_to_owned():
+    item_id = uuid4()
+    data = {
+        "userId": "user-123",
+        "imageUrl": f"user-123/closet/{item_id}.jpg",
+        "status": "READY",
+    }
+
+    restored = FirestoreClosetRepository._from_snapshot(FakeSnapshot(str(item_id), data))
+
+    assert restored.ownership_status == ClosetOwnershipStatus.OWNED
+    assert restored.origin is None
+
+
+def test_firestore_interesting_rakuten_item_round_trips():
+    item_id = uuid4()
+    item = ClothingItem(
+        id=ClothingItemId(item_id),
+        user_id="user-123",
+        image_url=f"user-123/closet/{item_id}.jpg",
+        tags=[],
+        status=ClothingItemStatus.READY,
+        ownership_status=ClosetOwnershipStatus.INTERESTING,
+        origin="RAKUTEN",
+        external_item_id="rakuten:shop:1001",
+        external_url="https://item.rakuten.co.jp/shop/1001",
+        affiliate_url="https://hb.afl.rakuten.co.jp/xyz",
+        price=2980.0,
+        brand_or_shop="Shop Name",
+    )
+
+    document = FirestoreClosetRepository._to_document(item)
+    restored = FirestoreClosetRepository._from_snapshot(FakeSnapshot(str(item_id), document))
+
+    assert document["ownershipStatus"] == "INTERESTING"
+    assert document["origin"] == "RAKUTEN"
+    assert restored.ownership_status == ClosetOwnershipStatus.INTERESTING
+    assert restored.external_item_id == "rakuten:shop:1001"
+    assert restored.external_url == "https://item.rakuten.co.jp/shop/1001"
+    assert restored.affiliate_url == "https://hb.afl.rakuten.co.jp/xyz"
+    assert restored.price == 2980.0
+    assert restored.brand_or_shop == "Shop Name"
 
 
 def test_firestore_processing_document_omits_embedding_id():

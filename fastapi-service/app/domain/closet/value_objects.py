@@ -11,6 +11,16 @@ class ClothingItemStatus(str, Enum):
     ERROR = "ERROR"
 
 
+class ClosetOwnershipStatus(str, Enum):
+    """Ownership classification, independent of analysis status (MK-6).
+
+    OWNED: uploaded or purchased by the user. INTERESTING: saved from an
+    agent suggestion, not yet owned.
+    """
+    OWNED = "OWNED"
+    INTERESTING = "INTERESTING"
+
+
 @dataclass(frozen=True)
 class ClothingItemId(ValueObject):
     """Unique identifier for a clothing item."""

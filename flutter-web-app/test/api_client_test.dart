@@ -191,6 +191,70 @@ void main() {
     expect(messages.single.data['agentName'], 'ClosetAgent');
   });
 
+  test('assistSession posts anchors and preference to /assist', () async {
+    late Map<String, dynamic> body;
+    final mock = MockClient((req) async {
+      body = jsonDecode(req.body) as Map<String, dynamic>;
+      expect(req.url.path, '/sessions/session-1/assist');
+      expect(req.headers['Content-Type'], contains('application/json'));
+      return http.Response(
+        jsonEncode({
+          'session_id': 'session-1',
+          'status': 'SEARCHING',
+          'source': 'CLOSET',
+        }),
+        202,
+      );
+    });
+
+    final selected = await _client(mock).assistSession(
+      sessionId: 'session-1',
+      anchorItemIds: ['anchor-1', 'anchor-2'],
+      userPreference: {'style': 'clean'},
+    );
+
+    expect(body['anchorItemIds'], ['anchor-1', 'anchor-2']);
+    expect(body['userPreference'], {'style': 'clean'});
+    expect(selected.status, 'SEARCHING');
+    expect(selected.source, 'CLOSET');
+  });
+
+  test('importSuggestedItem posts candidate and returns new item id', () async {
+    late Map<String, dynamic> body;
+    final mock = MockClient((req) async {
+      body = jsonDecode(req.body) as Map<String, dynamic>;
+      expect(req.url.path, '/closet/import-suggestion');
+      return http.Response(
+        jsonEncode({
+          'item_id': 'new-item',
+          'status': 'READY',
+          'ownershipStatus': 'INTERESTING',
+        }),
+        200,
+      );
+    });
+
+    final itemId = await _client(mock).importSuggestedItem(
+      sessionId: 'session-1',
+      candidateId: 'rakuten:shop:1001',
+    );
+
+    expect(body['sessionId'], 'session-1');
+    expect(body['candidateId'], 'rakuten:shop:1001');
+    expect(itemId, 'new-item');
+  });
+
+  test('importSuggestedItem surfaces API errors', () async {
+    final mock = MockClient((req) async => http.Response('bad', 400));
+    expect(
+      () => _client(mock).importSuggestedItem(
+        sessionId: 'session-1',
+        candidateId: 'x',
+      ),
+      throwsA(isA<ApiException>()),
+    );
+  });
+
   test('selectCandidates posts the explicit item selection', () async {
     late Map<String, dynamic> body;
     final mock = MockClient((req) async {

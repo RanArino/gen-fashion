@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../auth/auth_service.dart';
@@ -8,8 +9,15 @@ import '../coordination/coordination_screen.dart';
 import '../history/history_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../locale/locale_controller.dart';
-import '../shared/attribution.dart';
+import '../shared/help_dialog.dart';
 import '../theme/components.dart';
+
+const _kSectionIdByTabIndex = [
+  helpSectionCloset,
+  helpSectionCoordinate,
+  helpSectionHistory,
+  helpSectionShared,
+];
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.uid});
@@ -20,9 +28,33 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
   int _index = AppConfig.e2eAutoRun ? 1 : 0;
   final AuthService _auth = AuthService();
+  bool _helpNudgeDismissed = false;
+
+  late final AnimationController _nudgeController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _closetStream =
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.uid)
+          .collection('closet')
+          .limit(1)
+          .snapshots();
+
+  late final Future<DocumentSnapshot<Map<String, dynamic>>> _userDocFuture =
+      FirebaseFirestore.instance.collection('users').doc(widget.uid).get();
+
+  @override
+  void dispose() {
+    _nudgeController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,10 +70,19 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text(l10n.appTitle),
         actions: [
           _LanguageSwitcher(uid: widget.uid),
-          IconButton(
-            tooltip: l10n.sharedClosetAbout,
-            onPressed: () => showSharedClosetAboutDialog(context),
-            icon: const Icon(Icons.info_outline),
+          _HelpIconButton(
+            tooltip: l10n.appHelpTooltip,
+            nudgeController: _nudgeController,
+            dismissed: _helpNudgeDismissed,
+            closetStream: _closetStream,
+            userDocFuture: _userDocFuture,
+            onPressed: () {
+              setState(() => _helpNudgeDismissed = true);
+              showAppHelpDialog(
+                context,
+                initialSection: _kSectionIdByTabIndex[_index],
+              );
+            },
           ),
           IconButton(
             tooltip: l10n.signOut,
@@ -81,6 +122,65 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+/// Header help icon. Pulses (via [nudgeController]) whenever the user's
+/// closet is empty or their account was created in the last 24h, so a new
+/// user is guided toward the one place all page explanations live. Stops
+/// pulsing for the rest of this session once [dismissed] (tapped).
+class _HelpIconButton extends StatelessWidget {
+  const _HelpIconButton({
+    required this.tooltip,
+    required this.nudgeController,
+    required this.dismissed,
+    required this.closetStream,
+    required this.userDocFuture,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final AnimationController nudgeController;
+  final bool dismissed;
+  final Stream<QuerySnapshot<Map<String, dynamic>>> closetStream;
+  final Future<DocumentSnapshot<Map<String, dynamic>>> userDocFuture;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: const Icon(Icons.info_outline),
+    );
+    if (dismissed) return icon;
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: closetStream,
+      builder: (context, closetSnap) {
+        final closetEmpty = closetSnap.data?.docs.isEmpty ?? true;
+        return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          future: userDocFuture,
+          builder: (context, userSnap) {
+            final createdAt =
+                (userSnap.data?.data()?['createdAt'] as Timestamp?)?.toDate();
+            final recentSignup = createdAt != null &&
+                DateTime.now().difference(createdAt) <
+                    const Duration(hours: 24);
+            if (!closetEmpty && !recentSignup) return icon;
+            return ScaleTransition(
+              scale: Tween<double>(begin: 1.0, end: 1.15).animate(
+                CurvedAnimation(
+                  parent: nudgeController,
+                  curve: Curves.easeInOut,
+                ),
+              ),
+              child: icon,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 class _LanguageSwitcher extends StatelessWidget {
   const _LanguageSwitcher({required this.uid});
 
@@ -90,6 +190,7 @@ class _LanguageSwitcher extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final controller = LocaleScope.of(context);
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.only(right: 4),
       child: PopupMenuButton<String>(
@@ -100,12 +201,23 @@ class _LanguageSwitcher extends StatelessWidget {
           PopupMenuItem(value: 'ja', child: Text(l10n.languageJapanese)),
           PopupMenuItem(value: 'en', child: Text(l10n.languageEnglish)),
         ],
-        child: Chip(
-          avatar: const Icon(Icons.language, size: 16),
-          label: Text(
-            controller.languageCode == 'en'
-                ? l10n.languageEnglish
-                : l10n.languageJapanese,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.language, size: 16, color: color),
+              const SizedBox(width: 4),
+              Text(
+                controller.languageCode == 'en'
+                    ? l10n.languageEnglish
+                    : l10n.languageJapanese,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(color: color),
+              ),
+            ],
           ),
         ),
       ),

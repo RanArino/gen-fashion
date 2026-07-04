@@ -5,7 +5,14 @@ import pytest
 from google.cloud import firestore
 
 from app.adapters.firestore_styling_repo import FirestoreStylingRepository
-from app.domain.styling import ClothingSource, StyleSession, StyleSessionId, StyleSessionState, UserPreference
+from app.domain.styling import (
+    ClothingSource,
+    CoordinationMode,
+    StyleSession,
+    StyleSessionId,
+    StyleSessionState,
+    UserPreference,
+)
 
 
 class FakeSnapshot:
@@ -54,6 +61,40 @@ def test_session_document_mapping_round_trips_m5_fields():
     assert restored.user_preference.gender == "female"
     assert restored.user_preference.language == "en"
     assert restored.completed_at == now
+
+
+def test_session_document_mapping_round_trips_assisted_fields():
+    session_id = uuid4()
+    anchors = [{"item_id": "item-1", "source": "CLOSET", "anchor": True}]
+    session = StyleSession(
+        id=StyleSessionId(session_id),
+        user_id="user-123",
+        state=StyleSessionState.SEARCHING,
+        clothing_source=ClothingSource.CLOSET,
+        coordination_mode=CoordinationMode.ASSISTED,
+        anchor_items=anchors,
+    )
+
+    data = FirestoreStylingRepository._to_document(session)
+    restored = FirestoreStylingRepository._from_snapshot(FakeSnapshot(str(session_id), data))
+
+    assert data["coordinationMode"] == "ASSISTED"
+    assert data["anchorItems"] == anchors
+    assert restored.coordination_mode == CoordinationMode.ASSISTED
+    assert restored.anchor_items == anchors
+
+
+def test_session_document_without_mode_defaults_to_standard():
+    session_id = uuid4()
+    restored = FirestoreStylingRepository._from_snapshot(
+        FakeSnapshot(
+            str(session_id),
+            {"userId": "user-123", "status": "SOURCE_SELECTING", "source": "UNSET"},
+        )
+    )
+
+    assert restored.coordination_mode == CoordinationMode.STANDARD
+    assert restored.anchor_items == []
 
 
 class FakeQuery:

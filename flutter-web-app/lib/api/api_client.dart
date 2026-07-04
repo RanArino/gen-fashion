@@ -171,6 +171,48 @@ class ApiClient {
     );
   }
 
+  /// `POST /sessions/{id}/assist` — Assisted Coordinate from 1..3 own anchors.
+  Future<StyleSessionResponse> assistSession({
+    required String sessionId,
+    required List<String> anchorItemIds,
+    required Map<String, String> userPreference,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/sessions/$sessionId/assist');
+    final res = await _http.post(
+      uri,
+      headers: await _jsonHeaders(),
+      body: jsonEncode({
+        'anchorItemIds': anchorItemIds,
+        'userPreference': userPreference,
+      }),
+    );
+    if (res.statusCode != 200 && res.statusCode != 202) {
+      throw ApiException(res.statusCode, res.body);
+    }
+    return StyleSessionResponse.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  /// `POST /closet/import-suggestion` — save a proposed Rakuten suggestion to
+  /// the closet as Interesting. Returns the new closet item id.
+  Future<String> importSuggestedItem({
+    required String sessionId,
+    required String candidateId,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/closet/import-suggestion');
+    final res = await _http.post(
+      uri,
+      headers: await _jsonHeaders(),
+      body: jsonEncode({'sessionId': sessionId, 'candidateId': candidateId}),
+    );
+    if (res.statusCode != 200) {
+      throw ApiException(res.statusCode, res.body);
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return body['item_id'] as String;
+  }
+
   Future<StyleSessionResponse> selectCandidates({
     required String sessionId,
     required List<String> selectedItemIds,

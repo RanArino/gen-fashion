@@ -4,7 +4,13 @@ from uuid import UUID
 from google.cloud import firestore
 from app.ports import ClosetRepositoryPort
 from app.config import get_settings
-from app.domain.closet import ClothingItem, ClothingItemId, ClothingItemStatus, ClothingTag
+from app.domain.closet import (
+    ClosetOwnershipStatus,
+    ClothingItem,
+    ClothingItemId,
+    ClothingItemStatus,
+    ClothingTag,
+)
 from app.domain.closet.value_objects import ImageEmbedding
 
 
@@ -45,6 +51,13 @@ class FirestoreClosetRepository(ClosetRepositoryPort):
             "gender": item.gender,
             "tags": FirestoreClosetRepository._tag_values(item.tags),
             "embeddingId": str(item.id) if item.status == ClothingItemStatus.READY else None,
+            "ownershipStatus": item.ownership_status.value,
+            "origin": item.origin,
+            "externalItemId": item.external_item_id,
+            "externalUrl": item.external_url,
+            "affiliateUrl": item.affiliate_url,
+            "price": item.price,
+            "brandOrShop": item.brand_or_shop,
             "createdAt": item.created_at,
             "updatedAt": item.updated_at,
         }
@@ -84,6 +97,16 @@ class FirestoreClosetRepository(ClosetRepositoryPort):
             gender=data.get("gender"),
             created_at=FirestoreClosetRepository._parse_datetime(data.get("createdAt")),
             updated_at=FirestoreClosetRepository._parse_datetime(data.get("updatedAt")),
+            # Pre-MK documents have no ownershipStatus; they are user uploads.
+            ownership_status=ClosetOwnershipStatus(
+                data.get("ownershipStatus", ClosetOwnershipStatus.OWNED)
+            ),
+            origin=data.get("origin"),
+            external_item_id=data.get("externalItemId"),
+            external_url=data.get("externalUrl"),
+            affiliate_url=data.get("affiliateUrl"),
+            price=data.get("price"),
+            brand_or_shop=data.get("brandOrShop"),
         )
 
     async def create(self, item: ClothingItem) -> None:
