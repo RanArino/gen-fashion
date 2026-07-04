@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_service.dart';
@@ -441,9 +442,29 @@ class ClosetCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (item.status == ItemStatus.ready) ...[
-                  Text(
-                    item.category ?? l10n.unknown,
-                    style: Theme.of(context).textTheme.titleSmall,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.category ?? l10n.unknown,
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                      if (item.ownership == ItemOwnership.interesting &&
+                          item.productUrl != null)
+                        IconButton(
+                          tooltip: l10n.openProductPage,
+                          iconSize: 18,
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => launchUrl(
+                            Uri.parse(item.productUrl!),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          icon: const Icon(Icons.open_in_new),
+                        ),
+                    ],
                   ),
                   if (item.tags.isNotEmpty)
                     Text(

@@ -31,6 +31,7 @@ class ClosetItem {
     this.ownership = ItemOwnership.owned,
     this.origin,
     this.externalUrl,
+    this.affiliateUrl,
     this.price,
     this.category,
     this.tags = const [],
@@ -45,6 +46,7 @@ class ClosetItem {
   final ItemOwnership ownership;
   final String? origin;
   final String? externalUrl;
+  final String? affiliateUrl;
   final num? price;
   final String? category;
   final List<String> tags;
@@ -52,6 +54,9 @@ class ClosetItem {
   final String? season;
   final String? gender;
   final DateTime? createdAt;
+
+  /// Product page link, preferring the affiliate link when present.
+  String? get productUrl => affiliateUrl ?? externalUrl;
 
   static ClosetItem fromFirestore(String id, Map<String, dynamic> data) {
     final created = data['createdAt'];
@@ -61,6 +66,7 @@ class ClosetItem {
       ownership: _parseOwnership(data['ownershipStatus']),
       origin: data['origin'] as String?,
       externalUrl: data['externalUrl'] as String?,
+      affiliateUrl: data['affiliateUrl'] as String?,
       price: data['price'] as num?,
       category: data['category'] as String?,
       tags: (data['tags'] as List?)?.cast<String>() ?? const [],
