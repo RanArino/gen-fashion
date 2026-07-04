@@ -13,6 +13,7 @@ from app.domain.styling import (
     StyleSessionState,
     UserPreference,
 )
+from tests.adapters._firestore_fakes import FakeClient, FakeQuery
 
 
 class FakeSnapshot:
@@ -97,37 +98,6 @@ def test_session_document_without_mode_defaults_to_standard():
     assert restored.anchor_items == []
 
 
-class FakeQuery:
-    def __init__(self, snapshots):
-        self.snapshots = snapshots
-        self.calls = []
-
-    def where(self, field, operator, value):
-        self.calls.append(("where", field, operator, value))
-        return self
-
-    def order_by(self, field, direction=None):
-        self.calls.append(("order_by", field, direction))
-        return self
-
-    def limit(self, value):
-        self.calls.append(("limit", value))
-        return self
-
-    async def stream(self):
-        for snapshot in self.snapshots:
-            yield snapshot
-
-
-class FakeClient:
-    def __init__(self, query):
-        self.query = query
-
-    def collection(self, name):
-        assert name == "sessions"
-        return self.query
-
-
 @pytest.mark.asyncio
 async def test_list_completed_firestore_query():
     session_id = uuid4()
@@ -157,3 +127,19 @@ async def test_list_completed_firestore_query():
         ("order_by", "completedAt", firestore.Query.DESCENDING),
         ("limit", 10),
     ]
+
+
+@pytest.mark.asyncio
+async def test_count_completed_today_firestore_query():
+    query = FakeQuery([])
+    repo = FirestoreStylingRepository.__new__(FirestoreStylingRepository)
+    repo._client = FakeClient(query)
+    since = datetime(2026, 7, 4, 0, 0)
+
+    count = await repo.count_completed_today("user-123", since)
+
+    assert count == 0
+    assert query.calls[0] == ("where", "userId", "==", "user-123")
+    assert query.calls[1] == ("where", "status", "==", "COMPLETED")
+    assert query.calls[2] == ("where", "completedAt", ">=", since)
+    assert query.calls[3][0] == "limit"

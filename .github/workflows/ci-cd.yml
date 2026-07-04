@@ -106,6 +106,12 @@ jobs:
       - name: Configure Docker auth for Artifact Registry
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
+      # Keep production Firestore indexes in sync with firestore.indexes.json so a
+      # query that needs a new composite index never hits prod without one (MF-6).
+      - name: Deploy Firestore composite indexes
+        run: |
+          bash scripts/deploy/deploy_firestore_indexes.sh --project "${PROJECT}"
+
       - name: Set image tag and registry path
         run: |
           IMAGE_TAG="ci-$(date +%Y%m%d)-${GITHUB_SHA::7}"
