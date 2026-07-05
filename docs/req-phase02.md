@@ -151,3 +151,22 @@ ExecPlan Decision Log).
   closet is empty or their account was created in the last 24h, to guide
   new users toward it; the pulse stops for that session once tapped.
 - The header language switcher no longer truncates the Japanese label.
+
+---
+
+## 5. Coordinate Session Persistence & Completion Notification (Web)
+
+> **ExecPlan:** [20260705-mp-coordinate-session-persistence.md](plans/20260705-mp-coordinate-session-persistence.md)
+> **Tracker:** feature-matrix rows **MP-1...MP-7**.
+
+Navigating away from the Coordinate tab to Closet/History/Shared and back destroyed the in-progress or just-completed session's agent trace, candidates, and generated image, because `HomeScreen` swapped a single widget slot per tab (`ToDo`: "all agent flows and generated image are gone when user go back to Coordinate page"). The backend (`adk-agent-service`) already runs generation asynchronously and independently of the browser connection (ADL-020/ADL-021, `req-phase01.md`) — this was a client-side state-retention gap, not a backend redesign.
+
+### ADL-037: Coordinate tab state is kept alive in-memory for the app session; generation resync is client-side polling, not a new backend channel
+
+- **Decision:** Keep the four bottom-nav tabs mounted simultaneously via a lazily-populated `IndexedStack` in `HomeScreen` instead of swapping a single widget slot, so `CoordinationScreen`'s in-memory session state survives tab navigation for the app session. Surface completion while the user is elsewhere via an in-app SnackBar from `HomeScreen`'s root `Scaffold`; extend the post-SSE resync from one-shot to a bounded poll so a session that outlives the SSE stream's 150-second cap is still eventually observed.
+- **Alternatives:** (a) Persist the active session id in browser storage plus a new backend "list in-progress sessions" endpoint, for full page-reload recovery — rejected this round as broader than the confirmed ask. (b) A new state-management library (Provider/Riverpod) to hoist session state — rejected; `IndexedStack` solves it without a new architectural dependency. (c) Push notifications (FCM) — rejected; no push infra exists, and "in-app notification" means a SnackBar here.
+- **Rationale:** Generation is already fully decoupled from the browser connection; the gap was purely the Flutter client discarding its own view of that state on tab navigation.
+- **Trade-off:** All four tabs' listeners/streams stay active for the app session once visited (small memory cost for state continuity). Full browser-refresh recovery remains a future item, not part of MP. Separately, `adk-agent-service`'s Cloud Run deploy gains `--no-cpu-throttling` so its `BackgroundTasks`-driven generation can't be CPU-starved after the triggering request completes — a continuous-CPU billing trade-off accepted for correctness.
+- **Date/Author:** 2026-07-05 / ExecPlan MP
+
+Scope is in-app tab navigation only; surviving a full browser refresh/reload is explicitly out of scope, tracked as a future item.

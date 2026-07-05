@@ -128,6 +128,27 @@
 
 ---
 
+## MP — Coordinate Session Persistence & Completion Notification
+
+**Scope:** Keep Coordinate's agent trace/candidates/generated image alive across in-app tab navigation; notify the user in-app when generation completes off-tab; make the completed Coordinate state clearly actionable for starting a new styling session; harden the Cloud Run deploy so background generation isn't CPU-starved after the triggering request completes. Reference: `req-phase02.md` §5, ADL-037.
+
+> **ExecPlan (2026-07-05):** [20260705-mp-coordinate-session-persistence.md](plans/20260705-mp-coordinate-session-persistence.md). Authored and implemented 2026-07-05; investigation confirmed the backend (`adk-agent-service`) already runs generation asynchronously via FastAPI `BackgroundTasks`, independent of the browser connection — the bug was entirely client-side (`HomeScreen` destroyed `CoordinationScreen`'s state on every tab switch) plus a Cloud Run deploy-config gap (no `--no-cpu-throttling`). MP-1...MP-6 landed with `flutter analyze` clean and `flutter test` 49 passed (43 pre-existing + 6 new); MP-8 follow-up added a completed-state "Start a new coordinate" CTA and brought Flutter tests to 51/51; `fastapi-service` pytest 109 / `adk-agent-service` pytest 60 unaffected (no backend files touched). MP-7's automated tests are done; the local `make dev` manual browser pass and the post-deploy Cloud Run CPU-throttling check are still open.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| MP-1 | Keep-alive tabs | ✅ Implemented (2026-07-05) | Lazy `IndexedStack` in `HomeScreen` (`_visitedTabs`) keeps all four tabs' `State` mounted once visited. | §5, ADL-037 |
+| MP-2 | Terminal-state callback | ✅ Implemented (2026-07-05) | `CoordinationScreen.onSessionTerminal` fires once per session on `COMPLETED`/`ERROR` via `_maybeNotifyTerminal`. | §5 |
+| MP-3 | Bounded recovery poll | ✅ Implemented (2026-07-05) | One-shot post-SSE resync replaced by a bounded `GET /sessions/{id}` poll (gated on `status != 'GENERATING'`); save-Interesting dialog reordered to only fire after resolved `COMPLETED`. | §5 |
+| MP-4 | History live refresh | ✅ Implemented (2026-07-05) | `HistoryScreen`'s new `refreshOn` listenable refetches on an off-tab completion signal, avoiding keep-alive staleness. | §5 |
+| MP-5 | SnackBar notification | ✅ Implemented (2026-07-05) | `HomeScreen._handleSessionTerminal` shows a SnackBar with a "View" action when off-tab; new en/ja l10n strings (`coordinateReadyNotification`/`coordinateFailedNotification`/`viewAction`). | §5 |
+| MP-6 | Cloud Run CPU fix | ✅ Implemented (2026-07-05) | `--no-cpu-throttling` added to `adk-agent-service`'s deploy (`scripts/deploy/deploy_adk.sh`); `bash -n` verified. Effect itself only checkable post-deploy. | §5 |
+| MP-7 | Tests + manual verification | 🟡 In progress | 6 new `coordination_screen_test.dart` cases + new `tab_persistence_test.dart` all pass (`flutter test` 51/51). Local `make dev` manual browser pass and the post-deploy Cloud Run check are still open. | §5 |
+| MP-8 | Completed-state new session CTA | ✅ Implemented (2026-07-05) | Completed Coordinate results now show localized completion copy plus "Start a new coordinate"; activating it clears the completed session trace/candidates/result/status while preserving the user's current mode and preference inputs. | §5 |
+
+**Exit criteria:** Switching tabs mid-generation and back preserves the trace/candidates/image; a SnackBar appears with a working "View" action when generation completes off-tab (exactly once per session); a completed off-tab session appears in History without a reload; the completed Coordinate page offers a clear new-session action; `flutter analyze`/`flutter test` pass (met); the Cloud Run deploy carries `--no-cpu-throttling` (verified post-deploy — open).
+
+---
+
 ## M6 — LINE Channel Integration (Phase 1b)
 
 **Scope:** Bring the coordination experience to LINE; add Rakuten search. **Do not start before M5 is complete** (`req-phase01.md` §14). Reference: `req-phase01.md` §6.4, §6.6, §7.3, §7.4, §10.2, ADL-006, ADL-009.

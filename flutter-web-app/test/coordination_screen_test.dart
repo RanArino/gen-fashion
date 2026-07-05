@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gen_fashion_web/api/api_client.dart';
 import 'package:gen_fashion_web/closet/closet_item.dart';
+import 'package:gen_fashion_web/closet/upload_service.dart';
 import 'package:gen_fashion_web/coordination/coordination_screen.dart';
 import 'package:gen_fashion_web/history/history_item.dart';
 
@@ -105,6 +108,164 @@ class _FakeCoordinationApiClient extends ApiClient {
   }
 }
 
+/// Fake backend for exercising the terminal-callback + bounded recovery poll
+/// (MP-2/MP-3): the propose-phase stream/session stay PROPOSING (no polling
+/// needed there, matching production), but once candidates are selected the
+/// generate-phase stream ends without a terminal status, forcing the poll
+/// loop in `_recoverSessionState` to do the work: `getSession` reports
+/// GENERATING once, then COMPLETED.
+class _PollingFakeApiClient extends ApiClient {
+  bool _selected = false;
+  int _pollCallsAfterSelect = 0;
+
+  static const _coordinateImageUrl = 'https://example.com/coordinate.jpg';
+
+  @override
+  Future<StyleSessionResponse> createSession() async =>
+      const StyleSessionResponse(
+        sessionId: 'session-1',
+        status: 'PROPOSING',
+        source: 'SHARED_CLOSET',
+      );
+
+  @override
+  Future<StyleSessionResponse> selectSource({
+    required String sessionId,
+    required String source,
+    required Map<String, String> userPreference,
+    String? sharedClosetId,
+  }) async =>
+      const StyleSessionResponse(
+        sessionId: 'session-1',
+        status: 'PROPOSING',
+        source: 'SHARED_CLOSET',
+      );
+
+  @override
+  Future<StyleSessionResponse> selectCandidates({
+    required String sessionId,
+    required List<String> selectedItemIds,
+  }) async {
+    _selected = true;
+    return const StyleSessionResponse(
+      sessionId: 'session-1',
+      status: 'GENERATING',
+      source: 'SHARED_CLOSET',
+    );
+  }
+
+  @override
+  Stream<SseMessage> streamSessionEvents(String sessionId) async* {
+    if (!_selected) {
+      yield const SseMessage(
+        event: 'session.proposed',
+        data: {
+          'candidates': [
+            {'item_id': 'closet-1', 'source': 'CLOSET'},
+          ],
+        },
+      );
+    }
+    // The generate-phase stream (after selection) ends here without a
+    // terminal event, simulating the SSE stream's own 150s cap closing
+    // before the backend actually finishes.
+  }
+
+  @override
+  Future<SessionHistoryItem> getSession(String sessionId) async {
+    if (!_selected) {
+      return SessionHistoryItem(
+        sessionId: sessionId,
+        status: 'PROPOSING',
+        selectedItems: const [],
+        proposedCandidates: const [],
+      );
+    }
+    _pollCallsAfterSelect += 1;
+    final completed = _pollCallsAfterSelect >= 2;
+    return SessionHistoryItem(
+      sessionId: sessionId,
+      status: completed ? 'COMPLETED' : 'GENERATING',
+      selectedItems: const [],
+      proposedCandidates: const [],
+      coordinateImageUrl: completed ? _coordinateImageUrl : null,
+    );
+  }
+}
+
+/// Same shape, but `getSession` never resolves past GENERATING, exercising
+/// the poll loop's bounded give-up path.
+class _NeverCompletingFakeApiClient extends ApiClient {
+  bool _selected = false;
+
+  @override
+  Future<StyleSessionResponse> createSession() async =>
+      const StyleSessionResponse(
+        sessionId: 'session-1',
+        status: 'PROPOSING',
+        source: 'SHARED_CLOSET',
+      );
+
+  @override
+  Future<StyleSessionResponse> selectSource({
+    required String sessionId,
+    required String source,
+    required Map<String, String> userPreference,
+    String? sharedClosetId,
+  }) async =>
+      const StyleSessionResponse(
+        sessionId: 'session-1',
+        status: 'PROPOSING',
+        source: 'SHARED_CLOSET',
+      );
+
+  @override
+  Future<StyleSessionResponse> selectCandidates({
+    required String sessionId,
+    required List<String> selectedItemIds,
+  }) async {
+    _selected = true;
+    return const StyleSessionResponse(
+      sessionId: 'session-1',
+      status: 'GENERATING',
+      source: 'SHARED_CLOSET',
+    );
+  }
+
+  @override
+  Stream<SseMessage> streamSessionEvents(String sessionId) async* {
+    if (!_selected) {
+      yield const SseMessage(
+        event: 'session.proposed',
+        data: {
+          'candidates': [
+            {'item_id': 'closet-1', 'source': 'CLOSET'},
+          ],
+        },
+      );
+    }
+  }
+
+  @override
+  Future<SessionHistoryItem> getSession(String sessionId) async {
+    return SessionHistoryItem(
+      sessionId: sessionId,
+      status: _selected ? 'GENERATING' : 'PROPOSING',
+      selectedItems: const [],
+      proposedCandidates: const [],
+    );
+  }
+}
+
+class _FakeUploadService extends UploadService {
+  _FakeUploadService(this.itemId) : super(api: ApiClient());
+
+  final String itemId;
+
+  @override
+  Future<String?> upload() async => itemId;
+}
+
 void main() {
   testWidgets('renders coordination controls and event accordion',
       (tester) async {
@@ -199,6 +360,56 @@ void main() {
     expect(find.byIcon(Icons.check_circle), findsNothing);
   });
 
+  testWidgets('assisted mode selects an uploaded anchor once it is ready',
+      (tester) async {
+    final stream = StreamController<List<ClosetItem>>();
+    addTearDown(stream.close);
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [
+            CoordinationScreen(
+              uid: 'user-123',
+              uploads: _FakeUploadService('item-new'),
+              anchorItemsStream: stream.stream,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    stream.add(const []);
+    await tester.tap(find.text('Style & Shop'));
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(TextButton, 'Add item'));
+    await tester.pump();
+    stream.add([
+      ClosetItem(
+        id: 'item-new',
+        status: ItemStatus.processing,
+        category: 'top',
+      ),
+    ]);
+    await tester.pump();
+    expect(find.byIcon(Icons.check_circle), findsNothing);
+
+    stream.add([
+      ClosetItem(
+        id: 'item-new',
+        status: ItemStatus.ready,
+        category: 'top',
+      ),
+    ]);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('anchor-item-new')), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+  });
+
   testWidgets('assisted mode without ready items shows the empty hint',
       (tester) async {
     await tester.pumpWidget(
@@ -223,8 +434,8 @@ void main() {
     );
   });
 
-  testWidgets(
-      'candidate panel marks recommended and anchor candidates', (tester) async {
+  testWidgets('candidate panel marks recommended and anchor candidates',
+      (tester) async {
     final candidates = [
       {'item_id': 'anchor-1', 'source': 'CLOSET', 'anchor': true},
       {
@@ -462,6 +673,8 @@ void main() {
       ),
     );
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Start'));
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Start'));
     await tester.tap(find.widgetWithText(FilledButton, 'Start'));
     await tester.pumpAndSettle();
 
@@ -558,6 +771,229 @@ void main() {
     await tester.tap(find.text('Generate selected'));
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('Save Rakuten items to your closet?'), findsNothing);
+  });
+
+  testWidgets('onSessionTerminal does not fire while only PROPOSING',
+      (tester) async {
+    final fakeApi = _FakeCoordinationApiClient(
+      candidates: [
+        {'item_id': 'closet-1', 'source': 'CLOSET'},
+      ],
+    );
+    final calls = <(String, String)>[];
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [
+            CoordinationScreen(
+              uid: 'user-1',
+              api: fakeApi,
+              onSessionTerminal: (id, status) => calls.add((id, status)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Start'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+
+    expect(calls, isEmpty);
+  });
+
+  testWidgets(
+      'onSessionTerminal fires exactly once with COMPLETED after Start -> Generate',
+      (tester) async {
+    final fakeApi = _FakeCoordinationApiClient(
+      candidates: [
+        {'item_id': 'closet-1', 'source': 'CLOSET'},
+      ],
+    );
+    final calls = <(String, String)>[];
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [
+            CoordinationScreen(
+              uid: 'user-1',
+              api: fakeApi,
+              onSessionTerminal: (id, status) => calls.add((id, status)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Generate selected'));
+    await tester.tap(find.text('Generate selected'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(calls, [('session-1', 'COMPLETED')]);
+  });
+
+  testWidgets('completed session can be cleared to start a new coordinate',
+      (tester) async {
+    final fakeApi = _FakeCoordinationApiClient(
+      candidates: [
+        {'item_id': 'closet-1', 'source': 'CLOSET'},
+      ],
+    );
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [CoordinationScreen(uid: 'user-1', api: fakeApi)],
+        ),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Generate selected'));
+    await tester.tap(find.text('Generate selected'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('Your coordinate is complete'), findsOneWidget);
+    expect(find.text('Start a new coordinate'), findsOneWidget);
+    expect(find.text('COMPLETED'), findsOneWidget);
+
+    await tester.tap(find.text('Start a new coordinate'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your coordinate is complete'), findsNothing);
+    expect(find.text('Start a new coordinate'), findsNothing);
+    expect(find.text('COMPLETED'), findsNothing);
+    expect(find.text('Generate selected'), findsNothing);
+    expect(find.text('Coordinate image will appear here.'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Start'), findsOneWidget);
+  });
+
+  testWidgets(
+      'bounded recovery poll advances GENERATING -> COMPLETED and notifies once',
+      (tester) async {
+    final fakeApi = _PollingFakeApiClient();
+    final calls = <(String, String)>[];
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [
+            CoordinationScreen(
+              uid: 'user-1',
+              api: fakeApi,
+              onSessionTerminal: (id, status) => calls.add((id, status)),
+              recoveryPollInterval: const Duration(milliseconds: 10),
+              recoveryPollMaxWait: const Duration(seconds: 5),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+
+    expect(calls, isEmpty);
+
+    await tester.ensureVisible(find.text('Generate selected'));
+    await tester.tap(find.text('Generate selected'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(calls, [('session-1', 'COMPLETED')]);
+    expect(find.text('COMPLETED'), findsOneWidget);
+  });
+
+  testWidgets('bounded recovery poll gives up after recoveryPollMaxWait',
+      (tester) async {
+    final fakeApi = _NeverCompletingFakeApiClient();
+    final calls = <(String, String)>[];
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [
+            CoordinationScreen(
+              uid: 'user-1',
+              api: fakeApi,
+              onSessionTerminal: (id, status) => calls.add((id, status)),
+              recoveryPollInterval: const Duration(milliseconds: 10),
+              recoveryPollMaxWait: const Duration(milliseconds: 100),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Generate selected'));
+    await tester.tap(find.text('Generate selected'));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(calls, isEmpty);
+    expect(find.textContaining('Still generating'), findsOneWidget);
+  });
+
+  testWidgets(
+      'save-Interesting dialog does not appear when recovery resolves non-COMPLETED',
+      (tester) async {
+    final fakeApi = _NeverCompletingFakeApiClient();
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [
+            CoordinationScreen(
+              uid: 'user-1',
+              api: fakeApi,
+              recoveryPollInterval: const Duration(milliseconds: 10),
+              recoveryPollMaxWait: const Duration(milliseconds: 100),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Generate selected'));
+    await tester.tap(find.text('Generate selected'));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
     }
 
     expect(find.text('Save Rakuten items to your closet?'), findsNothing);
