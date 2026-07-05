@@ -84,8 +84,11 @@ async def execute_run_session(
                     "Propose a complete styling around the user's anchor items. "
                     "Treat anchorItems as fixed context, delegate to ClosetAgent, "
                     "let it describe each complementary garment or accessory "
-                    "(e.g. white t-shirt, black hat, bag, shoes, belt) and call "
-                    "search_rakuten with a concrete query per suggestion, then "
+                    "(e.g. white t-shirt, black hat, bag, shoes, belt). Build "
+                    "only one coordinate, so balance suggestions across missing "
+                    "outfit slots and do not auto-recommend multiple items for "
+                    "the same category. Call search_rakuten with a concrete "
+                    "query and category hint per suggestion, then "
                     "stop after returning candidates. Context: "
                     f"{_message_context(request, gender, closet_kind, language)}"
                 )

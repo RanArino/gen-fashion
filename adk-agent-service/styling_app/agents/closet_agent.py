@@ -23,10 +23,14 @@ _ASSISTED_INSTRUCTION = (
     " This is an assisted-shopping run: the user message lists anchorItems the "
     "user already owns. Treat the anchor items as fixed context, describe a "
     "short styling suggestion for each missing garment or accessory (e.g. "
-    "white t-shirt, black hat, bag, shoes, belt), and call search_rakuten once "
-    "per suggestion with a concrete query. Report both the anchor items and "
-    "the purchasable Rakuten candidates (with name, price, image_url, and "
-    "external_url) back."
+    "white t-shirt, black hat, bag, shoes, belt). The app generates only one "
+    "coordinate at a time, so avoid proposing multiple auto-selected items for "
+    "the same outfit slot; balance the look across missing categories such as "
+    "bottoms, shoes, outerwear, and accessories based on the anchor categories. "
+    "Call search_rakuten once per suggestion with a concrete query and pass a "
+    "category hint such as top, bottom, shoes, bag, hat, belt, or outer. Report "
+    "both the anchor items and the purchasable Rakuten candidates (with name, "
+    "price, image_url, category, and external_url) back."
 )
 
 
