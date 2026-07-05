@@ -227,6 +227,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get coordinateReadyNotification => 'Your coordinate is ready.';
+
+  @override
+  String get coordinateFailedNotification => 'Coordinate generation failed.';
+
+  @override
+  String get viewAction => 'View';
+
+  @override
   String get openProductPage => 'Open product page';
 
   @override

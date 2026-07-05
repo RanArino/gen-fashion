@@ -224,6 +224,15 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get coordinateReadyNotification => 'コーディネートが完成しました。';
+
+  @override
+  String get coordinateFailedNotification => 'コーディネートの生成に失敗しました。';
+
+  @override
+  String get viewAction => '表示';
+
+  @override
   String get openProductPage => '商品ページを開く';
 
   @override
