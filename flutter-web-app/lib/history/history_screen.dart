@@ -5,10 +5,15 @@ import '../l10n/app_localizations.dart';
 import 'history_item.dart';
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key, ApiClient? apiClient})
+  const HistoryScreen({super.key, ApiClient? apiClient, this.refreshOn})
       : _apiClient = apiClient;
 
   final ApiClient? _apiClient;
+
+  /// When it notifies, the session list is refetched. Used so a session
+  /// completed while this tab wasn't visible still shows up without a full
+  /// reload, once the tab is kept alive across navigation (see HomeScreen).
+  final Listenable? refreshOn;
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -24,6 +29,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
   void initState() {
     super.initState();
     _load();
+    widget.refreshOn?.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    widget.refreshOn?.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {

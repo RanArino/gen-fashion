@@ -232,7 +232,7 @@ def _patch_synth(monkeypatch, generate):
 
 
 def test_style_synthesizer_generated(monkeypatch):
-    stored = _patch_synth(monkeypatch, lambda images, desc: b"generated")
+    stored = _patch_synth(monkeypatch, lambda items, desc: b"generated")
 
     result = style_synthesizer("user-1", ["u1.jpg", "u2.jpg"], "casual spring")
 
@@ -244,7 +244,7 @@ def test_style_synthesizer_generated(monkeypatch):
 
 
 def test_style_synthesizer_collage_fallback(monkeypatch):
-    def boom(images, desc):
+    def boom(items, desc):
         raise RuntimeError("model unavailable")
 
     stored = _patch_synth(monkeypatch, boom)
@@ -258,7 +258,7 @@ def test_style_synthesizer_collage_fallback(monkeypatch):
 def test_style_synthesizer_prompt_includes_child_and_gender(monkeypatch):
     captured = {}
 
-    def generate(images, description):
+    def generate(items, description):
         captured["description"] = description
         return b"generated"
 
@@ -273,6 +273,59 @@ def test_style_synthesizer_prompt_includes_child_and_gender(monkeypatch):
 
     assert "child female wearer" in captured["description"]
     assert result["generation_prompt"] == captured["description"]
+
+
+def test_style_synthesizer_forwards_categories(monkeypatch):
+    captured = {}
+
+    def generate(items, description):
+        captured["items"] = items
+        return b"generated"
+
+    _patch_synth(monkeypatch, generate)
+    style_synthesizer(
+        "user-1",
+        ["u1.jpg", "u2.jpg"],
+        "casual",
+        item_categories=["top", "bag"],
+    )
+
+    assert captured["items"][0]["category"] == "top"
+    assert captured["items"][1]["category"] == "bag"
+
+
+def test_search_rakuten_category_reaches_style_synthesizer(monkeypatch):
+    _patch_rakuten(
+        monkeypatch,
+        [
+            {
+                "item_code": "abc",
+                "name": "White Tee",
+                "price": 1000,
+                "image_url": "http://img/tee.jpg",
+                "external_url": "http://shop/tee",
+                "affiliate_url": None,
+                "shop_name": "Shop",
+            }
+        ],
+    )
+    results = search_rakuten("white t-shirt", category="top")
+
+    captured = {}
+
+    def generate(items, description):
+        captured["items"] = items
+        return b"generated"
+
+    _patch_synth(monkeypatch, generate)
+    style_synthesizer(
+        "user-1",
+        [r["image_url"] for r in results],
+        "casual",
+        item_categories=[r["category"] for r in results],
+    )
+
+    assert captured["items"][0]["category"] == "top"
 
 
 # ── ask_preference (M4-8) ──────────────────────────────────────────────────────

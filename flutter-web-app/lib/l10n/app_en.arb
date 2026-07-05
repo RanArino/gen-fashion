@@ -92,6 +92,12 @@
       "error": {}
     }
   },
+  "coordinateReadyNotification": "Your coordinate is ready.",
+  "coordinateFailedNotification": "Coordinate generation failed.",
+  "viewAction": "View",
+  "coordinateCompletedTitle": "Your coordinate is complete",
+  "coordinateCompletedBody": "You can find this result in History too. Start a new coordinate when you want to style another outfit.",
+  "startNewCoordinate": "Start a new coordinate",
   "openProductPage": "Open product page",
   "saveInterestingDialogTitle": "Save Rakuten items to your closet?",
   "saveInterestingDialogBody": "These Rakuten items were part of this outfit. Save the ones you like as \"Interesting\" so you can find them again.",

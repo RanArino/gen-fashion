@@ -7,8 +7,9 @@
 > **Assisted Coordinate planning (2026-07-03):** Added new milestone **MK**
 > for the second Web Coordinate mode requested by the user: up to three own
 > anchor clothes, Rakuten-backed item/accessory suggestions, default checked
-> recommendations, save suggestion as Interesting, ownership transition to
-> Owned, and reuse of Interesting items in closet-based Coordinate. ExecPlan:
+> recommendations balanced to one item per outfit category, save suggestion as
+> Interesting, ownership transition to Owned, and reuse of Interesting items in
+> closet-based Coordinate. ExecPlan:
 > [20260703-mk-assisted-coordinate-mode.md](plans/20260703-mk-assisted-coordinate-mode.md).
 > Rows **MK-1...MK-8** are ✅ as of 2026-07-03: backend, ADK, and Flutter code
 > landed with tests, and local smokes pass — including live Rakuten
@@ -39,7 +40,7 @@
 
 ## MK — Assisted Coordinate Mode (Web)
 
-**Scope:** Add a second Coordinate mode that starts from 1-3 own closet anchor clothes, proposes complete styling with Rakuten-backed purchasable clothes/accessories, lets the user accept default checked recommendations or modify selection/preferences, generates through the existing candidate-selection gate, and lets Rakuten suggestions be saved to the user's closet as Interesting / later Owned. Reference: `req-phase02.md` §3, ADL-035, ADL-036.
+**Scope:** Add a second Coordinate mode that starts from 1-3 own closet anchor clothes, proposes complete styling with Rakuten-backed purchasable clothes/accessories, lets the user accept category-balanced default checked recommendations or modify selection/preferences, generates through the existing candidate-selection gate, and lets Rakuten suggestions be saved to the user's closet as Interesting / later Owned. Reference: `req-phase02.md` §3, ADL-035, ADL-036.
 
 > **ExecPlan (2026-07-03):** [20260703-mk-assisted-coordinate-mode.md](plans/20260703-mk-assisted-coordinate-mode.md). Implemented 2026-07-03: Standard Coordinate behavior is intact, closet ownership status is separated from image-processing status, and Rakuten is a separate ADK tool (`search_rakuten`) rather than overloading `search_closet`. Live-Rakuten suggestions are verified locally (the earlier 403 was fixed by sending `Origin`/`Referer` from `RAKUTEN_APPLICATION_URL`); the assisted flow degrades to anchor-only proposals when Rakuten is unavailable.
 
@@ -49,7 +50,7 @@
 | MK-2 | Up-to-three own anchor clothes | ✅ Implemented (2026-07-03) | Flutter lets users upload/select 1-3 own READY closet items; FastAPI rejects 0, >3, non-owner, missing, or non-READY anchors before ADK launch. | §3.1 |
 | MK-3 | Rakuten search adapter/tool | ✅ Implemented (2026-07-03) | Add `search_rakuten` with Rakuten Ichiba Item Search / affiliate-aware output; credentials stay server-side; tests use mocked API responses. | §3.2 |
 | MK-4 | Agent text + item/accessory suggestions | ✅ Implemented (2026-07-03) | Assisted propose phase returns text styling plus image-backed clothes/accessories, not only closet garments. | §3.2 |
-| MK-5 | Default checked recommendations + generation gate | ✅ Implemented (2026-07-03) | Recommended suggestions are selected by default; users can change checks/preferences; generation reuses the existing explicit `PROPOSING` -> `/select` gate. | §3.3 |
+| MK-5 | Balanced default checked recommendations + generation gate | ✅ Implemented (2026-07-03; balanced auto-selection fix 2026-07-05) | Anchors stay selected by default, while recommended purchasable suggestions are auto-selected at most once per outfit category so one coordinate does not start with duplicate bottoms/shoes/etc.; users can change checks/preferences; generation reuses the existing explicit `PROPOSING` -> `/select` gate. | §3.3 |
 | MK-6 | Save suggested items as Interesting | ✅ Implemented (2026-07-03) | Users can import Rakuten suggestions into their private closet as READY + `ownershipStatus=INTERESTING`, copied to R2/MinIO and indexed. | §3.4, ADL-035 |
 | MK-7 | Interesting to Owned status UI and closet reuse | ✅ Implemented (2026-07-03; Rakuten link added 2026-07-04) | Closet UI clearly separates processing state from ownership state; users can change Interesting to Owned; closet-based Coordinate includes both Owned and Interesting READY items. Interesting-item closet cards now also link out to the Rakuten Ichiba product page (`ClosetItem.productUrl`, `flutter-web-app/lib/closet/closet_screen.dart`). | §3.4, §3.5, ADL-035 |
 | MK-8 | Assisted Coordinate E2E | ✅ Implemented (2026-07-03; live-Rakuten smoke passed) | Local smoke/browser E2E covers anchors -> Rakuten suggestions -> selection -> generation -> save Interesting -> mark Owned -> reuse from closet. | §3.6 |
@@ -107,6 +108,45 @@
 | MN-6 | Localization + verification | ✅ Implemented (2026-07-04) | New ARB keys (`appHelpTooltip`, `appHelpTitle`, `helpCoordinateIntro`, `helpHistoryBody`, `emptyClosetHelpHint`), reworded `sharedAboutBody` to state the shared closet's demo purpose, removed now-unused `sharedClosetAbout`/`closetHelpTooltip`/`closetHelpTitle` keys, `flutter gen-l10n`, `flutter analyze` clean, `flutter test` 43/43 passed, manual two-language browser check passed. | §4 |
 
 **Exit criteria:** One header info icon opens a single dialog with four Accordion sections, auto-expanding the section for the tab it was opened from; Coordination's source caption and Closet's ownership caption are visible without hovering; the language switcher shows the full "日本語"/"English" label; the header icon visibly pulses when the closet is empty or the account is new, and stops after being tapped for that session — confirmed in both 日本語 and English.
+
+---
+
+## MO — Scene-Aware Style Synthesizer Prompt (Rakuten Non-Garment Photo Robustness)
+
+**Scope:** Assisted/Style & Shop (MK) coordinate generation degrades when a Rakuten product photo is not a clean single-garment shot (person wearing the garment, hand holding an item amid props). Phase 1 fix only: label each reference image with its garment/accessory category and instruct the generation model to extract only that labeled item, ignoring any person/background/pose/unrelated object in the photo. No image selection, classification, or cropping (deferred). Reference: `docs/local/20260704_styling_image_generation_issue.md`, `req-phase01.md` §6.5/§7.2, ADL-005 (model constraint unchanged), no new ADL.
+
+> **ExecPlan (2026-07-04):** [20260704-mo-style-synthesizer-scene-aware-prompt.md](plans/20260704-mo-style-synthesizer-scene-aware-prompt.md). Implemented 2026-07-04 (MO-1..MO-5): `pytest adk-agent-service/styling_app/tests -q` → 60 passed. MO-6 (manual visual check with live Vertex AI credentials) is still open.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| MO-1 | Per-item labeled reference images | ✅ Implemented (2026-07-04) | `image_generation.generate()` takes `list[{bytes, category, note}]` and inserts a labeled text part before each image part. | §6.5 |
+| MO-2 | Scene-extraction prompt instruction | ✅ Implemented (2026-07-04) | `_TRYON_PROMPT` explicitly tells the model to extract only the labeled item per photo and ignore person/background/pose/unrelated objects. | §6.5 |
+| MO-3 | `style_synthesizer` category forwarding | ✅ Implemented (2026-07-04) | New optional `item_categories` param, parallel to `item_image_urls`, threaded into `image_generation.generate()`. | §7.2 |
+| MO-4/5 | Unit + integration test coverage | ✅ Implemented (2026-07-04) | `test_image_generation.py` (label placement) + `test_tools.py` additions proving a `search_rakuten` result's `category` reaches the `generate()` call via `style_synthesizer`. | §6.5, §7.2 |
+| MO-6 | Manual visual check | 🟡 In progress | Before/after comparison against the three `docs/local/coord.jpg` input types; requires live Vertex AI credentials, not yet run. | §6.5 |
+
+**Exit criteria:** `pytest adk-agent-service/styling_app/tests` passes with the new/updated tests (met); a manual generation run against the three `coord.jpg` input types shows the original model/background/props visibly reduced or absent compared to the pre-change prompt (open).
+
+---
+
+## MP — Coordinate Session Persistence & Completion Notification
+
+**Scope:** Keep Coordinate's agent trace/candidates/generated image alive across in-app tab navigation; notify the user in-app when generation completes off-tab; make the completed Coordinate state clearly actionable for starting a new styling session; harden the Cloud Run deploy so background generation isn't CPU-starved after the triggering request completes. Reference: `req-phase02.md` §5, ADL-037.
+
+> **ExecPlan (2026-07-05):** [20260705-mp-coordinate-session-persistence.md](plans/20260705-mp-coordinate-session-persistence.md). Authored and implemented 2026-07-05; investigation confirmed the backend (`adk-agent-service`) already runs generation asynchronously via FastAPI `BackgroundTasks`, independent of the browser connection — the bug was entirely client-side (`HomeScreen` destroyed `CoordinationScreen`'s state on every tab switch) plus a Cloud Run deploy-config gap (no `--no-cpu-throttling`). MP-1...MP-6 landed with `flutter analyze` clean and `flutter test` 49 passed (43 pre-existing + 6 new); MP-8 follow-up added a completed-state "Start a new coordinate" CTA and brought Flutter tests to 51/51; `fastapi-service` pytest 109 / `adk-agent-service` pytest 60 unaffected (no backend files touched). MP-7's automated tests are done; the local `make dev` manual browser pass and the post-deploy Cloud Run CPU-throttling check are still open.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| MP-1 | Keep-alive tabs | ✅ Implemented (2026-07-05) | Lazy `IndexedStack` in `HomeScreen` (`_visitedTabs`) keeps all four tabs' `State` mounted once visited. | §5, ADL-037 |
+| MP-2 | Terminal-state callback | ✅ Implemented (2026-07-05) | `CoordinationScreen.onSessionTerminal` fires once per session on `COMPLETED`/`ERROR` via `_maybeNotifyTerminal`. | §5 |
+| MP-3 | Bounded recovery poll | ✅ Implemented (2026-07-05) | One-shot post-SSE resync replaced by a bounded `GET /sessions/{id}` poll (gated on `status != 'GENERATING'`); save-Interesting dialog reordered to only fire after resolved `COMPLETED`. | §5 |
+| MP-4 | History live refresh | ✅ Implemented (2026-07-05) | `HistoryScreen`'s new `refreshOn` listenable refetches on an off-tab completion signal, avoiding keep-alive staleness. | §5 |
+| MP-5 | SnackBar notification | ✅ Implemented (2026-07-05) | `HomeScreen._handleSessionTerminal` shows a SnackBar with a "View" action when off-tab; new en/ja l10n strings (`coordinateReadyNotification`/`coordinateFailedNotification`/`viewAction`). | §5 |
+| MP-6 | Cloud Run CPU fix | ✅ Implemented (2026-07-05) | `--no-cpu-throttling` added to `adk-agent-service`'s deploy (`scripts/deploy/deploy_adk.sh`); `bash -n` verified. Effect itself only checkable post-deploy. | §5 |
+| MP-7 | Tests + manual verification | 🟡 In progress | 6 new `coordination_screen_test.dart` cases + new `tab_persistence_test.dart` all pass (`flutter test` 51/51). Local `make dev` manual browser pass and the post-deploy Cloud Run check are still open. | §5 |
+| MP-8 | Completed-state new session CTA | ✅ Implemented (2026-07-05) | Completed Coordinate results now show localized completion copy plus "Start a new coordinate"; activating it clears the completed session trace/candidates/result/status while preserving the user's current mode and preference inputs. | §5 |
+
+**Exit criteria:** Switching tabs mid-generation and back preserves the trace/candidates/image; a SnackBar appears with a working "View" action when generation completes off-tab (exactly once per session); a completed off-tab session appears in History without a reload; the completed Coordinate page offers a clear new-session action; `flutter analyze`/`flutter test` pass (met); the Cloud Run deploy carries `--no-cpu-throttling` (verified post-deploy — open).
 
 ---
 

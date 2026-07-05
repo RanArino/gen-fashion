@@ -227,6 +227,25 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get coordinateReadyNotification => 'Your coordinate is ready.';
+
+  @override
+  String get coordinateFailedNotification => 'Coordinate generation failed.';
+
+  @override
+  String get viewAction => 'View';
+
+  @override
+  String get coordinateCompletedTitle => 'Your coordinate is complete';
+
+  @override
+  String get coordinateCompletedBody =>
+      'You can find this result in History too. Start a new coordinate when you want to style another outfit.';
+
+  @override
+  String get startNewCoordinate => 'Start a new coordinate';
+
+  @override
   String get openProductPage => 'Open product page';
 
   @override
