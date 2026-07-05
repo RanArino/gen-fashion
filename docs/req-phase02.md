@@ -33,9 +33,9 @@ Coordinate mode remains available and unchanged. Assisted Coordinate starts
 from one to three of the user's own READY closet items, uses the same style
 preference inputs as the current Coordinate screen, asks the agent to propose a
 complete styling with text and image-backed clothes/accessories, lets the user
-accept the default checked recommendations or modify the selection, and then
-generates the coordinate image through the existing post-selection generation
-gate.
+accept category-balanced default checked recommendations or modify the
+selection, and then generates the coordinate image through the existing
+post-selection generation gate.
 
 Suggested purchasable items are retrieved through Rakuten Ichiba Item Search /
 Affiliate data. Users can save agent-suggested Rakuten item images to their own
@@ -112,8 +112,9 @@ Owned READY items are selectable in Coordinate-from-closet.
 
 - Local backend, ADK, Flutter, and Firestore rules tests pass.
 - A local smoke or browser E2E demonstrates: assisted anchors -> Rakuten
-  suggestions -> default checks -> generation -> save suggestion as Interesting
-  -> change to Owned -> reuse the item from Standard Coordinate closet mode.
+  suggestions -> category-balanced default checks -> generation -> save
+  suggestion as Interesting -> change to Owned -> reuse the item from Standard
+  Coordinate closet mode.
 
 ---
 
