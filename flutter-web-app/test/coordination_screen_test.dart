@@ -673,6 +673,8 @@ void main() {
       ),
     );
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Start'));
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Start'));
     await tester.tap(find.widgetWithText(FilledButton, 'Start'));
     await tester.pumpAndSettle();
 
@@ -783,6 +785,9 @@ void main() {
     );
     final calls = <(String, String)>[];
 
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     await tester.pumpWidget(
       localizedTestApp(
         ListView(
@@ -797,6 +802,7 @@ void main() {
       ),
     );
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Start'));
     await tester.tap(find.widgetWithText(FilledButton, 'Start'));
     await tester.pumpAndSettle();
 
@@ -839,6 +845,48 @@ void main() {
     }
 
     expect(calls, [('session-1', 'COMPLETED')]);
+  });
+
+  testWidgets('completed session can be cleared to start a new coordinate',
+      (tester) async {
+    final fakeApi = _FakeCoordinationApiClient(
+      candidates: [
+        {'item_id': 'closet-1', 'source': 'CLOSET'},
+      ],
+    );
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [CoordinationScreen(uid: 'user-1', api: fakeApi)],
+        ),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Generate selected'));
+    await tester.tap(find.text('Generate selected'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('Your coordinate is complete'), findsOneWidget);
+    expect(find.text('Start a new coordinate'), findsOneWidget);
+    expect(find.text('COMPLETED'), findsOneWidget);
+
+    await tester.tap(find.text('Start a new coordinate'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your coordinate is complete'), findsNothing);
+    expect(find.text('Start a new coordinate'), findsNothing);
+    expect(find.text('COMPLETED'), findsNothing);
+    expect(find.text('Generate selected'), findsNothing);
+    expect(find.text('Coordinate image will appear here.'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Start'), findsOneWidget);
   });
 
   testWidgets(

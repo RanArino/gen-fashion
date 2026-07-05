@@ -347,6 +347,23 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
     widget.onSessionTerminal?.call(sid, status);
   }
 
+  void _resetCompletedSession() {
+    if (_running) return;
+    setState(() {
+      _events.clear();
+      _candidates.clear();
+      _selectedCandidateIds.clear();
+      _savedCandidateIds.clear();
+      _importingCandidateIds.clear();
+      _sessionId = null;
+      _status = null;
+      _coordinateImageUrl = null;
+      _error = null;
+      _notifiedTerminalSessionId = null;
+      _reportE2eState();
+    });
+  }
+
   String _candidateId(Map<String, dynamic> candidate) =>
       (candidate['item_id'] ?? candidate['itemId']) as String;
 
@@ -511,6 +528,9 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
         );
         final result = _ResultPanel(
           coordinateImageUrl: _coordinateImageUrl,
+          completed: _status == 'COMPLETED',
+          running: _running,
+          onStartNew: _resetCompletedSession,
         );
         final candidates = CandidatePanel(
           candidates: _candidates,
@@ -1818,9 +1838,15 @@ class _SaveInterestingDialogState extends State<_SaveInterestingDialog> {
 class _ResultPanel extends StatelessWidget {
   const _ResultPanel({
     required this.coordinateImageUrl,
+    required this.completed,
+    required this.running,
+    required this.onStartNew,
   });
 
   final String? coordinateImageUrl;
+  final bool completed;
+  final bool running;
+  final VoidCallback onStartNew;
 
   @override
   Widget build(BuildContext context) {
@@ -1839,16 +1865,75 @@ class _ResultPanel extends StatelessWidget {
                 child: Center(child: Text(l10n.coordinatePlaceholder)),
               )
             else
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  coordinateImageUrl!,
-                  height: 360,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) =>
-                      SelectableText(coordinateImageUrl!),
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      coordinateImageUrl!,
+                      height: 360,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) =>
+                          SelectableText(coordinateImageUrl!),
+                    ),
+                  ),
+                  if (completed) ...[
+                    const SizedBox(height: 16),
+                    _CompletionActions(
+                      running: running,
+                      onStartNew: onStartNew,
+                    ),
+                  ],
+                ],
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompletionActions extends StatelessWidget {
+  const _CompletionActions({
+    required this.running,
+    required this.onStartNew,
+  });
+
+  final bool running;
+  final VoidCallback onStartNew;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              l10n.coordinateCompletedTitle,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.coordinateCompletedBody,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: running ? null : onStartNew,
+                icon: const Icon(Icons.add),
+                label: Text(l10n.startNewCoordinate),
+              ),
+            ),
           ],
         ),
       ),
