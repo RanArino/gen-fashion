@@ -10,6 +10,7 @@ import '../closet/thumbnail.dart';
 import '../closet/upload_service.dart';
 import '../config.dart';
 import '../e2e_probe_stub.dart' if (dart.library.html) '../e2e_probe_web.dart';
+import '../history/history_item.dart';
 import '../l10n/app_localizations.dart';
 import '../locale/locale_controller.dart';
 import '../theme/components.dart';
@@ -22,15 +23,33 @@ class CoordinationScreen extends StatefulWidget {
     super.key,
     required this.uid,
     ApiClient? api,
+    UploadService? uploads,
     Stream<List<ClosetItem>>? anchorItemsStream,
+    this.onSessionTerminal,
+    this.recoveryPollInterval = const Duration(seconds: 5),
+    this.recoveryPollMaxWait = const Duration(minutes: 5),
   })  : _api = api,
+        _uploads = uploads,
         _anchorItemsStream = anchorItemsStream;
 
   final String uid;
   final ApiClient? _api;
+  final UploadService? _uploads;
 
   /// Injectable READY-closet stream so widget tests avoid Firestore.
   final Stream<List<ClosetItem>>? _anchorItemsStream;
+
+  /// Invoked exactly once per session id when it reaches COMPLETED/ERROR,
+  /// even if this happens while the widget is not the visible tab (its
+  /// State is kept alive across tab switches by HomeScreen's IndexedStack).
+  final void Function(String sessionId, String status)? onSessionTerminal;
+
+  /// How often to re-check session status once the live event stream ends
+  /// without a terminal status. Overridable only for tests.
+  final Duration recoveryPollInterval;
+
+  /// How long to keep polling before giving up. Overridable only for tests.
+  final Duration recoveryPollMaxWait;
 
   @override
   State<CoordinationScreen> createState() => _CoordinationScreenState();
@@ -39,7 +58,8 @@ class CoordinationScreen extends StatefulWidget {
 class _CoordinationScreenState extends State<CoordinationScreen> {
   late final ApiClient _api = widget._api ?? ApiClient();
   late final DownloadUrlCache _thumbnailCache = DownloadUrlCache(_api);
-  late final UploadService _uploads = UploadService(api: _api);
+  late final UploadService _uploads =
+      widget._uploads ?? UploadService(api: _api);
   final _occasion = TextEditingController(text: 'casual weekend');
   final _style = TextEditingController(text: 'clean casual');
   final _season = TextEditingController(text: 'spring');
@@ -48,6 +68,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
   final List<Map<String, dynamic>> _candidates = [];
   final Set<String> _selectedCandidateIds = {};
   final Set<String> _anchorItemIds = {};
+  final Set<String> _pendingUploadedAnchorIds = {};
   final Set<String> _savedCandidateIds = {};
   final Set<String> _importingCandidateIds = {};
   Stream<List<ClosetItem>>? _anchorStream;
@@ -62,6 +83,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
   bool _uploadingAnchor = false;
   Object? _error;
   bool _autoRunStarted = false;
+  String? _notifiedTerminalSessionId;
 
   Stream<List<ClosetItem>> _readyClosetItems() {
     return _anchorStream ??= widget._anchorItemsStream ??
@@ -173,6 +195,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           }
           _reportE2eState();
         });
+        _maybeNotifyTerminal();
       }
       await _recoverSessionState(selected.sessionId);
     } catch (e) {
@@ -226,9 +249,12 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           }
           _reportE2eState();
         });
+        _maybeNotifyTerminal();
       }
-      await _maybeOfferSaveInteresting();
       await _recoverSessionState(sessionId);
+      if (_status == 'COMPLETED') {
+        await _maybeOfferSaveInteresting();
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e);
     } finally {
@@ -259,27 +285,66 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
     );
   }
 
+  /// Resyncs status/candidates/image from the backend after the live event
+  /// stream ends. If the resolved status is still GENERATING (the SSE
+  /// stream can close on its own 150s cap before the backend, which keeps
+  /// running independently, actually finishes) this keeps polling until it
+  /// resolves or [CoordinationScreen.recoveryPollMaxWait] elapses, so a
+  /// session that outlives the stream's connection is still eventually
+  /// observed (and its completion notified via [_maybeNotifyTerminal]).
   Future<void> _recoverSessionState(String sessionId) async {
-    if (!mounted) return;
-    final session = await _api.getSession(sessionId);
-    if (!mounted) return;
-    setState(() {
-      _status = session.status;
-      if (_candidates.isEmpty && session.proposedCandidates.isNotEmpty) {
-        _candidates
-          ..clear()
-          ..addAll(session.proposedCandidates);
-        if (_selectedCandidateIds.isEmpty) {
-          _applyDefaultSelection();
+    final deadline = DateTime.now().add(widget.recoveryPollMaxWait);
+    while (mounted) {
+      final SessionHistoryItem session;
+      try {
+        session = await _api.getSession(sessionId);
+      } catch (e) {
+        if (mounted) setState(() => _error = e);
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _status = session.status;
+        if (_candidates.isEmpty && session.proposedCandidates.isNotEmpty) {
+          _candidates
+            ..clear()
+            ..addAll(session.proposedCandidates);
+          if (_selectedCandidateIds.isEmpty) {
+            _applyDefaultSelection();
+          }
         }
+        if (_coordinateImageUrl == null &&
+            session.coordinateImageUrl != null &&
+            session.coordinateImageUrl!.isNotEmpty) {
+          _coordinateImageUrl = session.coordinateImageUrl;
+        }
+        _reportE2eState();
+      });
+      _maybeNotifyTerminal();
+      if (session.status != 'GENERATING') return;
+      if (DateTime.now().isAfter(deadline)) {
+        if (mounted) {
+          setState(() => _error = StateError(
+              'Still generating after ${widget.recoveryPollMaxWait.inMinutes} '
+              'minutes.'));
+        }
+        return;
       }
-      if (_coordinateImageUrl == null &&
-          session.coordinateImageUrl != null &&
-          session.coordinateImageUrl!.isNotEmpty) {
-        _coordinateImageUrl = session.coordinateImageUrl;
-      }
-      _reportE2eState();
-    });
+      await Future.delayed(widget.recoveryPollInterval);
+    }
+  }
+
+  /// Fires [CoordinationScreen.onSessionTerminal] exactly once per session
+  /// id when it reaches a terminal status, however that status was learned
+  /// (live stream event or a recovery poll read).
+  void _maybeNotifyTerminal() {
+    final sid = _sessionId;
+    final status = _status;
+    if (sid == null || status == null) return;
+    if (status != 'COMPLETED' && status != 'ERROR') return;
+    if (_notifiedTerminalSessionId == sid) return;
+    _notifiedTerminalSessionId = sid;
+    widget.onSessionTerminal?.call(sid, status);
   }
 
   String _candidateId(Map<String, dynamic> candidate) =>
@@ -323,6 +388,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
     try {
       final id = await _uploads.upload();
       if (!mounted || id == null) return;
+      setState(() => _pendingUploadedAnchorIds.add(id));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.uploadQueued)),
       );
@@ -339,6 +405,17 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
     } finally {
       if (mounted) setState(() => _uploadingAnchor = false);
     }
+  }
+
+  void _selectReadyUploadedAnchors(Iterable<String> itemIds) {
+    setState(() {
+      for (final itemId in itemIds) {
+        _pendingUploadedAnchorIds.remove(itemId);
+        if (_anchorItemIds.length < _kMaxAnchorItems) {
+          _anchorItemIds.add(itemId);
+        }
+      }
+    });
   }
 
   Future<void> _importSuggestion(Map<String, dynamic> candidate) async {
@@ -408,15 +485,16 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
               ? _AnchorPicker(
                   itemsStream: _readyClosetItems(),
                   selectedIds: _anchorItemIds,
+                  pendingUploadedIds: _pendingUploadedAnchorIds,
                   cache: _thumbnailCache,
                   running: _running,
                   uploading: _uploadingAnchor,
                   onToggle: _toggleAnchor,
                   onUpload: _onUploadAnchor,
+                  onReadyUploadedItems: _selectReadyUploadedAnchors,
                 )
               : null,
-          startEnabled:
-              _mode == 'STANDARD' || _anchorItemIds.isNotEmpty,
+          startEnabled: _mode == 'STANDARD' || _anchorItemIds.isNotEmpty,
           onModeChanged: (value) => setState(() => _mode = value),
           onSourceChanged: (value) => setState(() => _source = value),
           onSharedClosetChanged: (value) =>
@@ -677,20 +755,24 @@ class _AnchorPicker extends StatelessWidget {
   const _AnchorPicker({
     required this.itemsStream,
     required this.selectedIds,
+    required this.pendingUploadedIds,
     required this.cache,
     required this.running,
     required this.uploading,
     required this.onToggle,
     required this.onUpload,
+    required this.onReadyUploadedItems,
   });
 
   final Stream<List<ClosetItem>> itemsStream;
   final Set<String> selectedIds;
+  final Set<String> pendingUploadedIds;
   final DownloadUrlCache cache;
   final bool running;
   final bool uploading;
   final ValueChanged<String> onToggle;
   final VoidCallback onUpload;
+  final ValueChanged<Iterable<String>> onReadyUploadedItems;
 
   @override
   Widget build(BuildContext context) {
@@ -724,6 +806,17 @@ class _AnchorPicker extends StatelessWidget {
               );
             }
             final items = snapshot.data ?? const <ClosetItem>[];
+            final readyUploadedIds = items
+                .where((item) =>
+                    pendingUploadedIds.contains(item.id) &&
+                    item.status == ItemStatus.ready)
+                .map((item) => item.id)
+                .toList();
+            if (readyUploadedIds.isNotEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                onReadyUploadedItems(readyUploadedIds);
+              });
+            }
             if (items.isEmpty) {
               return Text(
                 l10n.noReadyAnchorItems,
@@ -775,9 +868,7 @@ class _AnchorTile extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     return Tooltip(
-      message: processing
-          ? l10n.analyzingItem
-          : item.category ?? item.id,
+      message: processing ? l10n.analyzingItem : item.category ?? item.id,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
@@ -788,7 +879,8 @@ class _AnchorTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               width: selected ? 2 : 1,
-              color: selected ? colorScheme.primary : colorScheme.outlineVariant,
+              color:
+                  selected ? colorScheme.primary : colorScheme.outlineVariant,
             ),
           ),
           child: Stack(
@@ -1013,7 +1105,8 @@ class _AgentPreview extends StatelessWidget {
     if (event.toolName == 'transfer_to_agent') {
       final agentName =
           event.toolArgs?['agent_name'] as String? ?? event.text ?? '—';
-      return _PreviewField(label: l10n.traceTargetAgent, child: Text(agentName));
+      return _PreviewField(
+          label: l10n.traceTargetAgent, child: Text(agentName));
     }
     if (event.eventKind == 'final_answer') {
       return _FinalAnswerPreview(event: event);
@@ -1038,8 +1131,7 @@ class _SearchClosetPreview extends StatelessWidget {
       final description = args['description'] as String?;
       final category = args['category'] as String?;
       final rawColors = args['colors'];
-      final colors =
-          rawColors is List ? rawColors.cast<String>() : <String>[];
+      final colors = rawColors is List ? rawColors.cast<String>() : <String>[];
       final gender = args['gender'] as String?;
 
       return Column(
@@ -1051,8 +1143,7 @@ class _SearchClosetPreview extends StatelessWidget {
           if (category != null)
             _PreviewField(label: l10n.category, child: Text(category)),
           if (colors.isNotEmpty)
-            _PreviewField(
-                label: l10n.colors, child: _ChipRow(values: colors)),
+            _PreviewField(label: l10n.colors, child: _ChipRow(values: colors)),
           if (gender != null)
             _PreviewField(label: l10n.gender, child: Text(gender)),
         ],
@@ -1092,8 +1183,7 @@ class _SearchRakutenPreview extends StatelessWidget {
       final query = args['query'] as String?;
       final category = args['category'] as String?;
       final rawColors = args['colors'];
-      final colors =
-          rawColors is List ? rawColors.cast<String>() : <String>[];
+      final colors = rawColors is List ? rawColors.cast<String>() : <String>[];
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1103,8 +1193,7 @@ class _SearchRakutenPreview extends StatelessWidget {
           if (category != null)
             _PreviewField(label: l10n.category, child: Text(category)),
           if (colors.isNotEmpty)
-            _PreviewField(
-                label: l10n.colors, child: _ChipRow(values: colors)),
+            _PreviewField(label: l10n.colors, child: _ChipRow(values: colors)),
         ],
       );
     }
@@ -1156,8 +1245,7 @@ class _StyleSynthesizerPreview extends StatelessWidget {
             _PreviewField(label: l10n.traceWearer, child: Text(wearer)),
           if (language != null)
             _PreviewField(label: l10n.language, child: Text(language)),
-          _PreviewField(
-              label: l10n.traceItemCount, child: Text('$itemCount')),
+          _PreviewField(label: l10n.traceItemCount, child: Text('$itemCount')),
         ],
       );
     }
@@ -1284,7 +1372,8 @@ class _ClosetItemRow extends StatelessWidget {
               width: 48,
               height: 48,
               child: imageUrl != null && imageUrl.isNotEmpty
-                  ? Image.network(imageUrl, fit: BoxFit.cover,
+                  ? Image.network(imageUrl,
+                      fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => ColoredBox(
                             color: Theme.of(context)
                                 .colorScheme
@@ -1292,9 +1381,8 @@ class _ClosetItemRow extends StatelessWidget {
                             child: const Icon(Icons.checkroom, size: 20),
                           ))
                   : ColoredBox(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest,
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                       child: const Icon(Icons.checkroom, size: 20),
                     ),
             ),
@@ -1305,8 +1393,7 @@ class _ClosetItemRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (category != null)
-                  Text(category,
-                      style: Theme.of(context).textTheme.bodySmall),
+                  Text(category, style: Theme.of(context).textTheme.bodySmall),
                 if (colors.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   _ChipRow(values: colors),
@@ -1320,8 +1407,7 @@ class _ClosetItemRow extends StatelessWidget {
                   Text(
                     season,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                   ),
                 ],
@@ -1360,8 +1446,7 @@ class _RakutenItemRow extends StatelessWidget {
               width: 48,
               height: 48,
               child: imageUrl != null && imageUrl.isNotEmpty
-                  ? Image.network(
-                      imageUrl,
+                  ? Image.network(imageUrl,
                       fit: BoxFit.cover,
                       // Rakuten's thumbnail CDN serves images without CORS
                       // headers; see the matching workaround in CandidateCard.
@@ -1373,9 +1458,8 @@ class _RakutenItemRow extends StatelessWidget {
                             child: const Icon(Icons.checkroom, size: 20),
                           ))
                   : ColoredBox(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest,
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                       child: const Icon(Icons.checkroom, size: 20),
                     ),
             ),
@@ -1392,21 +1476,18 @@ class _RakutenItemRow extends StatelessWidget {
                       style: Theme.of(context).textTheme.bodySmall),
                 if (price != null) ...[
                   const SizedBox(height: 2),
-                  Text('¥$price',
-                      style: Theme.of(context).textTheme.bodySmall),
+                  Text('¥$price', style: Theme.of(context).textTheme.bodySmall),
                 ],
                 if (category != null) ...[
                   const SizedBox(height: 2),
-                  Text(category,
-                      style: Theme.of(context).textTheme.bodySmall),
+                  Text(category, style: Theme.of(context).textTheme.bodySmall),
                 ],
                 if (shopName != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     '${l10n.traceShopName}: $shopName',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                   ),
                 ],
@@ -1649,8 +1730,7 @@ class _SaveInterestingDialog extends StatefulWidget {
       (item['item_id'] ?? item['itemId']) as String;
 
   @override
-  State<_SaveInterestingDialog> createState() =>
-      _SaveInterestingDialogState();
+  State<_SaveInterestingDialog> createState() => _SaveInterestingDialogState();
 }
 
 class _SaveInterestingDialogState extends State<_SaveInterestingDialog> {
@@ -1817,8 +1897,7 @@ class AgentEvent {
         if (toolResult != null) 'toolResult': toolResult,
       };
 
-  String get detailText =>
-      const JsonEncoder.withIndent('  ').convert(toJson());
+  String get detailText => const JsonEncoder.withIndent('  ').convert(toJson());
 
   String summary(AppLocalizations l10n) {
     if (toolName == 'search_closet' && eventKind == 'tool_result') {

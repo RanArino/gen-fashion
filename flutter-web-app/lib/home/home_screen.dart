@@ -19,6 +19,12 @@ const _kSectionIdByTabIndex = [
   helpSectionShared,
 ];
 
+/// Fires when a coordination session completes off-tab, so `HistoryScreen`
+/// can refetch without a full reload (MP-4).
+class _HistoryRefreshSignal extends ChangeNotifier {
+  void fire() => notifyListeners();
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.uid});
 
@@ -31,7 +37,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   int _index = AppConfig.e2eAutoRun ? 1 : 0;
+  late final Set<int> _visitedTabs = {_index};
   final AuthService _auth = AuthService();
+  final _HistoryRefreshSignal _historyRefreshSignal = _HistoryRefreshSignal();
   bool _helpNudgeDismissed = false;
 
   late final AnimationController _nudgeController = AnimationController(
@@ -53,17 +61,53 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _nudgeController.dispose();
+    _historyRefreshSignal.dispose();
     super.dispose();
+  }
+
+  /// Surfaces a coordination session reaching COMPLETED/ERROR. Called by
+  /// CoordinationScreen even while it isn't the visible tab, since its
+  /// State is kept alive by the IndexedStack below rather than destroyed
+  /// on tab switch.
+  void _handleSessionTerminal(String sessionId, String status) {
+    if (status == 'COMPLETED') _historyRefreshSignal.fire();
+    if (!mounted || _index == 1) return; // already viewing Coordinate
+    final l10n = AppLocalizations.of(context)!;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(status == 'COMPLETED'
+            ? l10n.coordinateReadyNotification
+            : l10n.coordinateFailedNotification),
+        action: SnackBarAction(
+          label: l10n.viewAction,
+          onPressed: () => setState(() => _index = 1),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    // Each tab's real widget is built only after its first visit and then
+    // stays built (kept alive by the IndexedStack below), so switching tabs
+    // never disposes a screen's State again once it's been opened once.
     final pages = [
-      ClosetScreen(uid: widget.uid, embedded: true),
-      CoordinationScreen(uid: widget.uid),
-      const HistoryScreen(),
-      const SharedClosetGallery(),
+      _visitedTabs.contains(0)
+          ? ClosetScreen(uid: widget.uid, embedded: true)
+          : const SizedBox.shrink(),
+      _visitedTabs.contains(1)
+          ? CoordinationScreen(
+              uid: widget.uid,
+              onSessionTerminal: _handleSessionTerminal,
+            )
+          : const SizedBox.shrink(),
+      _visitedTabs.contains(2)
+          ? HistoryScreen(refreshOn: _historyRefreshSignal)
+          : const SizedBox.shrink(),
+      _visitedTabs.contains(3)
+          ? const SharedClosetGallery()
+          : const SizedBox.shrink(),
     ];
     return Scaffold(
       appBar: GlassAppBar(
@@ -91,10 +135,13 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ],
       ),
-      body: pages[_index],
+      body: IndexedStack(index: _index, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
+        onDestinationSelected: (value) => setState(() {
+          _index = value;
+          _visitedTabs.add(value);
+        }),
         destinations: [
           NavigationDestination(
             icon: const Icon(Icons.checkroom_outlined),
