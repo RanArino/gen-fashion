@@ -480,6 +480,71 @@ void main() {
     expect(find.text('Recommended'), findsNWidgets(2));
   });
 
+  testWidgets('default selection keeps recommended items balanced by category',
+      (tester) async {
+    final fakeApi = _FakeCoordinationApiClient(
+      candidates: [
+        {
+          'item_id': 'anchor-top',
+          'source': 'CLOSET',
+          'category': 'top',
+          'anchor': true,
+          'recommended': true,
+        },
+        {
+          'item_id': 'rakuten:pants-1',
+          'source': 'RAKUTEN',
+          'name': 'Beige pants',
+          'category': 'bottom',
+          'recommended': true,
+        },
+        {
+          'item_id': 'rakuten:pants-2',
+          'source': 'RAKUTEN',
+          'name': 'Grey slacks',
+          'category': 'bottom',
+          'recommended': true,
+        },
+        {
+          'item_id': 'rakuten:pants-3',
+          'source': 'RAKUTEN',
+          'name': 'Black jeans',
+          'category': 'bottom',
+          'recommended': true,
+        },
+        {
+          'item_id': 'rakuten:shoes-1',
+          'source': 'RAKUTEN',
+          'name': 'White sneakers',
+          'category': 'shoes',
+          'recommended': true,
+        },
+      ],
+    );
+
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [CoordinationScreen(uid: 'user-1', api: fakeApi)],
+        ),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+
+    final checkboxes = tester
+        .widgetList<CheckboxListTile>(find.byType(CheckboxListTile))
+        .toList();
+    expect(
+      checkboxes.map((checkbox) => checkbox.value).toList(),
+      [true, true, false, false, true],
+    );
+  });
+
   testWidgets('rakuten card shows name, price, link, and import button state',
       (tester) async {
     final candidate = {

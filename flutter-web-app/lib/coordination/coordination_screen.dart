@@ -367,20 +367,118 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
   String _candidateId(Map<String, dynamic> candidate) =>
       (candidate['item_id'] ?? candidate['itemId']) as String;
 
-  /// Recommended/anchor candidates are checked by default (MK-5); Standard
-  /// proposals without flags keep the previous first-item default.
+  /// Anchors stay selected, but recommendations are capped to one per outfit
+  /// slot so a single-coordinate run does not start with duplicate bottoms,
+  /// shoes, or other same-category alternatives selected together.
   void _applyDefaultSelection() {
     _selectedCandidateIds.clear();
-    final flagged = _candidates.where(
-      (candidate) =>
-          candidate['recommended'] == true || candidate['anchor'] == true,
-    );
-    if (flagged.isNotEmpty) {
-      _selectedCandidateIds.addAll(flagged.map(_candidateId));
-    } else if (_candidates.isNotEmpty) {
+    final selectedSlots = <String>{};
+    for (final candidate in _candidates) {
+      if (candidate['anchor'] != true) continue;
+      _selectedCandidateIds.add(_candidateId(candidate));
+      final slot = _candidateOutfitSlot(candidate);
+      if (slot != null) selectedSlots.add(slot);
+    }
+    for (final candidate in _candidates) {
+      if (candidate['recommended'] != true || candidate['anchor'] == true) {
+        continue;
+      }
+      final slot = _candidateOutfitSlot(candidate);
+      if (slot != null && selectedSlots.contains(slot)) continue;
+      _selectedCandidateIds.add(_candidateId(candidate));
+      if (slot != null) selectedSlots.add(slot);
+    }
+    if (_selectedCandidateIds.isEmpty && _candidates.isNotEmpty) {
       _selectedCandidateIds.add(_candidateId(_candidates.first));
     }
   }
+
+  String? _candidateOutfitSlot(Map<String, dynamic> candidate) {
+    final text = [
+      candidate['category'],
+      candidate['name'],
+    ].whereType<String>().join(' ').toLowerCase();
+    if (text.trim().isEmpty) return null;
+    if (_containsAny(text, const [
+      'pants',
+      'pant',
+      'trouser',
+      'slacks',
+      'shorts',
+      'skirt',
+      'jeans',
+      'denim',
+      'bottom',
+      'ズボン',
+      'パンツ',
+      'ボトム',
+    ])) {
+      return 'bottom';
+    }
+    if (_containsAny(text, const [
+      'shoe',
+      'shoes',
+      'sneaker',
+      'sneakers',
+      'trainer',
+      'boot',
+      'sandal',
+      '靴',
+      'シューズ',
+      'スニーカー',
+    ])) {
+      return 'shoes';
+    }
+    if (_containsAny(text, const [
+      'coat',
+      'jacket',
+      'blazer',
+      'outer',
+      'outerwear',
+      'outwear',
+      'アウター',
+      'ジャケット',
+      'コート',
+    ])) {
+      return 'outer';
+    }
+    if (_containsAny(text, const [
+      'hat',
+      'cap',
+      'bag',
+      'belt',
+      'watch',
+      'scarf',
+      'accessory',
+      '帽子',
+      'バッグ',
+      'ベルト',
+    ])) {
+      return 'accessory';
+    }
+    if (_containsAny(text, const [
+      'top',
+      'shirt',
+      't-shirt',
+      'tee',
+      'blouse',
+      'polo',
+      'hoodie',
+      'sweater',
+      'knit',
+      'inner',
+      'トップ',
+      'シャツ',
+      'インナー',
+      'ニット',
+    ])) {
+      return 'top';
+    }
+    return text.trim();
+  }
+
+  bool _containsAny(String value, List<String> needles) =>
+      needles.any((needle) => value.contains(needle));
 
   void _toggleAnchor(String itemId) {
     setState(() {
