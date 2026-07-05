@@ -236,6 +236,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get viewAction => 'View';
 
   @override
+  String get coordinateCompletedTitle => 'Your coordinate is complete';
+
+  @override
+  String get coordinateCompletedBody =>
+      'You can find this result in History too. Start a new coordinate when you want to style another outfit.';
+
+  @override
+  String get startNewCoordinate => 'Start a new coordinate';
+
+  @override
   String get openProductPage => 'Open product page';
 
   @override

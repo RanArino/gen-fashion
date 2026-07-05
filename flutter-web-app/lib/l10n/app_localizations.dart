@@ -518,6 +518,24 @@ abstract class AppLocalizations {
   /// **'View'**
   String get viewAction;
 
+  /// No description provided for @coordinateCompletedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your coordinate is complete'**
+  String get coordinateCompletedTitle;
+
+  /// No description provided for @coordinateCompletedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'You can find this result in History too. Start a new coordinate when you want to style another outfit.'**
+  String get coordinateCompletedBody;
+
+  /// No description provided for @startNewCoordinate.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a new coordinate'**
+  String get startNewCoordinate;
+
   /// No description provided for @openProductPage.
   ///
   /// In en, this message translates to:
