@@ -51,6 +51,10 @@ done
 
 echo "==> Deploying adk-agent-service (private) to ${REGION}..."
 
+# --no-cpu-throttling: /internal/run-session hands generation off to a
+# FastAPI BackgroundTasks continuation that keeps running after the 202
+# response is sent; without this flag Cloud Run may throttle its CPU once
+# it considers the request "done," stalling generation.
 gcloud run deploy adk-agent-service \
   --image="${IMAGE}" \
   --project="${PROJECT}" \
@@ -61,6 +65,7 @@ gcloud run deploy adk-agent-service \
   --max-instances=5 \
   --memory=2Gi \
   --cpu=1 \
+  --no-cpu-throttling \
   --timeout=600 \
   --network="${VPC_NETWORK}" \
   --subnet="${VPC_SUBNET}" \
