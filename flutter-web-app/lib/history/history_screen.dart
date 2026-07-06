@@ -55,6 +55,42 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
+  Future<void> _onDelete(SessionHistoryItem session) async {
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.deleteHistoryQuestion),
+        content: Text(l10n.deleteHistoryBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _apiClient.deleteSession(session.sessionId);
+      if (!mounted) return;
+      setState(() {
+        _sessions = _sessions
+            .where((item) => item.sessionId != session.sessionId)
+            .toList();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.deleteFailed('$e'))),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -76,15 +112,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
         crossAxisSpacing: 16,
       ),
       itemCount: _sessions.length,
-      itemBuilder: (context, index) => _HistoryCard(_sessions[index]),
+      itemBuilder: (context, index) => _HistoryCard(
+        _sessions[index],
+        onDelete: () => _onDelete(_sessions[index]),
+      ),
     );
   }
 }
 
 class _HistoryCard extends StatelessWidget {
-  const _HistoryCard(this.session);
+  const _HistoryCard(this.session, {required this.onDelete});
 
   final SessionHistoryItem session;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -99,20 +139,39 @@ class _HistoryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
-            child: imageUrl == null || imageUrl.isEmpty
-                ? const ColoredBox(
-                    color: Colors.black12,
-                    child: Icon(Icons.image_not_supported_outlined),
-                  )
-                : Image.network(
-                    imageUrl,
-                    key: ValueKey('history-image-${session.sessionId}'),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const ColoredBox(
-                      color: Colors.black12,
-                      child: Icon(Icons.broken_image_outlined),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: imageUrl == null || imageUrl.isEmpty
+                      ? const ColoredBox(
+                          color: Colors.black12,
+                          child: Icon(Icons.image_not_supported_outlined),
+                        )
+                      : Image.network(
+                          imageUrl,
+                          key: ValueKey('history-image-${session.sessionId}'),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const ColoredBox(
+                            color: Colors.black12,
+                            child: Icon(Icons.broken_image_outlined),
+                          ),
+                        ),
+                ),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: IconButton(
+                    tooltip: l10n.deleteTooltip,
+                    iconSize: 20,
+                    onPressed: onDelete,
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.white,
                     ),
                   ),
+                ),
+              ],
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
