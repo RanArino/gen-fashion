@@ -63,6 +63,16 @@ For small, single-purpose edits, a short working plan is enough:
 - Do not modify generated files unless the repository's workflow expects them to be committed.
 - Do not modify shared instructions, CI configuration, or broad repo policy unless asked.
 
+### FastAPI Dependency Safety
+
+For `fastapi-service`, remember that synchronous FastAPI dependencies are resolved in AnyIO worker threads. Do not construct async gRPC clients or other event-loop-bound async SDK clients inside sync dependency factories, adapter constructors reached by sync dependencies, or module import paths. Prefer one of these patterns:
+
+- make the dependency factory async when the object truly needs event-loop-bound initialization;
+- use a synchronous SDK client and call blocking I/O from async methods with `asyncio.to_thread`;
+- lazily construct async clients inside an async method running on the request event loop.
+
+When fixing or adding code in this area, add or update a regression test that constructs the dependency or adapter from a worker thread, so failures like `RuntimeError: There is no current event loop in thread 'AnyIO worker thread'` are caught before production.
+
 ## Verification
 
 Run the checks appropriate to the child repository. Discover exact commands from the repository itself rather than assuming a universal toolchain.
