@@ -171,6 +171,25 @@ void main() {
     expect(session.coordinateImageUrl, 'https://example.test/result.jpg');
   });
 
+  test('deleteSession treats 204 and 404 as success and other codes as error',
+      () async {
+    final mock204 = MockClient((req) async {
+      expect(req.url.path, '/sessions/session-1');
+      expect(req.headers['Authorization'], 'Bearer fake-token');
+      return http.Response('', 204);
+    });
+    await _client(mock204).deleteSession('session-1');
+
+    final mock404 = MockClient((req) async => http.Response('', 404));
+    await _client(mock404).deleteSession('session-1');
+
+    final mock500 = MockClient((req) async => http.Response('oops', 500));
+    expect(
+      () => _client(mock500).deleteSession('session-1'),
+      throwsA(isA<ApiException>()),
+    );
+  });
+
   test('streamSessionEvents parses SSE messages', () async {
     final mock = MockClient.streaming((req, bodyStream) async {
       expect(req.url.path, '/sessions/session-1/stream');
