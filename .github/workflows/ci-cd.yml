@@ -184,7 +184,7 @@ jobs:
             --fastapi-url "${FASTAPI_URL}" \
             --es-internal-ip "${{ secrets.ES_INTERNAL_IP }}" \
             --es-ssl-fingerprint "${{ secrets.ES_SSL_FINGERPRINT }}" \
-            --cors-allow-origins "https://gen-fashion-app.web.app,https://animation-agent.web.app" \
+            --cors-allow-origins "https://gen-fashion-app.web.app" \
             --r2-endpoint-url "${{ secrets.R2_ENDPOINT_URL }}" \
             --r2-public-endpoint-url "${{ secrets.R2_PUBLIC_ENDPOINT_URL }}" \
             --r2-bucket-name "${{ secrets.R2_BUCKET_NAME }}"

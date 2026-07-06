@@ -37,7 +37,7 @@ R2_ENDPOINT_URL=""
 R2_PUBLIC_ENDPOINT_URL=""
 R2_BUCKET_NAME="gen-fashion-images"
 ES_SSL_FINGERPRINT=""
-CORS_ALLOW_ORIGINS="https://gen-fashion-app.web.app,https://animation-agent.web.app"
+CORS_ALLOW_ORIGINS="https://gen-fashion-app.web.app"
 # Direct VPC egress (ADL-023): reach the private ES VM with no Serverless VPC Access connector.
 VPC_NETWORK="default"
 VPC_SUBNET="default"
