@@ -206,12 +206,14 @@ async def _run_adk_phase(
     style_tool = None
     rakuten_tool = None
     selected_image_urls: list[str] = []
+    selected_item_categories: list[str | None] = []
     if request.phase == "propose":
         search_tool = _build_propose_search_tool(request, gender)
         if request.assisted:
             rakuten_tool = _build_propose_rakuten_tool()
     elif request.phase == "generate":
         selected_image_urls = _selected_image_urls(request.selected_items)
+        selected_item_categories = _selected_item_categories(request.selected_items)
         style_tool = _build_generate_style_tool(request, gender, wearer_age, language)
     active_runner = runner or Runner(
         agent=build_agent_for_phase(
@@ -289,6 +291,7 @@ async def _run_adk_phase(
                             "gender": gender,
                             "wearer_age": wearer_age,
                             "language": language,
+                            "item_categories": selected_item_categories,
                         }
                     await session_repo.write_event(request.session_id, normalized)
                     normalized_events.append(normalized)
@@ -464,6 +467,14 @@ def _selected_image_urls(selected_items: list[dict[str, Any]] | None) -> list[st
     return [item["image_url"] for item in selected_items or [] if item.get("image_url")]
 
 
+def _selected_item_categories(selected_items: list[dict[str, Any]] | None) -> list[str | None]:
+    return [
+        item.get("category")
+        for item in selected_items or []
+        if item.get("image_url")
+    ]
+
+
 def _effective_style_description(
     requested_style: Any, preference: dict[str, Any]
 ) -> str:
@@ -480,6 +491,7 @@ def _build_generate_style_tool(
 ):
     user_id = request.user_id
     image_urls = _selected_image_urls(request.selected_items)
+    item_categories = _selected_item_categories(request.selected_items)
     bound_gender = gender
     bound_wearer_age = wearer_age
     bound_language = language
@@ -494,6 +506,7 @@ def _build_generate_style_tool(
             gender=bound_gender,
             wearer_age=bound_wearer_age,
             language=bound_language,
+            item_categories=item_categories,
         )
 
     style_synthesizer_tool.__name__ = "style_synthesizer"
@@ -646,6 +659,7 @@ async def _run_generate_fallback(
     image_urls = [item["image_url"] for item in selected if item.get("image_url")]
     if not image_urls:
         return None
+    item_categories = _selected_item_categories(selected)
 
     style_text = _style_description(request.user_preference)
     synth_args = {
@@ -655,6 +669,7 @@ async def _run_generate_fallback(
         "gender": gender,
         "wearer_age": wearer_age,
         "language": language,
+        "item_categories": item_categories,
     }
     await session_repo.write_event(
         request.session_id,

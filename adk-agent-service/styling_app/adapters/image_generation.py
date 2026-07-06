@@ -20,7 +20,11 @@ _TRYON_PROMPT = (
     "styled in a street or lifestyle scene, or placed among unrelated objects. For "
     "each labeled reference photo, extract and reproduce only the named item's "
     "color, pattern, and shape; ignore any person, pose, background, or unrelated "
-    "object shown in that photo."
+    "object shown in that photo. If a reference photo is an EC advertisement, "
+    "catalog collage, or magazine-style image with text, badges, logos, multiple "
+    "people, or multiple panels, use only the clearest depiction of the labeled "
+    "garment or accessory and do not reproduce the ad layout, typography, badges, "
+    "extra people, or non-target garments."
 )
 
 
