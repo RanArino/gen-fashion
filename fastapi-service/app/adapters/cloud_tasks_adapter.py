@@ -1,8 +1,11 @@
+import asyncio
+import json
+from datetime import datetime, timedelta
 from typing import Dict, Any
+
 from google.cloud import tasks_v2
 from google.protobuf import timestamp_pb2
-from datetime import datetime, timedelta
-import json
+
 from app.ports import TaskQueuePort
 from app.config import get_settings
 
@@ -12,7 +15,7 @@ class CloudTasksAdapter(TaskQueuePort):
 
     def __init__(self) -> None:
         self._settings = get_settings()
-        self._client = tasks_v2.CloudTasksAsyncClient()
+        self._client = tasks_v2.CloudTasksClient()
 
     async def enqueue_task(
         self, queue_name: str, handler_path: str, payload: Dict[str, Any], delay_seconds: int = 0
@@ -54,7 +57,7 @@ class CloudTasksAdapter(TaskQueuePort):
             schedule_time = timestamp_pb2.Timestamp()
             schedule_time.FromDatetime(datetime.utcnow() + timedelta(seconds=delay_seconds))
             task["schedule_time"] = schedule_time
-        response = await self._client.create_task(parent=parent, task=task)
+        response = await asyncio.to_thread(self._client.create_task, parent=parent, task=task)
         return response.name
 
     async def get_task_status(self, queue_name: str, task_id: str) -> str:
