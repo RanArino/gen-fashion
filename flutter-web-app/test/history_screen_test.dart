@@ -10,10 +10,16 @@ class FakeApiClient extends ApiClient {
   FakeApiClient(this.sessions);
 
   final List<SessionHistoryItem> sessions;
+  final List<String> deletedSessionIds = [];
 
   @override
   Future<List<SessionHistoryItem>> listSessions({int limit = 20}) async {
     return sessions;
+  }
+
+  @override
+  Future<void> deleteSession(String sessionId) async {
+    deletedSessionIds.add(sessionId);
   }
 }
 
@@ -96,5 +102,36 @@ void main() {
       (rakutenImage.image as NetworkImage).webHtmlElementStrategy,
       WebHtmlElementStrategy.prefer,
     );
+  });
+
+  testWidgets('deletes a history card after confirmation', (tester) async {
+    final session = SessionHistoryItem(
+      sessionId: 'session-1',
+      status: 'COMPLETED',
+      createdAt: DateTime(2026, 6, 24, 10, 30),
+      completedAt: DateTime(2026, 6, 24, 10, 32),
+      source: 'SHARED_CLOSET',
+      coordinateImageUrl: 'https://example.test/result.jpg',
+      selectedItems: const [],
+    );
+    final apiClient = FakeApiClient([session]);
+
+    await tester.pumpWidget(
+      localizedTestApp(HistoryScreen(apiClient: apiClient)),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete image?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    expect(apiClient.deletedSessionIds, ['session-1']);
+    expect(
+      find.byKey(const ValueKey('history-image-session-1')),
+      findsNothing,
+    );
+    expect(find.text('No completed coordinates yet.'), findsOneWidget);
   });
 }

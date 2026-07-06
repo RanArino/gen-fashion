@@ -181,6 +181,12 @@ async def execute_run_session(
             if result is None:
                 await session_repo.mark_error(request.session_id, "Selected items have no images")
                 return
+            if _is_collage_fallback_result(result):
+                await session_repo.mark_error(
+                    request.session_id,
+                    "Coordinate image generation failed",
+                )
+                return
             await session_repo.write_style_result(request.session_id, result)
             return
 
@@ -206,12 +212,14 @@ async def _run_adk_phase(
     style_tool = None
     rakuten_tool = None
     selected_image_urls: list[str] = []
+    selected_item_categories: list[str | None] = []
     if request.phase == "propose":
         search_tool = _build_propose_search_tool(request, gender)
         if request.assisted:
             rakuten_tool = _build_propose_rakuten_tool()
     elif request.phase == "generate":
         selected_image_urls = _selected_image_urls(request.selected_items)
+        selected_item_categories = _selected_item_categories(request.selected_items)
         style_tool = _build_generate_style_tool(request, gender, wearer_age, language)
     active_runner = runner or Runner(
         agent=build_agent_for_phase(
@@ -289,6 +297,7 @@ async def _run_adk_phase(
                             "gender": gender,
                             "wearer_age": wearer_age,
                             "language": language,
+                            "item_categories": selected_item_categories,
                         }
                     await session_repo.write_event(request.session_id, normalized)
                     normalized_events.append(normalized)
@@ -339,6 +348,10 @@ def _build_propose_search_tool(
     return phase_search_closet
 
 
+MIN_RAKUTEN_DISPLAY_CANDIDATES = 5
+MAX_DEFAULT_RECOMMENDED_SUGGESTIONS = 1
+
+
 def _build_propose_rakuten_tool():
     def phase_search_rakuten(
         query: str,
@@ -348,9 +361,10 @@ def _build_propose_rakuten_tool():
     ) -> list[dict]:
         # A raised tool error aborts the whole ADK run; Rakuten being down or
         # unconfigured must instead degrade to closet/anchor-only proposals.
+        effective_limit = max(limit, MIN_RAKUTEN_DISPLAY_CANDIDATES)
         try:
             return search_rakuten(
-                query=query, category=category, colors=colors, limit=limit
+                query=query, category=category, colors=colors, limit=effective_limit
             )
         except RakutenUnavailableError as exc:
             logger.warning("search_rakuten unavailable: %s", exc)
@@ -359,9 +373,6 @@ def _build_propose_rakuten_tool():
     phase_search_rakuten.__name__ = "search_rakuten"
     phase_search_rakuten.__doc__ = search_rakuten.__doc__
     return phase_search_rakuten
-
-
-MAX_DEFAULT_RECOMMENDED_SUGGESTIONS = 3
 
 
 async def _finalize_assisted_candidates(
@@ -464,6 +475,14 @@ def _selected_image_urls(selected_items: list[dict[str, Any]] | None) -> list[st
     return [item["image_url"] for item in selected_items or [] if item.get("image_url")]
 
 
+def _selected_item_categories(selected_items: list[dict[str, Any]] | None) -> list[str | None]:
+    return [
+        item.get("category")
+        for item in selected_items or []
+        if item.get("image_url")
+    ]
+
+
 def _effective_style_description(
     requested_style: Any, preference: dict[str, Any]
 ) -> str:
@@ -480,6 +499,7 @@ def _build_generate_style_tool(
 ):
     user_id = request.user_id
     image_urls = _selected_image_urls(request.selected_items)
+    item_categories = _selected_item_categories(request.selected_items)
     bound_gender = gender
     bound_wearer_age = wearer_age
     bound_language = language
@@ -494,6 +514,7 @@ def _build_generate_style_tool(
             gender=bound_gender,
             wearer_age=bound_wearer_age,
             language=bound_language,
+            item_categories=item_categories,
         )
 
     style_synthesizer_tool.__name__ = "style_synthesizer"
@@ -564,6 +585,10 @@ def _collect_style_result(
         result["items"] = selected_image_urls
         result["selectedItems"] = selected_items or []
     return result
+
+
+def _is_collage_fallback_result(result: dict[str, Any]) -> bool:
+    return (result.get("modelUsed") or result.get("model_used")) == "collage-fallback"
 
 
 async def _resolve_closet_kind(
@@ -646,6 +671,7 @@ async def _run_generate_fallback(
     image_urls = [item["image_url"] for item in selected if item.get("image_url")]
     if not image_urls:
         return None
+    item_categories = _selected_item_categories(selected)
 
     style_text = _style_description(request.user_preference)
     synth_args = {
@@ -655,6 +681,7 @@ async def _run_generate_fallback(
         "gender": gender,
         "wearer_age": wearer_age,
         "language": language,
+        "item_categories": item_categories,
     }
     await session_repo.write_event(
         request.session_id,

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import time
 from datetime import datetime
 from urllib.parse import unquote, urlparse
@@ -38,6 +39,7 @@ from app.use_cases.styling import (
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 STREAM_POLL_SECONDS = 1
 # Must exceed the ADK run timeout (adk-agent-service adk_run_timeout_seconds, 90s)
 # plus the deterministic-fallback time, so the client sees COMPLETED instead of a
@@ -222,6 +224,34 @@ async def get_session(
     if session is None:
         raise HTTPException(status_code=404, detail="Style session not found")
     return await _session_to_history_item(session, image_storage)
+
+
+@router.delete("/{session_id}", status_code=204)
+async def delete_session(
+    session_id: str,
+    user_id: str = Depends(verify_firebase_token),
+    styling_repo: StylingRepositoryPort = Depends(get_styling_repository),
+    image_storage: ImageStoragePort = Depends(get_image_storage),
+):
+    try:
+        style_session_id = StyleSessionId(UUID(session_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid session id") from exc
+    session = await styling_repo.get_by_id(user_id, style_session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Style session not found")
+    if session.final_result is not None:
+        image_key = _storage_key_from_own_url_or_key(
+            session.final_result.coordinate_image_url
+        )
+        if image_key is not None:
+            try:
+                await image_storage.delete_image(image_key)
+            except Exception:
+                logger.exception(
+                    "Failed to delete coordinate image for session %s", session_id
+                )
+    await styling_repo.delete(user_id, style_session_id)
 
 
 @router.post("")

@@ -291,6 +291,55 @@ async def test_assisted_propose_merges_anchors_with_rakuten_candidates(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_assisted_propose_displays_multiple_rakuten_options_but_recommends_one(
+    monkeypatch,
+):
+    request = _assisted_request()
+    repo = FakeRepo()
+    runner = FakeRunner(
+        [
+            _adk_event(
+                "ClosetAgent",
+                response={
+                    "name": "search_rakuten",
+                    "response": {
+                        "result": [
+                            {
+                                "item_id": f"rakuten:shop:{index}",
+                                "source": "RAKUTEN",
+                                "name": f"Option {index}",
+                                "image_url": f"http://thumb/{index}.jpg",
+                            }
+                            for index in range(1, 5)
+                        ]
+                    },
+                },
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "styling_app.server.search_rakuten",
+        lambda **kwargs: pytest.fail("rakuten fallback must not run"),
+    )
+
+    await execute_run_session(request, session_repo=repo, runner=runner)
+
+    candidates = repo.proposals[0][1]
+    rakuten_candidates = [
+        candidate for candidate in candidates if candidate.get("source") == "RAKUTEN"
+    ]
+    assert [candidate["item_id"] for candidate in rakuten_candidates] == [
+        "rakuten:shop:1",
+        "rakuten:shop:2",
+        "rakuten:shop:3",
+        "rakuten:shop:4",
+    ]
+    assert [
+        candidate.get("recommended") for candidate in rakuten_candidates
+    ] == [True, False, False, False]
+
+
+@pytest.mark.asyncio
 async def test_assisted_propose_runs_rakuten_fallback_when_agent_has_no_suggestions(
     monkeypatch,
 ):
@@ -331,6 +380,25 @@ def test_propose_rakuten_tool_returns_empty_when_unavailable(monkeypatch):
     tool = _build_propose_rakuten_tool()
 
     assert tool(query="white t-shirt") == []
+
+
+def test_propose_rakuten_tool_fetches_display_options_even_when_llm_limits_to_one(
+    monkeypatch,
+):
+    from styling_app.server import _build_propose_rakuten_tool
+
+    captured = {}
+
+    def fake_search_rakuten(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr("styling_app.server.search_rakuten", fake_search_rakuten)
+    tool = _build_propose_rakuten_tool()
+
+    tool(query="white t-shirt", limit=1)
+
+    assert captured["limit"] == 5
 
 
 @pytest.mark.asyncio
@@ -383,6 +451,7 @@ async def test_generate_phase_runs_agent_with_selection_gender_and_child_age(mon
         "gender": "female",
         "wearer_age": "child",
         "language": "ja",
+        "item_categories": ["top", "bottom"],
     }
     runner = FakeRunner(
         [
@@ -484,7 +553,7 @@ async def test_generate_phase_falls_back_only_after_explicit_selection(monkeypat
         userPreference={"style": "clean", "gender": "common"},
         phase="generate",
         selectedItems=[
-            {"item_id": "top", "image_url": "http://image/top.jpg"},
+            {"item_id": "top", "image_url": "http://image/top.jpg", "category": "top"},
         ],
     )
     repo = FakeRepo()
@@ -496,7 +565,7 @@ async def test_generate_phase_falls_back_only_after_explicit_selection(monkeypat
         return {
             "coordinate_image_url": "http://coordinate",
             "items": kwargs["item_image_urls"],
-            "model_used": "collage-fallback",
+            "model_used": "gemini-2.5-flash-image",
         }
 
     monkeypatch.setattr("styling_app.server.style_synthesizer", fake_synthesizer)
@@ -504,10 +573,42 @@ async def test_generate_phase_falls_back_only_after_explicit_selection(monkeypat
     await execute_run_session(request, session_repo=repo, runner=runner)
 
     assert captured["item_image_urls"] == ["http://image/top.jpg"]
+    assert captured["item_categories"] == ["top"]
     assert captured["gender"] == "common"
     assert captured["wearer_age"] == "child"
     assert captured["language"] == "ja"
     assert repo.results[0][1]["coordinateImageUrl"] == "http://coordinate"
+
+
+@pytest.mark.asyncio
+async def test_generate_phase_rejects_collage_fallback_result(monkeypatch):
+    request = RunSessionRequest(
+        sessionId="session-1",
+        userId="user-123",
+        source="SHARED_CLOSET",
+        sharedClosetId="child-01",
+        userPreference={"style": "clean", "gender": "common"},
+        phase="generate",
+        selectedItems=[
+            {"item_id": "top", "image_url": "http://image/top.jpg", "category": "top"},
+        ],
+    )
+    repo = FakeRepo()
+    runner = FakeRunner([_adk_event("StylingAgent", text="Unable to generate.")])
+
+    def fake_synthesizer(**kwargs):
+        return {
+            "coordinate_image_url": "http://coordinate",
+            "items": kwargs["item_image_urls"],
+            "model_used": "collage-fallback",
+        }
+
+    monkeypatch.setattr("styling_app.server.style_synthesizer", fake_synthesizer)
+
+    await execute_run_session(request, session_repo=repo, runner=runner)
+
+    assert repo.results == []
+    assert repo.errors == [("session-1", "Coordinate image generation failed")]
 
 
 def test_generate_style_tool_exposes_only_style_description(monkeypatch):
@@ -519,8 +620,12 @@ def test_generate_style_tool_exposes_only_style_description(monkeypatch):
         userPreference={"style": "clean", "colorPreference": "blue", "gender": "female"},
         phase="generate",
         selectedItems=[
-            {"item_id": "top", "image_url": "http://image/top.jpg"},
-            {"item_id": "bottom", "image_url": "http://image/bottom.jpg"},
+            {"item_id": "top", "image_url": "http://image/top.jpg", "category": "top"},
+            {
+                "item_id": "bottom",
+                "image_url": "http://image/bottom.jpg",
+                "category": "bottom",
+            },
         ],
     )
     captured = {}
@@ -539,6 +644,7 @@ def test_generate_style_tool_exposes_only_style_description(monkeypatch):
 
     assert captured["user_id"] == "owner-1"
     assert captured["item_image_urls"] == ["http://image/top.jpg", "http://image/bottom.jpg"]
+    assert captured["item_categories"] == ["top", "bottom"]
     assert captured["style_description"] == "breezy summer look"
     assert captured["gender"] == "female"
     assert captured["wearer_age"] == "child"
@@ -553,7 +659,9 @@ def test_generate_style_tool_defaults_empty_style_to_preference(monkeypatch):
         sharedClosetId="adult-01",
         userPreference={"style": "minimal", "colorPreference": "earth tones"},
         phase="generate",
-        selectedItems=[{"item_id": "top", "image_url": "http://image/top.jpg"}],
+        selectedItems=[
+            {"item_id": "top", "image_url": "http://image/top.jpg", "category": "top"}
+        ],
     )
     captured = {}
 
@@ -567,6 +675,7 @@ def test_generate_style_tool_defaults_empty_style_to_preference(monkeypatch):
     tool(style_description="   ")
 
     assert captured["style_description"] == "minimal earth tones"
+    assert captured["item_categories"] == ["top"]
     assert captured["language"] == "ja"
 
 
@@ -580,8 +689,12 @@ async def test_generate_trace_and_result_normalize_to_server_values(monkeypatch)
         userPreference={"style": "clean", "colorPreference": "blue", "gender": "female"},
         phase="generate",
         selectedItems=[
-            {"item_id": "top", "image_url": "http://image/top.jpg"},
-            {"item_id": "bottom", "image_url": "http://image/bottom.jpg"},
+            {"item_id": "top", "image_url": "http://image/top.jpg", "category": "top"},
+            {
+                "item_id": "bottom",
+                "image_url": "http://image/bottom.jpg",
+                "category": "bottom",
+            },
         ],
     )
     repo = FakeRepo(next_seq=20)
@@ -598,6 +711,7 @@ async def test_generate_trace_and_result_normalize_to_server_values(monkeypatch)
                         "style_description": "edgy",
                         "gender": "male",
                         "wearer_age": "adult",
+                        "item_categories": ["attacker"],
                     },
                 },
             ),
@@ -630,6 +744,7 @@ async def test_generate_trace_and_result_normalize_to_server_values(monkeypatch)
         "gender": "female",
         "wearer_age": "child",
         "language": "ja",
+        "item_categories": ["top", "bottom"],
     }
     saved = repo.results[0][1]
     assert saved["items"] == ["http://image/top.jpg", "http://image/bottom.jpg"]

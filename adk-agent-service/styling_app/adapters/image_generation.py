@@ -16,15 +16,24 @@ _TRYON_PROMPT = (
     "the provided clothing items together as one coordinated outfit. Keep each "
     "garment's color, pattern, and shape faithful to the reference photos. Studio "
     "background, soft even lighting, natural pose. Each reference photo is labeled "
-    "with the item it represents and may show that item worn by a different person, "
-    "styled in a street or lifestyle scene, or placed among unrelated objects. For "
-    "each labeled reference photo, extract and reproduce only the named item's "
-    "color, pattern, and shape; ignore any person, pose, background, or unrelated "
-    "object shown in that photo."
+    "with the item it represents. Use each photo only as a visual reference for "
+    "the labeled garment or accessory; do not copy the original model, pose, "
+    "background, text, logos, badges, catalog layout, or unrelated objects."
 )
 
+_RETRY_PROMPT = (
+    "Create one realistic full-body outfit photo of a single person wearing the "
+    "labeled clothing items. Preserve the visible color, fabric, pattern, and "
+    "silhouette of each labeled item. Plain studio background, natural pose. "
+    "Do not make a product collage or add written text."
+)
 
-def generate(items: list[dict], style_description: str) -> bytes:
+def generate(
+    items: list[dict],
+    style_description: str,
+    *,
+    retry: bool = False,
+) -> bytes:
     """Virtual try-on via Nano Banana: labeled garment photos + prompt -> outfit image.
 
     Each item is {"bytes": bytes, "category": str | None, "note": str | None}. A
@@ -40,7 +49,7 @@ def generate(items: list[dict], style_description: str) -> bytes:
             label += f" {item['note']}"
         parts.append(types.Part.from_text(text=label))
         parts.append(types.Part.from_bytes(data=item["bytes"], mime_type="image/jpeg"))
-    prompt = _TRYON_PROMPT
+    prompt = _RETRY_PROMPT if retry else _TRYON_PROMPT
     if style_description:
         prompt += f" Desired style: {style_description}."
     parts.append(types.Part.from_text(text=prompt))

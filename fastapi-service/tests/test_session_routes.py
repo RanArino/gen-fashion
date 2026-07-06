@@ -150,6 +150,7 @@ class HistoryRepo:
     def __init__(self, sessions):
         self.sessions = sessions
         self.request = None
+        self.deleted = []
 
     async def get_by_id(self, user_id, session_id):
         self.request = (user_id, session_id)
@@ -162,10 +163,24 @@ class HistoryRepo:
         self.request = (user_id, limit)
         return self.sessions
 
+    async def delete(self, user_id, session_id):
+        self.deleted.append((user_id, session_id))
+        self.sessions = [
+            session
+            for session in self.sessions
+            if not (session.id == session_id and session.user_id == user_id)
+        ]
+
 
 class FakeImageStorage:
+    def __init__(self):
+        self.deleted = []
+
     async def get_download_url(self, image_path):
         return f"https://fresh.example.test/{image_path}?sig=new"
+
+    async def delete_image(self, image_path):
+        self.deleted.append(image_path)
 
 
 def _completed_session(image_url: str, session_id: StyleSessionId | None = None) -> StyleSession:
@@ -318,6 +333,47 @@ def test_get_session_returns_404_for_missing_or_unowned_session():
     app.dependency_overrides[get_styling_repository] = lambda: HistoryRepo([])
 
     response = TestClient(app).get(f"/sessions/{uuid4()}")
+
+    assert response.status_code == 404
+    reset_overrides()
+
+
+def test_delete_session_removes_owned_session_and_coordinate_image(monkeypatch):
+    reset_overrides()
+    monkeypatch.setenv("R2_ENDPOINT_URL", "http://minio:9000")
+    monkeypatch.setenv("R2_PUBLIC_ENDPOINT_URL", "http://localhost:9000")
+    monkeypatch.setenv("R2_BUCKET_NAME", "gen-fashion-images")
+    get_settings.cache_clear()
+    session_id = StyleSessionId(uuid4())
+    repo = HistoryRepo(
+        [
+            _completed_session(
+                "http://localhost:9000/gen-fashion-images/user-123/"
+                "coordinates/result.jpg?X-Amz-Signature=old",
+                session_id,
+            ),
+        ]
+    )
+    storage = FakeImageStorage()
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_styling_repository] = lambda: repo
+    app.dependency_overrides[get_image_storage] = lambda: storage
+
+    response = TestClient(app).delete(f"/sessions/{session_id}")
+
+    assert response.status_code == 204
+    assert repo.deleted == [("user-123", session_id)]
+    assert storage.deleted == ["user-123/coordinates/result.jpg"]
+    reset_overrides()
+    get_settings.cache_clear()
+
+
+def test_delete_session_returns_404_for_missing_or_unowned_session():
+    reset_overrides()
+    app.dependency_overrides[verify_firebase_token] = lambda: "user-123"
+    app.dependency_overrides[get_styling_repository] = lambda: HistoryRepo([])
+
+    response = TestClient(app).delete(f"/sessions/{uuid4()}")
 
     assert response.status_code == 404
     reset_overrides()

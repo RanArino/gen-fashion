@@ -78,3 +78,20 @@ def test_generate_labels_each_image_with_its_category(monkeypatch):
 
     # The final part still carries the style description.
     assert "casual spring" in contents[-1].text
+    assert "catalog layout" in contents[-1].text
+    assert "unrelated objects" in contents[-1].text
+
+
+def test_generate_retry_uses_compact_prompt(monkeypatch):
+    fake_client = _FakeClient()
+    monkeypatch.setattr(image_generation, "_client", lambda: fake_client)
+
+    image_generation.generate(
+        [{"bytes": b"top-bytes", "category": "top", "note": None}],
+        "casual spring",
+        retry=True,
+    )
+
+    prompt = fake_client.models.calls[0]["contents"][-1].text
+    assert "Create one realistic full-body outfit photo" in prompt
+    assert "Do not make a product collage" in prompt
