@@ -39,6 +39,8 @@
   },
   "deleteItemQuestion": "Delete item?",
   "deleteItemBody": "This removes the item from your closet.",
+  "deleteHistoryQuestion": "Delete image?",
+  "deleteHistoryBody": "This removes the generated image from your history.",
   "cancel": "Cancel",
   "delete": "Delete",
   "deleteFailed": "Delete failed: {error}",
