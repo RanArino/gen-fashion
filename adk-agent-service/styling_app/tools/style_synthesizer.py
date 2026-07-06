@@ -1,8 +1,7 @@
 """style_synthesizer tool (M4-7, req §6.5/§7.2).
 
-Nano Banana virtual try-on (M1-2) with the ADL-005 collage fallback. Each call
-writes a new UUID-named object, so repeats never overwrite (M4 plan,
-Idempotence and Recovery).
+Nano Banana virtual try-on (M1-2). Each successful call writes a new UUID-named
+object, so repeats never overwrite (M4 plan, Idempotence and Recovery).
 """
 
 from uuid import uuid4
@@ -36,8 +35,7 @@ def style_synthesizer(
             reference photo when the photo is not a plain garment shot.
 
     Returns:
-        {coordinate_image_url, items, model_used}; model_used is
-        "collage-fallback" when generation failed and a collage was stored.
+        {coordinate_image_url, items, model_used}.
     """
     image_bytes_list = [image_storage.fetch_bytes(url) for url in item_image_urls]
     items = [
@@ -67,8 +65,13 @@ def style_synthesizer(
         result_bytes = image_generation.generate(items, generation_prompt)
         model_used = settings.image_generation_model
     except Exception:
-        result_bytes = image_generation.build_collage(image_bytes_list)
-        model_used = "collage-fallback"
+        try:
+            result_bytes = image_generation.generate(
+                items, generation_prompt, retry=True
+            )
+            model_used = settings.image_generation_model
+        except Exception:
+            raise RuntimeError("Coordinate image generation failed after retry.")
 
     coordinate_image_url = image_storage.put_bytes(
         f"{user_id}/coordinates/{uuid4().hex}.jpg", result_bytes
