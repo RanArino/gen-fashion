@@ -243,16 +243,34 @@ def test_style_synthesizer_generated(monkeypatch):
     assert result["model_used"] == "gemini-2.5-flash-image"
 
 
-def test_style_synthesizer_collage_fallback(monkeypatch):
-    def boom(items, desc):
+def test_style_synthesizer_raises_after_retry_failure(monkeypatch):
+    def boom(items, desc, **kwargs):
         raise RuntimeError("model unavailable")
 
     stored = _patch_synth(monkeypatch, boom)
 
-    result = style_synthesizer("user-1", ["u1.jpg"], "")
+    with pytest.raises(RuntimeError, match="generation failed after retry"):
+        style_synthesizer("user-1", ["u1.jpg"], "")
 
-    assert stored["data"] == b"collage"
-    assert result["model_used"] == "collage-fallback"
+    assert "data" not in stored
+
+
+def test_style_synthesizer_retries_before_collage_fallback(monkeypatch):
+    calls = []
+
+    def generate(items, desc, **kwargs):
+        calls.append(kwargs)
+        if not kwargs.get("retry"):
+            raise RuntimeError("no image part")
+        return b"retry-generated"
+
+    stored = _patch_synth(monkeypatch, generate)
+
+    result = style_synthesizer("user-1", ["u1.jpg"], "casual")
+
+    assert calls == [{}, {"retry": True}]
+    assert stored["data"] == b"retry-generated"
+    assert result["model_used"] == "gemini-2.5-flash-image"
 
 
 def test_style_synthesizer_prompt_includes_child_and_gender(monkeypatch):
