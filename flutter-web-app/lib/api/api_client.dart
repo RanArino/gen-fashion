@@ -147,6 +147,14 @@ class ApiClient {
     );
   }
 
+  /// `DELETE /sessions/{id}` — removes a generated coordinate from history.
+  Future<void> deleteSession(String sessionId) async {
+    final uri = Uri.parse('$_baseUrl/sessions/$sessionId');
+    final res = await _http.delete(uri, headers: await _authHeaders());
+    if (res.statusCode == 204 || res.statusCode == 404) return;
+    throw ApiException(res.statusCode, res.body);
+  }
+
   Future<StyleSessionResponse> selectSource({
     required String sessionId,
     required String source,
