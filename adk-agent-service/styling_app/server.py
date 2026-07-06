@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -25,6 +26,7 @@ from .tools.style_synthesizer import style_synthesizer
 
 
 APP_NAME = "styling_app"
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="gen-fashion ADK Agent Service", version="0.1.0")
 
@@ -350,7 +352,8 @@ def _build_propose_rakuten_tool():
             return search_rakuten(
                 query=query, category=category, colors=colors, limit=limit
             )
-        except RakutenUnavailableError:
+        except RakutenUnavailableError as exc:
+            logger.warning("search_rakuten unavailable: %s", exc)
             return []
 
     phase_search_rakuten.__name__ = "search_rakuten"
