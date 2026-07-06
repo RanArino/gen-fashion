@@ -115,7 +115,7 @@
 
 **Scope:** Assisted/Style & Shop (MK) coordinate generation degrades when a Rakuten product photo is not a clean single-garment shot (person wearing the garment, hand holding an item amid props). Phase 1 fix only: label each reference image with its garment/accessory category and instruct the generation model to extract only that labeled item, ignoring any person/background/pose/unrelated object in the photo. No image selection, classification, or cropping (deferred). Reference: `docs/local/20260704_styling_image_generation_issue.md`, `req-phase01.md` §6.5/§7.2, ADL-005 (model constraint unchanged), no new ADL.
 
-> **ExecPlan (2026-07-04):** [20260704-mo-style-synthesizer-scene-aware-prompt.md](plans/20260704-mo-style-synthesizer-scene-aware-prompt.md). Implemented 2026-07-04 (MO-1..MO-5): `pytest adk-agent-service/styling_app/tests -q` → 60 passed. MO-6 (manual visual check with live Vertex AI credentials) is still open.
+> **ExecPlan (2026-07-04):** [20260704-mo-style-synthesizer-scene-aware-prompt.md](plans/20260704-mo-style-synthesizer-scene-aware-prompt.md). Implemented 2026-07-04 (MO-1..MO-5): `pytest adk-agent-service/styling_app/tests -q` → 60 passed. Follow-up fix 2026-07-06: the production generate paths now pass selected item categories into `style_synthesizer`, and the prompt explicitly ignores EC ad/collage text, badges, multiple people, and non-target garments. MO-6 (manual visual check with live Vertex AI credentials) is still open.
 
 | ID | Feature | Status | Description | Req ref |
 |---|---|---|---|---|
@@ -123,6 +123,7 @@
 | MO-2 | Scene-extraction prompt instruction | ✅ Implemented (2026-07-04) | `_TRYON_PROMPT` explicitly tells the model to extract only the labeled item per photo and ignore person/background/pose/unrelated objects. | §6.5 |
 | MO-3 | `style_synthesizer` category forwarding | ✅ Implemented (2026-07-04) | New optional `item_categories` param, parallel to `item_image_urls`, threaded into `image_generation.generate()`. | §7.2 |
 | MO-4/5 | Unit + integration test coverage | ✅ Implemented (2026-07-04) | `test_image_generation.py` (label placement) + `test_tools.py` additions proving a `search_rakuten` result's `category` reaches the `generate()` call via `style_synthesizer`. | §6.5, §7.2 |
+| MO-6a | Production category propagation + EC-ad prompt hardening | ✅ Implemented (2026-07-06) | Fixed the missing production wiring: `_build_generate_style_tool` and `_run_generate_fallback` now pass server-authoritative selected item categories into `style_synthesizer`; prompt now tells the model to ignore EC ad layouts, typography, badges, extra people, and non-target garments. | §6.5, §7.2 |
 | MO-6 | Manual visual check | 🟡 In progress | Before/after comparison against the three `docs/local/coord.jpg` input types; requires live Vertex AI credentials, not yet run. | §6.5 |
 
 **Exit criteria:** `pytest adk-agent-service/styling_app/tests` passes with the new/updated tests (met); a manual generation run against the three `coord.jpg` input types shows the original model/background/props visibly reduced or absent compared to the pre-change prompt (open).

@@ -96,9 +96,16 @@ R2_KEY=$(gcloud secrets versions access latest --secret=R2_ACCESS_KEY_ID --proje
 R2_SECRET=$(gcloud secrets versions access latest --secret=R2_SECRET_ACCESS_KEY --project=animation-agent)
 TASK_SECRET=$(gcloud secrets versions access latest --secret=INTERNAL_TASK_SECRET --project=animation-agent)
 ES_SSL_FINGERPRINT=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_SSL_FINGERPRINT --project=animation-agent)
+RAKUTEN_APPLICATION_ID=$(gcloud secrets versions access latest --secret=RAKUTEN_APPLICATION_ID --project=animation-agent)
+RAKUTEN_ACCESS_KEY=$(gcloud secrets versions access latest --secret=RAKUTEN_ACCESS_KEY --project=animation-agent)
+RAKUTEN_AFFILIATE_ID=$(gcloud secrets versions access latest --secret=RAKUTEN_AFFILIATE_ID --project=animation-agent)
+RAKUTEN_APPLICATION_URL=$(gcloud secrets versions access latest --secret=RAKUTEN_APPLICATION_URL --project=animation-agent)
 
 # 登録済みシークレット一覧
 gcloud secrets list --project=animation-agent
+
+# 楽天連携シークレットの存在確認
+gcloud secrets list --project=animation-agent --filter='name~RAKUTEN' --format='value(name)'
 
 # 新しいシークレットを登録（値はファイル経由で渡す — echo でパイプするとシェル履歴に残る）
 printf '%s' "<値>" | gcloud secrets create <SECRET_NAME> --data-file=- --project=animation-agent
@@ -222,7 +229,7 @@ bash scripts/deploy/deploy_fastapi.sh \
   --adk-url "$ADK_URL" --fastapi-url "$FASTAPI_URL" \
   --es-internal-ip 10.146.0.2 \
   --es-ssl-fingerprint "$ES_SSL_FINGERPRINT" \
-  --cors-allow-origins "https://gen-fashion-app.web.app,https://animation-agent.web.app" \
+  --cors-allow-origins "https://gen-fashion-app.web.app" \
   --r2-endpoint-url https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com \
   --r2-public-endpoint-url https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com \
   --r2-bucket-name gen-fashion-images
@@ -275,8 +282,15 @@ cd ..
 firebase deploy --only hosting --project animation-agent
 
 # デプロイ後の公開 URL
-# https://animation-agent.web.app
 # https://gen-fashion-app.web.app
+```
+
+Legacy default Hosting site `animation-agent` is disabled. Re-enable it only if
+the old `https://animation-agent.web.app` URL is intentionally restored:
+
+```bash
+npx -y firebase-tools@latest hosting:disable \
+  --site animation-agent --project animation-agent --force
 ```
 
 Firebase Auth authorized domains are separate from `FIREBASE_AUTH_DOMAIN`.
@@ -308,6 +322,49 @@ const target = 'gen-fashion-app.web.app';
   process.exit(1);
 });
 NODE
+```
+
+Remove a retired Hosting domain from Firebase Auth authorized domains:
+
+```bash
+node - <<'NODE'
+const { requireAuth } = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/requireAuth');
+const firebaseAuth = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/auth');
+const { getAuthDomains, updateAuthDomains } = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/gcp/auth');
+const project = 'animation-agent';
+const target = 'animation-agent.web.app';
+(async () => {
+  const projectRoot = process.cwd();
+  const selected = firebaseAuth.selectAccount(undefined, projectRoot);
+  const options = { project, projectRoot };
+  if (selected) options.account = selected.user.email;
+  await requireAuth(options);
+  const domains = await getAuthDomains(project);
+  await updateAuthDomains(project, domains.filter((domain) => domain !== target));
+})();
+NODE
+```
+
+### R2 CORS cleanup for the active Hosting origin
+
+`wrangler` requires a valid Cloudflare login or `CLOUDFLARE_API_TOKEN`. Keep only
+the active Firebase Hosting origin in the R2 browser-upload CORS rule:
+
+```bash
+cat > /tmp/gen-fashion-r2-cors.json <<'JSON'
+[
+  {
+    "AllowedOrigins": ["https://gen-fashion-app.web.app"],
+    "AllowedMethods": ["GET", "PUT", "POST", "OPTIONS"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+JSON
+
+wrangler r2 bucket cors set gen-fashion-images --file /tmp/gen-fashion-r2-cors.json
+wrangler r2 bucket cors list gen-fashion-images
 ```
 
 ---
@@ -482,7 +539,7 @@ Firebase Web API key は公開クライアント設定だが、濫用を抑え�
 ```bash
 gcloud services api-keys update f185ac73-ab70-486d-a139-3b821854afdf \
   --project=animation-agent \
-  --allowed-referrers='https://gen-fashion-app.web.app/*,https://animation-agent.web.app/*,http://localhost:8088/*'
+  --allowed-referrers='https://gen-fashion-app.web.app/*,https://animation-agent.firebaseapp.com/*,http://localhost:8088/*'
 ```
 
 ---
