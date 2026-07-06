@@ -78,3 +78,6 @@ def test_generate_labels_each_image_with_its_category(monkeypatch):
 
     # The final part still carries the style description.
     assert "casual spring" in contents[-1].text
+    assert "EC advertisement" in contents[-1].text
+    assert "typography" in contents[-1].text
+    assert "extra people" in contents[-1].text

@@ -383,6 +383,7 @@ async def test_generate_phase_runs_agent_with_selection_gender_and_child_age(mon
         "gender": "female",
         "wearer_age": "child",
         "language": "ja",
+        "item_categories": ["top", "bottom"],
     }
     runner = FakeRunner(
         [
@@ -484,7 +485,7 @@ async def test_generate_phase_falls_back_only_after_explicit_selection(monkeypat
         userPreference={"style": "clean", "gender": "common"},
         phase="generate",
         selectedItems=[
-            {"item_id": "top", "image_url": "http://image/top.jpg"},
+            {"item_id": "top", "image_url": "http://image/top.jpg", "category": "top"},
         ],
     )
     repo = FakeRepo()
@@ -504,6 +505,7 @@ async def test_generate_phase_falls_back_only_after_explicit_selection(monkeypat
     await execute_run_session(request, session_repo=repo, runner=runner)
 
     assert captured["item_image_urls"] == ["http://image/top.jpg"]
+    assert captured["item_categories"] == ["top"]
     assert captured["gender"] == "common"
     assert captured["wearer_age"] == "child"
     assert captured["language"] == "ja"
@@ -519,8 +521,12 @@ def test_generate_style_tool_exposes_only_style_description(monkeypatch):
         userPreference={"style": "clean", "colorPreference": "blue", "gender": "female"},
         phase="generate",
         selectedItems=[
-            {"item_id": "top", "image_url": "http://image/top.jpg"},
-            {"item_id": "bottom", "image_url": "http://image/bottom.jpg"},
+            {"item_id": "top", "image_url": "http://image/top.jpg", "category": "top"},
+            {
+                "item_id": "bottom",
+                "image_url": "http://image/bottom.jpg",
+                "category": "bottom",
+            },
         ],
     )
     captured = {}
@@ -539,6 +545,7 @@ def test_generate_style_tool_exposes_only_style_description(monkeypatch):
 
     assert captured["user_id"] == "owner-1"
     assert captured["item_image_urls"] == ["http://image/top.jpg", "http://image/bottom.jpg"]
+    assert captured["item_categories"] == ["top", "bottom"]
     assert captured["style_description"] == "breezy summer look"
     assert captured["gender"] == "female"
     assert captured["wearer_age"] == "child"
@@ -553,7 +560,9 @@ def test_generate_style_tool_defaults_empty_style_to_preference(monkeypatch):
         sharedClosetId="adult-01",
         userPreference={"style": "minimal", "colorPreference": "earth tones"},
         phase="generate",
-        selectedItems=[{"item_id": "top", "image_url": "http://image/top.jpg"}],
+        selectedItems=[
+            {"item_id": "top", "image_url": "http://image/top.jpg", "category": "top"}
+        ],
     )
     captured = {}
 
@@ -567,6 +576,7 @@ def test_generate_style_tool_defaults_empty_style_to_preference(monkeypatch):
     tool(style_description="   ")
 
     assert captured["style_description"] == "minimal earth tones"
+    assert captured["item_categories"] == ["top"]
     assert captured["language"] == "ja"
 
 
@@ -580,8 +590,12 @@ async def test_generate_trace_and_result_normalize_to_server_values(monkeypatch)
         userPreference={"style": "clean", "colorPreference": "blue", "gender": "female"},
         phase="generate",
         selectedItems=[
-            {"item_id": "top", "image_url": "http://image/top.jpg"},
-            {"item_id": "bottom", "image_url": "http://image/bottom.jpg"},
+            {"item_id": "top", "image_url": "http://image/top.jpg", "category": "top"},
+            {
+                "item_id": "bottom",
+                "image_url": "http://image/bottom.jpg",
+                "category": "bottom",
+            },
         ],
     )
     repo = FakeRepo(next_seq=20)
@@ -598,6 +612,7 @@ async def test_generate_trace_and_result_normalize_to_server_values(monkeypatch)
                         "style_description": "edgy",
                         "gender": "male",
                         "wearer_age": "adult",
+                        "item_categories": ["attacker"],
                     },
                 },
             ),
@@ -630,6 +645,7 @@ async def test_generate_trace_and_result_normalize_to_server_values(monkeypatch)
         "gender": "female",
         "wearer_age": "child",
         "language": "ja",
+        "item_categories": ["top", "bottom"],
     }
     saved = repo.results[0][1]
     assert saved["items"] == ["http://image/top.jpg", "http://image/bottom.jpg"]
