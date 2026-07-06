@@ -103,6 +103,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get deleteItemBody => 'このアイテムをクローゼットから削除します。';
 
   @override
+  String get deleteHistoryQuestion => '画像を削除しますか？';
+
+  @override
+  String get deleteHistoryBody => '生成画像を履歴から削除します。';
+
+  @override
   String get cancel => 'キャンセル';
 
   @override

@@ -103,6 +103,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get deleteItemBody => 'This removes the item from your closet.';
 
   @override
+  String get deleteHistoryQuestion => 'Delete image?';
+
+  @override
+  String get deleteHistoryBody =>
+      'This removes the generated image from your history.';
+
+  @override
   String get cancel => 'Cancel';
 
   @override

@@ -291,6 +291,55 @@ async def test_assisted_propose_merges_anchors_with_rakuten_candidates(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_assisted_propose_displays_multiple_rakuten_options_but_recommends_one(
+    monkeypatch,
+):
+    request = _assisted_request()
+    repo = FakeRepo()
+    runner = FakeRunner(
+        [
+            _adk_event(
+                "ClosetAgent",
+                response={
+                    "name": "search_rakuten",
+                    "response": {
+                        "result": [
+                            {
+                                "item_id": f"rakuten:shop:{index}",
+                                "source": "RAKUTEN",
+                                "name": f"Option {index}",
+                                "image_url": f"http://thumb/{index}.jpg",
+                            }
+                            for index in range(1, 5)
+                        ]
+                    },
+                },
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "styling_app.server.search_rakuten",
+        lambda **kwargs: pytest.fail("rakuten fallback must not run"),
+    )
+
+    await execute_run_session(request, session_repo=repo, runner=runner)
+
+    candidates = repo.proposals[0][1]
+    rakuten_candidates = [
+        candidate for candidate in candidates if candidate.get("source") == "RAKUTEN"
+    ]
+    assert [candidate["item_id"] for candidate in rakuten_candidates] == [
+        "rakuten:shop:1",
+        "rakuten:shop:2",
+        "rakuten:shop:3",
+        "rakuten:shop:4",
+    ]
+    assert [
+        candidate.get("recommended") for candidate in rakuten_candidates
+    ] == [True, False, False, False]
+
+
+@pytest.mark.asyncio
 async def test_assisted_propose_runs_rakuten_fallback_when_agent_has_no_suggestions(
     monkeypatch,
 ):
@@ -331,6 +380,25 @@ def test_propose_rakuten_tool_returns_empty_when_unavailable(monkeypatch):
     tool = _build_propose_rakuten_tool()
 
     assert tool(query="white t-shirt") == []
+
+
+def test_propose_rakuten_tool_fetches_display_options_even_when_llm_limits_to_one(
+    monkeypatch,
+):
+    from styling_app.server import _build_propose_rakuten_tool
+
+    captured = {}
+
+    def fake_search_rakuten(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr("styling_app.server.search_rakuten", fake_search_rakuten)
+    tool = _build_propose_rakuten_tool()
+
+    tool(query="white t-shirt", limit=1)
+
+    assert captured["limit"] == 5
 
 
 @pytest.mark.asyncio
@@ -497,7 +565,7 @@ async def test_generate_phase_falls_back_only_after_explicit_selection(monkeypat
         return {
             "coordinate_image_url": "http://coordinate",
             "items": kwargs["item_image_urls"],
-            "model_used": "collage-fallback",
+            "model_used": "gemini-2.5-flash-image",
         }
 
     monkeypatch.setattr("styling_app.server.style_synthesizer", fake_synthesizer)
@@ -510,6 +578,37 @@ async def test_generate_phase_falls_back_only_after_explicit_selection(monkeypat
     assert captured["wearer_age"] == "child"
     assert captured["language"] == "ja"
     assert repo.results[0][1]["coordinateImageUrl"] == "http://coordinate"
+
+
+@pytest.mark.asyncio
+async def test_generate_phase_rejects_collage_fallback_result(monkeypatch):
+    request = RunSessionRequest(
+        sessionId="session-1",
+        userId="user-123",
+        source="SHARED_CLOSET",
+        sharedClosetId="child-01",
+        userPreference={"style": "clean", "gender": "common"},
+        phase="generate",
+        selectedItems=[
+            {"item_id": "top", "image_url": "http://image/top.jpg", "category": "top"},
+        ],
+    )
+    repo = FakeRepo()
+    runner = FakeRunner([_adk_event("StylingAgent", text="Unable to generate.")])
+
+    def fake_synthesizer(**kwargs):
+        return {
+            "coordinate_image_url": "http://coordinate",
+            "items": kwargs["item_image_urls"],
+            "model_used": "collage-fallback",
+        }
+
+    monkeypatch.setattr("styling_app.server.style_synthesizer", fake_synthesizer)
+
+    await execute_run_session(request, session_repo=repo, runner=runner)
+
+    assert repo.results == []
+    assert repo.errors == [("session-1", "Coordinate image generation failed")]
 
 
 def test_generate_style_tool_exposes_only_style_description(monkeypatch):

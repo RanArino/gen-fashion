@@ -181,6 +181,12 @@ async def execute_run_session(
             if result is None:
                 await session_repo.mark_error(request.session_id, "Selected items have no images")
                 return
+            if _is_collage_fallback_result(result):
+                await session_repo.mark_error(
+                    request.session_id,
+                    "Coordinate image generation failed",
+                )
+                return
             await session_repo.write_style_result(request.session_id, result)
             return
 
@@ -342,6 +348,10 @@ def _build_propose_search_tool(
     return phase_search_closet
 
 
+MIN_RAKUTEN_DISPLAY_CANDIDATES = 5
+MAX_DEFAULT_RECOMMENDED_SUGGESTIONS = 1
+
+
 def _build_propose_rakuten_tool():
     def phase_search_rakuten(
         query: str,
@@ -351,9 +361,10 @@ def _build_propose_rakuten_tool():
     ) -> list[dict]:
         # A raised tool error aborts the whole ADK run; Rakuten being down or
         # unconfigured must instead degrade to closet/anchor-only proposals.
+        effective_limit = max(limit, MIN_RAKUTEN_DISPLAY_CANDIDATES)
         try:
             return search_rakuten(
-                query=query, category=category, colors=colors, limit=limit
+                query=query, category=category, colors=colors, limit=effective_limit
             )
         except RakutenUnavailableError as exc:
             logger.warning("search_rakuten unavailable: %s", exc)
@@ -362,9 +373,6 @@ def _build_propose_rakuten_tool():
     phase_search_rakuten.__name__ = "search_rakuten"
     phase_search_rakuten.__doc__ = search_rakuten.__doc__
     return phase_search_rakuten
-
-
-MAX_DEFAULT_RECOMMENDED_SUGGESTIONS = 3
 
 
 async def _finalize_assisted_candidates(
@@ -577,6 +585,10 @@ def _collect_style_result(
         result["items"] = selected_image_urls
         result["selectedItems"] = selected_items or []
     return result
+
+
+def _is_collage_fallback_result(result: dict[str, Any]) -> bool:
+    return (result.get("modelUsed") or result.get("model_used")) == "collage-fallback"
 
 
 async def _resolve_closet_kind(

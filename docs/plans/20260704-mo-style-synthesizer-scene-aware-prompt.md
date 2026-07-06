@@ -25,13 +25,15 @@ How to see it working after the change: run `pytest adk-agent-service/styling_ap
 - [x] (2026-07-04) MO-3 — `style_synthesizer` gained an optional `item_categories: list[str] | None` param; it builds `{bytes, category, note}` per item and passes that list to `image_generation.generate()`.
 - [x] (2026-07-04) MO-4 — `styling_app/tests/test_image_generation.py` added: asserts the text part immediately before each image part carries the right label (`"top"` for a labeled item, `"item"` for an unlabeled one) and that the final part still contains the style description.
 - [x] (2026-07-04) MO-5 — `test_search_rakuten_category_reaches_style_synthesizer` added to `test_tools.py`: calls `search_rakuten` then `style_synthesizer` and asserts the captured `generate()` items carry the category that originated in the Rakuten result. `test_style_synthesizer_forwards_categories` covers the direct case. `pytest styling_app/tests -q` (run via `.venv/bin/python -m pytest styling_app/tests -q` from `adk-agent-service/`) reports **60 passed**.
+- [x] (2026-07-06) MO-6a — Follow-up regression fix after a real EC advertisement/collage image reproduced the failure: `server.py` now threads server-authoritative selected item categories into both the constrained generate tool and the direct generate fallback, so production Assisted/Style & Shop generation no longer loses the Rakuten/search category labels before `image_generation.generate()`. After a second reported regression showed the harsher prompt could degrade into a `collage-fallback`-quality result, `_TRYON_PROMPT` was shortened and `style_synthesizer` now retries once with a compact prompt. If generation still fails, no collage is saved as a completed coordinate; the session errors instead. Tests updated to assert category propagation, retry behavior, and rejection of `collage-fallback` results through the production generate paths.
 - [ ] MO-6 — Manual visual check against the three `coord.jpg`-style inputs; not run (requires live Vertex AI credentials — see Outcomes).
 
 
 ## Surprises & Discoveries
 
 
-(none yet)
+- Discovery (2026-07-06): The first MO implementation added `item_categories` to `style_synthesizer` and tested direct `search_rakuten` -> `style_synthesizer` calls, but the production generate paths in `server.py` never passed `item_categories`. Real sessions therefore labeled every reference as generic `"item"` even when `selectedItems` carried `category`. That made the prompt too weak for EC advertisement/collage photos like shorts listings with text, badges, multiple people, and close-up wearing shots.
+- Discovery (2026-07-06): A later generated result was visibly just the input garments side by side, meaning `style_synthesizer` had reached `collage-fallback`. The previous prompt hardening used too many negative constraints and likely increased the chance that the image model returned no image. Because fallback was immediate and silent, the UI presented the diagnostic collage as if it were a completed coordinate.
 
 
 ## Decision Log
@@ -49,11 +51,23 @@ How to see it working after the change: run `pytest adk-agent-service/styling_ap
   Rationale: `item_image_urls` is a plain `list[str]` today and is also the shape the un-constrained `StylingAgent` (`agents/styling_agent.py`, `_GENERATION_INSTRUCTION` path) already calls with. Keeping it a flat list of URLs avoids a breaking change to that agent-facing tool signature; the new parameter is additive and optional, defaulting to `None` (all items unlabeled, current behavior preserved).
   Date/Author: 2026-07-04 / ExecPlan
 
+- Decision: Bind `item_categories` from `request.selected_items` inside the server's constrained generate paths, the same way `item_image_urls`, user ID, gender, wearer age, and language are already server-bound.
+  Rationale: The model-visible tool only exposes `style_description`; allowing the LLM to choose categories would reopen the same trust boundary issue ME fixed for URLs/user identity. The selected candidates are the authoritative source because they round-trip from `search_closet` / `search_rakuten` through the user's explicit selection gate.
+  Date/Author: 2026-07-06 / ExecPlan follow-up
+
+- Decision: Keep the reference-photo instruction short and positive, and retry once with an even more compact prompt before failing the generation.
+  Rationale: The failure mode is not just "wrong item extracted"; it is also "image model returns no image, then collage fallback is shown as completion." A long list of negative constraints can reduce generation reliability. A concise primary prompt plus compact retry gives the model a simpler second chance without presenting a diagnostic collage as the final coordinate.
+  Date/Author: 2026-07-06 / ExecPlan follow-up
+
+- Decision: Do not accept `collage-fallback` as a completed user-facing coordinate.
+  Rationale: The product goal is an actual coordinate image. A collage is useful as a low-level diagnostic artifact, but presenting it as "completed" creates exactly the broken result this plan is meant to prevent. If both generation attempts fail, the session should error and let the user retry or choose different candidates.
+  Date/Author: 2026-07-06 / ExecPlan follow-up
+
 
 ## Outcomes & Retrospective
 
 
-MO-1 through MO-5 are implemented and covered by automated tests (`pytest styling_app/tests -q` → 60 passed, no regressions in the pre-existing `style_synthesizer`/`search_rakuten` suites). MO-6 (the manual before/after visual comparison against the three `coord.jpg` input types) was not run in this session because it requires live Vertex AI credentials (`adk-agent-service/.env.example`) and a running stack; it remains an open item before this fix can be considered visually validated. Whoever runs MO-6 should update this section with the observed pass/partial/fail per input type.
+MO-1 through MO-5 are implemented and covered by automated tests (`pytest styling_app/tests -q` → 60 passed, no regressions in the pre-existing `style_synthesizer`/`search_rakuten` suites). On 2026-07-06, MO-6a fixed a production wiring gap: selected item categories now reach `style_synthesizer` from both the ADK generate tool path and the direct fallback path. A same-day follow-up shortened the over-constrained prompt, added one compact-prompt retry, and rejects `collage-fallback` as a completed coordinate. MO-6 (the manual before/after visual comparison against the three `coord.jpg` input types) was not run in this session because it requires live Vertex AI credentials (`adk-agent-service/.env.example`) and a running stack; it remains an open item before this fix can be considered visually validated. Whoever runs MO-6 should update this section with the observed pass/partial/fail per input type.
 
 
 ## Context and Orientation

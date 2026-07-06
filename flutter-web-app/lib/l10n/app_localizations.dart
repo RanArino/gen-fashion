@@ -272,6 +272,18 @@ abstract class AppLocalizations {
   /// **'This removes the item from your closet.'**
   String get deleteItemBody;
 
+  /// No description provided for @deleteHistoryQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete image?'**
+  String get deleteHistoryQuestion;
+
+  /// No description provided for @deleteHistoryBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This removes the generated image from your history.'**
+  String get deleteHistoryBody;
+
   /// No description provided for @cancel.
   ///
   /// In en, this message translates to:

@@ -29,6 +29,8 @@
   "uploadFailed": "アップロードに失敗しました: {error}",
   "deleteItemQuestion": "アイテムを削除しますか？",
   "deleteItemBody": "このアイテムをクローゼットから削除します。",
+  "deleteHistoryQuestion": "画像を削除しますか？",
+  "deleteHistoryBody": "生成画像を履歴から削除します。",
   "cancel": "キャンセル",
   "delete": "削除",
   "deleteFailed": "削除に失敗しました: {error}",
