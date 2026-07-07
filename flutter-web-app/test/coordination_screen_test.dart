@@ -823,6 +823,7 @@ void main() {
               'query': 'white t-shirt',
               'category': 'top',
               'colors': ['white'],
+              'tags': ['cotton', 'casual'],
               'limit': 1,
               'requestedLimit': 1,
               'effectiveLimit': 5,
@@ -840,6 +841,8 @@ void main() {
     expect(find.text('top'), findsOneWidget);
     expect(find.text('1 -> 5'), findsOneWidget);
     expect(find.text('white'), findsOneWidget);
+    expect(find.text('cotton'), findsOneWidget);
+    expect(find.text('casual'), findsOneWidget);
     expect(find.textContaining('"query"'), findsNothing);
   });
 

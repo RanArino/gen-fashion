@@ -360,15 +360,20 @@ def proposing_session(user_id="user-123", candidates=None):
     )
 
 
-def rakuten_candidate(item_id="rakuten:shop:1001"):
+def rakuten_candidate(
+    item_id="rakuten:shop:1001",
+    *,
+    name="White T-Shirt",
+    tags=None,
+):
     return {
         "item_id": item_id,
         "source": "RAKUTEN",
-        "name": "White T-Shirt",
+        "name": name,
         "image_url": "https://thumbnail.image.rakuten.co.jp/shop/1001.jpg",
         "price": 2980,
         "category": "top",
-        "tags": ["casual"],
+        "tags": tags or ["casual"],
         "external_url": "https://item.rakuten.co.jp/shop/1001",
         "affiliate_url": "https://hb.afl.rakuten.co.jp/xyz",
         "shop_name": "Shop Name",
@@ -416,6 +421,26 @@ async def test_import_suggestion_creates_interesting_ready_item():
     assert search.indexed[0]["origin"] == "RAKUTEN"
     assert search.indexed[0]["tags"] == ["casual"]
     assert search.indexed[0]["is_shared"] is False
+
+
+@pytest.mark.asyncio
+async def test_import_suggestion_uses_candidate_tags_not_localized_name():
+    candidate = rakuten_candidate(
+        name="ベージュ チノパン",
+        tags=["beige", "chino", "stretch"],
+    )
+    session = proposing_session(candidates=[candidate])
+    repo = FakeClosetRepo()
+    storage = FakeImageStorage()
+    search = FakeEmbeddingSearch()
+    use_case = import_use_case(FakeStylingRepo(session), repo, storage, search)
+
+    await use_case.execute("user-123", str(session.id), candidate["item_id"])
+
+    item = (await repo.get_all_by_user("user-123"))[0]
+    assert [tag.value for tag in item.tags] == ["beige", "chino", "stretch"]
+    assert "ベージュ チノパン" not in [tag.value for tag in item.tags]
+    assert search.indexed[0]["tags"] == ["beige", "chino", "stretch"]
 
 
 @pytest.mark.asyncio

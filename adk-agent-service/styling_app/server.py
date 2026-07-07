@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -90,7 +91,11 @@ async def execute_run_session(
                     "only one coordinate, so balance suggestions across missing "
                     "outfit slots and do not auto-recommend multiple items for "
                     "the same category. Call search_rakuten with a concrete "
-                    "query and category hint per suggestion, then "
+                    "concise query, category hint, and separate English tags "
+                    "per suggestion. Keep the Rakuten query short for recall; "
+                    "do not mechanically stuff metadata tags into it. Tags "
+                    "should describe the intended item, such as garment type, "
+                    "color, material, fit, formality, season, and style. Then "
                     "stop after returning candidates. Context: "
                     f"{_message_context(request, gender, closet_kind, language)}"
                 )
@@ -378,6 +383,7 @@ def _build_propose_rakuten_tool():
         query: str,
         category: str | None = None,
         colors: list[str] | None = None,
+        tags: list[str] | None = None,
         limit: int = 5,
     ) -> list[dict]:
         # A raised tool error aborts the whole ADK run; Rakuten being down or
@@ -385,7 +391,11 @@ def _build_propose_rakuten_tool():
         effective_limit = max(limit, MIN_RAKUTEN_DISPLAY_CANDIDATES)
         try:
             return search_rakuten(
-                query=query, category=category, colors=colors, limit=effective_limit
+                query=query,
+                category=category,
+                colors=colors,
+                tags=tags,
+                limit=effective_limit,
             )
         except RakutenUnavailableError as exc:
             logger.warning("search_rakuten unavailable: %s", exc)
@@ -450,11 +460,15 @@ async def _run_assisted_rakuten_fallback(
     collected: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], int]:
     """Deterministic Rakuten query from the user preference (MK-4 fallback)."""
+    fallback_category = _fallback_rakuten_category(request.anchor_items or [])
     tool_args = {
         "query": _style_description(request.user_preference),
         "colors": _preference_colors(request.user_preference),
+        "tags": _fallback_rakuten_tags(request, fallback_category),
         "limit": 5,
     }
+    if fallback_category:
+        tool_args["category"] = fallback_category
     await session_repo.write_event(
         request.session_id,
         _event(
@@ -801,6 +815,55 @@ def _preference_colors(preference: dict[str, Any]) -> list[str] | None:
         if token.strip()
     ]
     return colors or None
+
+
+def _fallback_rakuten_category(anchors: list[dict[str, Any]]) -> str | None:
+    categories = {
+        str(anchor.get("category") or "").strip().lower()
+        for anchor in anchors
+        if anchor.get("category")
+    }
+    if categories & {"top", "shirt", "blouse", "t-shirt", "tee", "outer", "outerwear"}:
+        return "bottom"
+    if categories & {"bottom", "pants", "skirt", "shorts"}:
+        return "top"
+    return None
+
+
+def _fallback_rakuten_tags(
+    request: RunSessionRequest,
+    category: str | None,
+) -> list[str]:
+    tags: list[str] = []
+    for value in _preference_colors(request.user_preference) or []:
+        if value not in tags:
+            tags.append(value)
+    if category and category not in tags:
+        tags.append(category)
+    for value in _english_style_tags(_style_description(request.user_preference)):
+        if value not in tags:
+            tags.append(value)
+    return tags[:6]
+
+
+def _english_style_tags(text: str) -> list[str]:
+    stopwords = {
+        "a",
+        "an",
+        "and",
+        "for",
+        "look",
+        "or",
+        "outfit",
+        "style",
+        "the",
+        "with",
+    }
+    tags = []
+    for token in re.findall(r"[A-Za-z][A-Za-z-]*", text.lower()):
+        if token not in stopwords and token not in tags:
+            tags.append(token)
+    return tags
 
 
 def _language_code(preference: dict[str, Any]) -> str:

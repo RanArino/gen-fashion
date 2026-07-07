@@ -157,7 +157,12 @@ def test_search_rakuten_maps_candidate_fields(monkeypatch):
         ],
     )
 
-    results = search_rakuten("white t-shirt", category="top", colors=["white"])
+    results = search_rakuten(
+        "white t-shirt",
+        category="top",
+        colors=["white"],
+        tags=["cotton", "casual", "white"],
+    )
 
     assert captured["keyword"] == "white t-shirt white"
     assert results == [
@@ -168,7 +173,7 @@ def test_search_rakuten_maps_candidate_fields(monkeypatch):
             "image_url": "https://thumbnail.image.rakuten.co.jp/1001.jpg",
             "price": 2980,
             "category": "top",
-            "tags": ["white"],
+            "tags": ["white", "cotton", "casual"],
             "external_url": "https://item.rakuten.co.jp/shop/1001",
             "affiliate_url": "https://hb.afl.rakuten.co.jp/xyz",
             "shop_name": "Shop Name",
@@ -190,6 +195,31 @@ def test_search_rakuten_skips_items_without_image_or_code(monkeypatch):
     results = search_rakuten("black hat")
 
     assert [item["item_id"] for item in results] == ["rakuten:b"]
+
+
+def test_search_rakuten_adds_metadata_tags_without_query_stuffing(monkeypatch):
+    captured = _patch_rakuten(
+        monkeypatch,
+        [
+            {
+                "item_code": "shop:1001",
+                "name": "Chino Pants",
+                "price": 4980,
+                "image_url": "https://thumbnail.image.rakuten.co.jp/1001.jpg",
+            }
+        ],
+    )
+
+    results = search_rakuten(
+        "beige pants",
+        category="bottom",
+        colors=["ベージュ"],
+        tags=["chino", "stretch", "casual", "beige"],
+        limit=1,
+    )
+
+    assert captured["keywords"] == ["beige pants ベージュ"]
+    assert results[0]["tags"] == ["beige", "chino", "stretch", "casual"]
 
 
 def test_search_rakuten_broadens_marketplace_query_when_results_are_sparse(
@@ -233,6 +263,7 @@ def test_search_rakuten_broadens_marketplace_query_when_results_are_sparse(
         "blue wide-leg linen pants",
         category="bottom",
         colors=["blue"],
+        tags=["linen", "wide-leg"],
         limit=2,
     )
 

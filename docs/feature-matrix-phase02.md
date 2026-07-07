@@ -17,6 +17,15 @@
 > earlier 403 was the migrated endpoint requiring `Origin`/`Referer` headers
 > (`RAKUTEN_APPLICATION_URL`), not invalid keys; the flow still degrades to
 > anchor/closet-only suggestions if Rakuten is unavailable.
+>
+> **Rakuten metadata planning (2026-07-07):** Added milestone **MQ** for
+> preserving AI-provided English search tags from `search_rakuten` candidates
+> into saved `INTERESTING` closet items, without stuffing those tags into the
+> Rakuten query and hurting recall. ExecPlan:
+> [20260707-mq-rakuten-search-tags-for-interesting-items.md](plans/20260707-mq-rakuten-search-tags-for-interesting-items.md).
+> Rows **MQ-1...MQ-5** are ✅ Completed as of 2026-07-07: ADK/FastAPI/Flutter
+> regression tests pass, and live UI verification confirmed saved Interesting
+> items show the English tags supplied with the Rakuten search metadata.
 
 ---
 
@@ -56,6 +65,24 @@
 | MK-8 | Assisted Coordinate E2E | ✅ Implemented (2026-07-03; live-Rakuten smoke passed) | Local smoke/browser E2E covers anchors -> Rakuten suggestions -> selection -> generation -> save Interesting -> mark Owned -> reuse from closet. | §3.6 |
 
 **Exit criteria:** A signed-in Web user completes the Assisted Coordinate flow end to end, imports a Rakuten suggestion as Interesting, marks it Owned, and can select it in Standard Coordinate `CLOSET` mode; FastAPI, ADK, Flutter, and Firestore rules checks pass.
+
+---
+
+## MQ — Rakuten Search Tags for Interesting Items
+
+**Scope:** During Assisted Coordinate, let the agent provide a concise English `tags` list alongside each Rakuten search query, keep the actual Rakuten query broad enough for recall, and persist those tags when a user saves the candidate as an Interesting closet item. No new Gemini image analysis is added to the import path. Reference: req §3.2 / §3.4, MK follow-up.
+
+> **ExecPlan (2026-07-07):** [20260707-mq-rakuten-search-tags-for-interesting-items.md](plans/20260707-mq-rakuten-search-tags-for-interesting-items.md). Completed 2026-07-07: `search_rakuten` accepts separate English metadata tags, assisted prompts/fallbacks pass those tags without over-constraining the Rakuten query, save-as-Interesting preserves candidate tags, tests cover tag threading and recall guardrails, and live UI verification confirmed imported Interesting items show the expected tags.
+
+| ID | Feature | Status | Description | Req ref |
+|---|---|---|---|---|
+| MQ-1 | `search_rakuten` tag contract | ✅ Implemented (2026-07-07) | ADK tool accepts optional English metadata tags separate from the recall-oriented Rakuten query. | §3.2 |
+| MQ-2 | Agent prompt + fallback tag generation | ✅ Implemented (2026-07-07) | Assisted prompts and deterministic fallback carry concise English item tags without over-constraining the query. | §3.2 |
+| MQ-3 | Candidate-to-Interesting tag persistence | ✅ Implemented (2026-07-07) | Candidate tags flow through `proposedCandidates` and `POST /closet/import-suggestion`; saved Interesting items store/index those tags and do not append localized product names. | §3.4 |
+| MQ-4 | Search recall guardrails | ✅ Implemented (2026-07-07) | Tests prove metadata tags are not blindly concatenated into every Rakuten keyword variant, avoiding zero-result over-filtering. | §3.2 |
+| MQ-5 | Regression tests + manual verification | ✅ Implemented (2026-07-07) | ADK/FastAPI/Flutter tests cover tag threading; live Style & Shop UI verification confirmed saved Interesting items show the expected English tags. | §3.6 |
+
+**Exit criteria:** A Rakuten tool call can show `query` and English `tags` separately; Rakuten results still appear; saving a candidate as Interesting stores those tags in Firestore and Elasticsearch; no extra image-analysis call is required.
 
 ---
 
