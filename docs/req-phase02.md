@@ -116,6 +116,22 @@ Owned READY items are selectable in Coordinate-from-closet.
   suggestion as Interesting -> change to Owned -> reuse the item from Standard
   Coordinate closet mode.
 
+### 3.7 Rakuten search metadata tags for saved Interesting items (MQ)
+
+> **ExecPlan:** [20260707-mq-rakuten-search-tags-for-interesting-items.md](plans/20260707-mq-rakuten-search-tags-for-interesting-items.md)
+> **Tracker:** feature-matrix rows **MQ-1...MQ-5**.
+
+- When the Assisted agent decides to call `search_rakuten`, it may provide a
+  concise English metadata `tags` list alongside the Rakuten search `query`.
+- The Rakuten `query` remains recall-oriented and must not blindly concatenate
+  every metadata tag, because over-specific queries can return zero results.
+- Rakuten candidates carry these tags through `proposedCandidates`.
+- If the user saves a Rakuten candidate into the closet as Interesting, the
+  saved closet item's `tags` and the mirrored Elasticsearch `tags` use those
+  English metadata tags.
+- This does not add Gemini image analysis to the import path; the extra
+  metadata is produced during the already-running search/proposal step.
+
 ---
 
 ## 4. UI Onboarding & Contextual Help

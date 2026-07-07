@@ -22,10 +22,11 @@ Observable success: in a Style & Shop run, a `search_rakuten` tool call can incl
 
 - [x] (2026-07-07) ExecPlan authored after inspecting `search_rakuten`, ADK assisted fallback, `ImportSuggestedClosetItemUseCase`, closet metadata indexing, and Phase 2 feature matrix.
 - [x] (2026-07-07) Phase 2 requirements and feature matrix synchronized for MQ (`docs/req-phase02.md` §3.7, `docs/feature-matrix-phase02.md` MQ-1...MQ-5 set to 🟡 In progress).
-- [ ] Implement ADK `search_rakuten` tag contract and fallback tag generation.
-- [ ] Preserve tag metadata through candidate finalization, UI candidates, and save-as-Interesting import.
-- [ ] Add backend/ADK tests and run targeted plus full relevant suites.
-- [ ] Record outcomes and any implementation discoveries.
+- [x] (2026-07-07) Implemented ADK `search_rakuten` tag contract, tag normalization/de-duplication, assisted prompt guidance, and deterministic fallback tag generation.
+- [x] (2026-07-07) Preserved tag metadata through candidate finalization, UI candidates, trace Preview, and save-as-Interesting import; FastAPI import already copied only `candidate["tags"]`.
+- [x] (2026-07-07) Added backend/ADK/FastAPI/Flutter regression tests and ran targeted plus full relevant suites: ADK 71 passed, FastAPI 113 passed / 1 skipped, Flutter analyze clean, Flutter tests 61 passed.
+- [x] (2026-07-07) Manual Style & Shop verification accepted from user screenshot: saved Interesting items show the search-query tags accurately in the closet edit dialog (examples: `jeans, pants, dark blue, straight fit, casual` and `sneakers, shoes, white, casual, male`).
+- [x] (2026-07-07) Recorded final outcomes.
 
 
 ## Surprises & Discoveries
@@ -39,6 +40,12 @@ Observable success: in a Style & Shop run, a `search_rakuten` tool call can incl
 
 - Observation: The Rakuten query should stay separate from tags because too many terms can reduce recall.
   Evidence: `adk-agent-service/styling_app/tools/search_rakuten.py::_search_keywords` already broadens the request through several keyword variants and stops once enough results are found; stuffing every metadata tag into `query` would work against that recall behavior.
+
+- Observation: The FastAPI save-as-Interesting path already used only `candidate["tags"]` and did not append the Rakuten product name.
+  Evidence: `fastapi-service/app/use_cases/closet/import_suggested_item.py` constructs `ClothingTag` values only from `candidate.get("tags") or []`; the new regression test uses a Japanese candidate name and verifies only English candidate tags are persisted and indexed.
+
+- Observation: The Flutter `search_rakuten` trace Preview already rendered result item tags, but the tool-call Preview did not show the new `tags` argument.
+  Evidence: `flutter-web-app/lib/coordination/coordination_screen.dart` now renders `toolArgs.tags` with `traceTags`, and `coordination_screen_test.dart` covers the Preview chips.
 
 
 ## Decision Log
@@ -60,11 +67,15 @@ Observable success: in a Style & Shop run, a `search_rakuten` tool call can incl
   Rationale: The component graph, services, routes, storage ownership, and external integrations do not change; only a candidate metadata field is threaded through the existing ADK -> FastAPI -> Firestore/Elasticsearch flow.
   Date/Author: 2026-07-07 / Codex
 
+- Decision: Show `search_rakuten.tags` in the existing trace Preview.
+  Rationale: The Preview already exposes query/category/colors/limit and result tags; showing call-time tags makes the new contract debuggable without adding a user-facing edit surface.
+  Date/Author: 2026-07-07 / Codex
+
 
 ## Outcomes & Retrospective
 
 
-Not yet implemented.
+Completed. Automated verification passed, and the user confirmed from live UI screenshots that saved Interesting items accurately reflect the tags used with the Rakuten search metadata. The examples show imported `bottom` and `shoes` items carrying concise English tags in the closet edit dialog. No Gemini image-analysis call was added to the import path, and FastAPI regression coverage verifies the same candidate tags are persisted and indexed without appending localized Rakuten product names.
 
 
 ## Context and Orientation
