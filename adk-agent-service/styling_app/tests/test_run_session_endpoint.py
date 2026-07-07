@@ -352,6 +352,7 @@ async def test_assisted_propose_logs_rakuten_effective_limit(monkeypatch):
                     "args": {
                         "query": "淡い青のジーンズ",
                         "category": "bottom",
+                        "tags": ["denim", "casual"],
                         "limit": 1,
                     },
                 },
@@ -389,6 +390,7 @@ async def test_assisted_propose_logs_rakuten_effective_limit(monkeypatch):
     assert rakuten_call["toolArgs"] == {
         "query": "淡い青のジーンズ",
         "category": "bottom",
+        "tags": ["denim", "casual"],
         "limit": 1,
         "requestedLimit": 1,
         "effectiveLimit": 5,
@@ -420,9 +422,61 @@ async def test_assisted_propose_runs_rakuten_fallback_when_agent_has_no_suggesti
 
     assert captured["query"] == "clean white"
     assert captured["colors"] == ["white"]
+    assert captured["tags"] == ["white", "clean"]
     candidates = repo.proposals[0][1]
     assert [c["item_id"] for c in candidates] == ["anchor-1", "rakuten:fb:1"]
     assert candidates[1]["recommended"] is True
+    rakuten_call = next(
+        event
+        for _, event in repo.events
+        if event.get("toolName") == "search_rakuten"
+        and event.get("eventKind") == "tool_call"
+    )
+    assert rakuten_call["toolArgs"]["tags"] == ["white", "clean"]
+
+
+@pytest.mark.asyncio
+async def test_assisted_rakuten_fallback_normalizes_japanese_colors_to_tags(
+    monkeypatch,
+):
+    request = _assisted_request()
+    request.user_preference = {
+        "style": "casual",
+        "gender": "female",
+        "colorPreference": "青, 白",
+    }
+    request.anchor_items = [{**ANCHOR, "category": "top"}]
+    repo = FakeRepo()
+    runner = FakeRunner([_adk_event("styling_app", text="No suggestions.")])
+    captured = {}
+
+    def fake_search_rakuten(**kwargs):
+        captured.update(kwargs)
+        return [
+            {
+                "item_id": "rakuten:fb:1",
+                "source": "RAKUTEN",
+                "image_url": "http://thumb/fb.jpg",
+                "tags": kwargs["tags"],
+                "category": kwargs["category"],
+            }
+        ]
+
+    monkeypatch.setattr("styling_app.server.search_rakuten", fake_search_rakuten)
+
+    await execute_run_session(request, session_repo=repo, runner=runner)
+
+    assert captured["query"] == "casual 青, 白"
+    assert captured["colors"] == ["blue", "white"]
+    assert captured["category"] == "bottom"
+    assert captured["tags"] == ["blue", "white", "bottom", "casual"]
+    rakuten_call = next(
+        event
+        for _, event in repo.events
+        if event.get("toolName") == "search_rakuten"
+        and event.get("eventKind") == "tool_call"
+    )
+    assert rakuten_call["toolArgs"]["tags"] == ["blue", "white", "bottom", "casual"]
 
 
 def test_propose_rakuten_tool_returns_empty_when_unavailable(monkeypatch):
@@ -452,9 +506,10 @@ def test_propose_rakuten_tool_fetches_display_options_even_when_llm_limits_to_on
     monkeypatch.setattr("styling_app.server.search_rakuten", fake_search_rakuten)
     tool = _build_propose_rakuten_tool()
 
-    tool(query="white t-shirt", limit=1)
+    tool(query="white t-shirt", tags=["cotton", "casual"], limit=1)
 
     assert captured["limit"] == 5
+    assert captured["tags"] == ["cotton", "casual"]
 
 
 @pytest.mark.asyncio
