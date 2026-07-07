@@ -281,6 +281,14 @@ async def _run_adk_phase(
                             "gender": gender,
                         }
                     elif (
+                        request.phase == "propose"
+                        and normalized.get("eventKind") == "tool_call"
+                        and normalized.get("toolName") == "search_rakuten"
+                    ):
+                        normalized["toolArgs"] = _rakuten_display_tool_args(
+                            normalized.get("toolArgs") or {}
+                        )
+                    elif (
                         request.phase == "generate"
                         and normalized.get("eventKind") == "tool_call"
                         and normalized.get("toolName") == "style_synthesizer"
@@ -350,6 +358,19 @@ def _build_propose_search_tool(
 
 MIN_RAKUTEN_DISPLAY_CANDIDATES = 5
 MAX_DEFAULT_RECOMMENDED_SUGGESTIONS = 1
+
+
+def _rakuten_display_tool_args(tool_args: dict[str, Any]) -> dict[str, Any]:
+    requested_limit = tool_args.get("limit", 5)
+    try:
+        effective_limit = max(int(requested_limit), MIN_RAKUTEN_DISPLAY_CANDIDATES)
+    except (TypeError, ValueError):
+        effective_limit = MIN_RAKUTEN_DISPLAY_CANDIDATES
+    return {
+        **tool_args,
+        "requestedLimit": requested_limit,
+        "effectiveLimit": effective_limit,
+    }
 
 
 def _build_propose_rakuten_tool():
