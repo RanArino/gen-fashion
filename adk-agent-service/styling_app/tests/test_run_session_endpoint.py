@@ -340,6 +340,62 @@ async def test_assisted_propose_displays_multiple_rakuten_options_but_recommends
 
 
 @pytest.mark.asyncio
+async def test_assisted_propose_logs_rakuten_effective_limit(monkeypatch):
+    request = _assisted_request()
+    repo = FakeRepo()
+    runner = FakeRunner(
+        [
+            _adk_event(
+                "ClosetAgent",
+                call={
+                    "name": "search_rakuten",
+                    "args": {
+                        "query": "淡い青のジーンズ",
+                        "category": "bottom",
+                        "limit": 1,
+                    },
+                },
+            ),
+            _adk_event(
+                "ClosetAgent",
+                response={
+                    "name": "search_rakuten",
+                    "response": {
+                        "result": [
+                            {
+                                "item_id": "rakuten:shop:1",
+                                "source": "RAKUTEN",
+                                "image_url": "http://thumb/1.jpg",
+                            }
+                        ]
+                    },
+                },
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "styling_app.server.search_rakuten",
+        lambda **kwargs: pytest.fail("rakuten fallback must not run"),
+    )
+
+    await execute_run_session(request, session_repo=repo, runner=runner)
+
+    rakuten_call = next(
+        event
+        for _, event in repo.events
+        if event.get("toolName") == "search_rakuten"
+        and event.get("eventKind") == "tool_call"
+    )
+    assert rakuten_call["toolArgs"] == {
+        "query": "淡い青のジーンズ",
+        "category": "bottom",
+        "limit": 1,
+        "requestedLimit": 1,
+        "effectiveLimit": 5,
+    }
+
+
+@pytest.mark.asyncio
 async def test_assisted_propose_runs_rakuten_fallback_when_agent_has_no_suggestions(
     monkeypatch,
 ):
