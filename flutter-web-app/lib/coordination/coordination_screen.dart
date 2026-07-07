@@ -636,6 +636,7 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           savedIds: _savedCandidateIds,
           importingIds: _importingCandidateIds,
           running: _running,
+          canGenerate: _status == 'PROPOSING',
           onChanged: (id, selected) => setState(() {
             selected
                 ? _selectedCandidateIds.add(id)
@@ -1098,7 +1099,12 @@ class _TracePanel extends StatelessWidget {
             const SizedBox(height: 12),
             if (error != null)
               Text(
-                l10n.errorWithMessage('$error'),
+                l10n.errorWithMessage(
+                  userFacingErrorMessage(
+                    error!,
+                    LocaleScope.of(context).languageCode,
+                  ),
+                ),
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               )
             else if (events.isEmpty)
@@ -1300,6 +1306,11 @@ class _SearchRakutenPreview extends StatelessWidget {
       final args = event.toolArgs ?? {};
       final query = args['query'] as String?;
       final category = args['category'] as String?;
+      final requestedLimit = args['requestedLimit'];
+      final effectiveLimit = args['effectiveLimit'] ?? args['limit'];
+      final limitLabel = Localizations.localeOf(context).languageCode == 'ja'
+          ? '取得上限'
+          : 'Limit';
       final rawColors = args['colors'];
       final colors = rawColors is List ? rawColors.cast<String>() : <String>[];
 
@@ -1310,6 +1321,15 @@ class _SearchRakutenPreview extends StatelessWidget {
             _PreviewField(label: l10n.traceQuery, child: Text(query)),
           if (category != null)
             _PreviewField(label: l10n.category, child: Text(category)),
+          if (effectiveLimit != null)
+            _PreviewField(
+              label: limitLabel,
+              child: Text(
+                requestedLimit != null && requestedLimit != effectiveLimit
+                    ? '$requestedLimit -> $effectiveLimit'
+                    : '$effectiveLimit',
+              ),
+            ),
           if (colors.isNotEmpty)
             _PreviewField(label: l10n.colors, child: _ChipRow(values: colors)),
         ],
@@ -1632,6 +1652,7 @@ class CandidatePanel extends StatelessWidget {
     required this.running,
     required this.onChanged,
     required this.onGenerate,
+    this.canGenerate = true,
     this.onImport,
   });
 
@@ -1640,6 +1661,7 @@ class CandidatePanel extends StatelessWidget {
   final Set<String> savedIds;
   final Set<String> importingIds;
   final bool running;
+  final bool canGenerate;
   final void Function(String id, bool selected) onChanged;
   final void Function(Map<String, dynamic> candidate)? onImport;
   final VoidCallback onGenerate;
@@ -1684,7 +1706,9 @@ class CandidatePanel extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: running || selectedIds.isEmpty ? null : onGenerate,
+              onPressed: running || !canGenerate || selectedIds.isEmpty
+                  ? null
+                  : onGenerate,
               icon: const Icon(Icons.auto_awesome),
               label: Text(l10n.generateSelected),
             ),
@@ -1696,6 +1720,16 @@ class CandidatePanel extends StatelessWidget {
 
   static String _id(Map<String, dynamic> item) =>
       (item['item_id'] ?? item['itemId']) as String;
+}
+
+String userFacingErrorMessage(Object error, String languageCode) {
+  final message = error is ApiException ? error.message : '$error';
+  if (message.contains('Cannot select candidates from')) {
+    return languageCode == 'ja'
+        ? '候補の取得または生成準備に失敗したため、このセッションでは生成できません。もう一度最初から試してください。'
+        : 'This session failed before generation could start. Please start again.';
+  }
+  return message;
 }
 
 class CandidateCard extends StatelessWidget {
