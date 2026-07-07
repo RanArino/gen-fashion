@@ -53,8 +53,16 @@ def search_items(keyword: str, *, limit: int | None = None) -> list[dict]:
         )
         response.raise_for_status()
         payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        reason = exc.response.reason_phrase
+        raise RakutenUnavailableError(
+            f"Rakuten search failed with HTTP {status_code} {reason}"
+        ) from exc
     except httpx.HTTPError as exc:
-        raise RakutenUnavailableError(f"Rakuten search failed: {exc}") from exc
+        raise RakutenUnavailableError(
+            f"Rakuten search failed: {exc.__class__.__name__}"
+        ) from exc
 
     items = []
     for entry in payload.get("Items") or []:

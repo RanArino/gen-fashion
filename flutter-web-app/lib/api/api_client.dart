@@ -18,8 +18,26 @@ class ApiException implements Exception {
   ApiException(this.statusCode, this.body);
   final int statusCode;
   final String body;
+
+  String get message {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        final detail = decoded['detail'];
+        if (detail is String && detail.trim().isNotEmpty) return detail;
+        final message = decoded['message'];
+        if (message is String && message.trim().isNotEmpty) return message;
+        final error = decoded['error'];
+        if (error is String && error.trim().isNotEmpty) return error;
+      }
+    } catch (_) {
+      // Fall through to the plain response body.
+    }
+    return body.trim().isEmpty ? 'Request failed.' : body;
+  }
+
   @override
-  String toString() => 'API error $statusCode: $body';
+  String toString() => 'API error $statusCode: $message';
 }
 
 /// Thin wrapper around the FastAPI closet endpoints. Attaches the Firebase ID

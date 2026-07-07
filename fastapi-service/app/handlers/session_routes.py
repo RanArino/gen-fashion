@@ -281,7 +281,13 @@ async def select_candidates(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         message = str(exc)
-        status_code = 409 if "Cannot select candidates" in message else 400
+        status_code = (
+            409
+            if message.startswith("This session failed")
+            or message.startswith("Candidate selection is only available")
+            or "Cannot select candidates" in message
+            else 400
+        )
         raise HTTPException(status_code=status_code, detail=message) from exc
     except DailyGenerationLimitExceeded as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc

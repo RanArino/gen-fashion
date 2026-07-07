@@ -129,10 +129,11 @@ def test_search_closet_rejects_rakuten(monkeypatch):
 def _patch_rakuten(monkeypatch, items):
     import styling_app.tools.search_rakuten as mod
 
-    captured = {}
+    captured = {"keywords": []}
 
     def fake_search_items(keyword, *, limit=None):
-        captured["keyword"] = keyword
+        captured.setdefault("keyword", keyword)
+        captured["keywords"].append(keyword)
         captured["limit"] = limit
         return items
 
@@ -189,6 +190,57 @@ def test_search_rakuten_skips_items_without_image_or_code(monkeypatch):
     results = search_rakuten("black hat")
 
     assert [item["item_id"] for item in results] == ["rakuten:b"]
+
+
+def test_search_rakuten_broadens_marketplace_query_when_results_are_sparse(
+    monkeypatch,
+):
+    import styling_app.tools.search_rakuten as mod
+
+    calls = []
+
+    def fake_search_items(keyword, *, limit=None):
+        calls.append(keyword)
+        if keyword == "blue wide-leg linen pants blue":
+            return [
+                {
+                    "item_code": "shop:first",
+                    "name": "Specific Pants",
+                    "price": 4980,
+                    "image_url": "https://thumb/first.jpg",
+                }
+            ]
+        if keyword == "青 パンツ":
+            return [
+                {
+                    "item_code": "shop:first",
+                    "name": "Specific Pants",
+                    "price": 4980,
+                    "image_url": "https://thumb/first.jpg",
+                },
+                {
+                    "item_code": "shop:second",
+                    "name": "Broader Pants",
+                    "price": 3980,
+                    "image_url": "https://thumb/second.jpg",
+                },
+            ]
+        return []
+
+    monkeypatch.setattr(mod.rakuten, "search_items", fake_search_items)
+
+    results = search_rakuten(
+        "blue wide-leg linen pants",
+        category="bottom",
+        colors=["blue"],
+        limit=2,
+    )
+
+    assert calls == ["blue wide-leg linen pants blue", "blue wide-leg linen pants", "青 パンツ"]
+    assert [item["item_id"] for item in results] == [
+        "rakuten:shop:first",
+        "rakuten:shop:second",
+    ]
 
 
 def test_search_rakuten_rejects_empty_query(monkeypatch):

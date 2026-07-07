@@ -24,6 +24,8 @@ class _FakeCoordinationApiClient extends ApiClient {
 
   final List<Map<String, dynamic>> candidates;
   final List<String> importedCandidateIds = [];
+  Map<String, String>? selectedSourcePreference;
+  Map<String, String>? assistedPreference;
   int _streamCalls = 0;
   bool _generated = false;
 
@@ -45,10 +47,25 @@ class _FakeCoordinationApiClient extends ApiClient {
     required Map<String, String> userPreference,
     String? sharedClosetId,
   }) async {
+    selectedSourcePreference = userPreference;
     return const StyleSessionResponse(
       sessionId: 'session-1',
       status: 'PROPOSING',
       source: 'SHARED_CLOSET',
+    );
+  }
+
+  @override
+  Future<StyleSessionResponse> assistSession({
+    required String sessionId,
+    required List<String> anchorItemIds,
+    required Map<String, String> userPreference,
+  }) async {
+    assistedPreference = userPreference;
+    return const StyleSessionResponse(
+      sessionId: 'session-1',
+      status: 'PROPOSING',
+      source: 'CLOSET',
     );
   }
 
@@ -285,6 +302,141 @@ void main() {
     expect(find.text('adult-01'), findsOneWidget);
   });
 
+  testWidgets('renders Japanese preference defaults as multi-select chips',
+      (tester) async {
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: const [CoordinationScreen(uid: 'user-123')],
+        ),
+        locale: const Locale('ja'),
+      ),
+    );
+
+    expect(find.text('コーディネート'), findsOneWidget);
+    expect(find.text('カジュアルな週末'), findsOneWidget);
+    expect(find.text('きれいめカジュアル'), findsOneWidget);
+    expect(find.text('春'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilterChip>(find.byKey(const ValueKey('color-blue')))
+          .selected,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<FilterChip>(find.byKey(const ValueKey('color-white')))
+          .selected,
+      isTrue,
+    );
+  });
+
+  testWidgets('renders English preference defaults as multi-select chips',
+      (tester) async {
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: const [CoordinationScreen(uid: 'user-123')],
+        ),
+        locale: const Locale('en'),
+      ),
+    );
+
+    expect(find.text('Coordination'), findsOneWidget);
+    expect(find.text('casual weekend'), findsOneWidget);
+    expect(find.text('clean casual'), findsOneWidget);
+    expect(find.text('spring'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilterChip>(find.byKey(const ValueKey('color-blue')))
+          .selected,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<FilterChip>(find.byKey(const ValueKey('color-white')))
+          .selected,
+      isTrue,
+    );
+  });
+
+  testWidgets('sends multi-select preferences as comma-separated strings',
+      (tester) async {
+    final fakeApi = _FakeCoordinationApiClient(candidates: const []);
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [CoordinationScreen(uid: 'user-123', api: fakeApi)],
+        ),
+        locale: const Locale('en'),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('occasion-work')));
+    await tester.tap(find.byKey(const ValueKey('style-minimal')));
+    await tester.tap(find.byKey(const ValueKey('season-summer')));
+    await tester.tap(find.byKey(const ValueKey('color-black')));
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start'));
+    await tester.pumpAndSettle();
+
+    expect(fakeApi.selectedSourcePreference, isNotNull);
+    expect(
+      fakeApi.selectedSourcePreference,
+      containsPair('occasion', 'casual weekend, work'),
+    );
+    expect(
+      fakeApi.selectedSourcePreference,
+      containsPair('style', 'clean casual, minimal'),
+    );
+    expect(
+      fakeApi.selectedSourcePreference,
+      containsPair('season', 'spring, summer'),
+    );
+    expect(
+      fakeApi.selectedSourcePreference,
+      containsPair('colorPreference', 'blue, white, black'),
+    );
+    expect(fakeApi.selectedSourcePreference, containsPair('gender', 'common'));
+    expect(fakeApi.selectedSourcePreference, containsPair('language', 'en'));
+  });
+
+  testWidgets('includes Other free text in preference payload', (tester) async {
+    final fakeApi = _FakeCoordinationApiClient(candidates: const []);
+    await tester.binding.setSurfaceSize(const Size(900, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [CoordinationScreen(uid: 'user-123', api: fakeApi)],
+        ),
+        locale: const Locale('ja'),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('style-other')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('style-other-input')),
+      'モード系',
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, '開始'));
+    await tester.pumpAndSettle();
+
+    expect(fakeApi.selectedSourcePreference, isNotNull);
+    expect(
+      fakeApi.selectedSourcePreference,
+      containsPair('style', 'きれいめカジュアル, モード系'),
+    );
+    expect(fakeApi.selectedSourcePreference, containsPair('language', 'ja'));
+  });
+
   testWidgets('assisted mode shows anchor picker and enforces max 3 anchors',
       (tester) async {
     await tester.pumpWidget(
@@ -480,6 +632,42 @@ void main() {
     expect(find.text('Recommended'), findsNWidgets(2));
   });
 
+  testWidgets('candidate panel disables generation outside proposing state',
+      (tester) async {
+    var generated = false;
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [
+            CandidatePanel(
+              candidates: const [
+                {'item_id': 'rakuten:1', 'source': 'RAKUTEN'},
+              ],
+              selectedIds: const {'rakuten:1'},
+              savedIds: const {},
+              importingIds: const {},
+              running: false,
+              canGenerate: false,
+              onChanged: (id, isSelected) {},
+              onGenerate: () => generated = true,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Generate selected'),
+    );
+    expect(button.onPressed, isNull);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Generate selected'));
+    await tester.pump();
+
+    expect(generated, isFalse);
+  });
+
   testWidgets('default selection keeps recommended items balanced by category',
       (tester) async {
     final fakeApi = _FakeCoordinationApiClient(
@@ -635,7 +823,9 @@ void main() {
               'query': 'white t-shirt',
               'category': 'top',
               'colors': ['white'],
-              'limit': 5,
+              'limit': 1,
+              'requestedLimit': 1,
+              'effectiveLimit': 5,
             },
           ),
         ),
@@ -648,6 +838,7 @@ void main() {
 
     expect(find.text('white t-shirt'), findsOneWidget);
     expect(find.text('top'), findsOneWidget);
+    expect(find.text('1 -> 5'), findsOneWidget);
     expect(find.text('white'), findsOneWidget);
     expect(find.textContaining('"query"'), findsNothing);
   });

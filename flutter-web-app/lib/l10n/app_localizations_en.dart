@@ -133,7 +133,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get season => 'Season';
 
   @override
-  String get tagsComma => 'Tags (comma separated)';
+  String get tagsComma => 'Tags in English (comma separated)';
 
   @override
   String get gender => 'Gender';
@@ -314,6 +314,87 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get colors => 'Colors';
+
+  @override
+  String get preferenceOther => 'Other';
+
+  @override
+  String get preferenceOtherInputLabel => 'Custom value';
+
+  @override
+  String get preferenceOccasionCasualWeekend => 'casual weekend';
+
+  @override
+  String get preferenceOccasionWork => 'work';
+
+  @override
+  String get preferenceOccasionDate => 'date';
+
+  @override
+  String get preferenceOccasionFormal => 'formal';
+
+  @override
+  String get preferenceOccasionTravel => 'travel';
+
+  @override
+  String get preferenceStyleCleanCasual => 'clean casual';
+
+  @override
+  String get preferenceStyleMinimal => 'minimal';
+
+  @override
+  String get preferenceStyleStreet => 'street';
+
+  @override
+  String get preferenceStyleElegant => 'elegant';
+
+  @override
+  String get preferenceStyleSporty => 'sporty';
+
+  @override
+  String get preferenceSeasonSpring => 'spring';
+
+  @override
+  String get preferenceSeasonSummer => 'summer';
+
+  @override
+  String get preferenceSeasonAutumn => 'autumn';
+
+  @override
+  String get preferenceSeasonWinter => 'winter';
+
+  @override
+  String get preferenceSeasonAllSeason => 'all season';
+
+  @override
+  String get preferenceColorBlack => 'black';
+
+  @override
+  String get preferenceColorWhite => 'white';
+
+  @override
+  String get preferenceColorGray => 'gray';
+
+  @override
+  String get preferenceColorNavy => 'navy';
+
+  @override
+  String get preferenceColorBlue => 'blue';
+
+  @override
+  String get preferenceColorRed => 'red';
+
+  @override
+  String get preferenceColorGreen => 'green';
+
+  @override
+  String get preferenceColorBeige => 'beige';
+
+  @override
+  String get preferenceColorBrown => 'brown';
+
+  @override
+  String get preferenceColorPastel => 'pastel';
 
   @override
   String selectedGenerationLanguage(Object language) {

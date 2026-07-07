@@ -155,3 +155,29 @@ def test_search_items_wraps_http_errors(monkeypatch):
 
     with pytest.raises(RakutenUnavailableError):
         search_items("anything")
+
+
+def test_search_items_redacts_credentials_from_http_status_errors(monkeypatch):
+    request = rakuten.httpx.Request(
+        "GET",
+        "https://openapi.rakuten.co.jp/search?applicationId=app-id&accessKey=secret",
+    )
+    response = rakuten.httpx.Response(429, request=request)
+
+    def boom(url, params, headers, timeout):
+        raise rakuten.httpx.HTTPStatusError(
+            "Too Many Requests",
+            request=request,
+            response=response,
+        )
+
+    monkeypatch.setattr(rakuten, "get_settings", lambda: Settings())
+    monkeypatch.setattr(rakuten.httpx, "get", boom)
+
+    with pytest.raises(RakutenUnavailableError) as exc_info:
+        search_items("anything")
+
+    message = str(exc_info.value)
+    assert message == "Rakuten search failed with HTTP 429 Too Many Requests"
+    assert "applicationId" not in message
+    assert "accessKey" not in message

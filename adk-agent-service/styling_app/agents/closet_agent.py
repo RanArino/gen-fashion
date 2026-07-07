@@ -27,10 +27,13 @@ _ASSISTED_INSTRUCTION = (
     "coordinate at a time, so avoid proposing multiple auto-selected items for "
     "the same outfit slot; balance the look across missing categories such as "
     "bottoms, shoes, outerwear, and accessories based on the anchor categories. "
-    "Call search_rakuten once per suggestion with a concrete query and pass a "
-    "category hint such as top, bottom, shoes, bag, hat, belt, or outer. Report "
-    "both the anchor items and the purchasable Rakuten candidates (with name, "
-    "price, image_url, category, and external_url) back."
+    "For Rakuten Ichiba, use search queries that work as marketplace keywords: "
+    "prefer short Japanese product nouns plus one or two attributes (e.g. "
+    "白 Tシャツ, 黒 パンツ, 革 ベルト), avoid overly narrow full outfit phrases, "
+    "and pass a category hint such as top, bottom, shoes, bag, hat, belt, or "
+    "outer. If a search is too narrow, retry with a broader category/product "
+    "noun. Report both the anchor items and the purchasable Rakuten candidates "
+    "(with name, price, image_url, category, and external_url) back."
 )
 
 
