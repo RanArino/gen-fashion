@@ -132,7 +132,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get season => '季節';
 
   @override
-  String get tagsComma => 'タグ（カンマ区切り）';
+  String get tagsComma => 'タグ（英語・カンマ区切り）';
 
   @override
   String get gender => '性別';

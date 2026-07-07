@@ -329,7 +329,7 @@ abstract class AppLocalizations {
   /// No description provided for @tagsComma.
   ///
   /// In en, this message translates to:
-  /// **'Tags (comma separated)'**
+  /// **'Tags in English (comma separated)'**
   String get tagsComma;
 
   /// No description provided for @gender.

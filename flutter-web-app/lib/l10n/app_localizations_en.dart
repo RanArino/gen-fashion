@@ -133,7 +133,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get season => 'Season';
 
   @override
-  String get tagsComma => 'Tags (comma separated)';
+  String get tagsComma => 'Tags in English (comma separated)';
 
   @override
   String get gender => 'Gender';
