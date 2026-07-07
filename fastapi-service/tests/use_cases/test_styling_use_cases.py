@@ -522,6 +522,31 @@ async def test_select_candidates_skips_count_when_daily_generation_limit_unlimit
 
 
 @pytest.mark.asyncio
+async def test_select_candidates_rejects_error_session_with_user_facing_message():
+    repo = FakeStylingRepo()
+    session_id = uuid4()
+    await repo.create(
+        StyleSession(
+            id=StyleSessionId(session_id),
+            user_id="user-123",
+            state=StyleSessionState.ERROR,
+            clothing_source=ClothingSource.SHARED_CLOSET,
+            proposed_candidates=[{"item_id": "item-1"}],
+        )
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        await SelectCandidatesUseCase(repo, FakeAgentRun()).execute(
+            "user-123", str(session_id), ["item-1"]
+        )
+
+    assert str(exc_info.value) == (
+        "This session failed before generation could start. "
+        "Please start a new session."
+    )
+
+
+@pytest.mark.asyncio
 async def test_select_candidates_rejects_empty_or_unknown_selection():
     repo = FakeStylingRepo()
     session_id = uuid4()

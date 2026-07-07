@@ -480,6 +480,42 @@ void main() {
     expect(find.text('Recommended'), findsNWidgets(2));
   });
 
+  testWidgets('candidate panel disables generation outside proposing state',
+      (tester) async {
+    var generated = false;
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ListView(
+          children: [
+            CandidatePanel(
+              candidates: const [
+                {'item_id': 'rakuten:1', 'source': 'RAKUTEN'},
+              ],
+              selectedIds: const {'rakuten:1'},
+              savedIds: const {},
+              importingIds: const {},
+              running: false,
+              canGenerate: false,
+              onChanged: (id, isSelected) {},
+              onGenerate: () => generated = true,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Generate selected'),
+    );
+    expect(button.onPressed, isNull);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Generate selected'));
+    await tester.pump();
+
+    expect(generated, isFalse);
+  });
+
   testWidgets('default selection keeps recommended items balanced by category',
       (tester) async {
     final fakeApi = _FakeCoordinationApiClient(
@@ -635,7 +671,9 @@ void main() {
               'query': 'white t-shirt',
               'category': 'top',
               'colors': ['white'],
-              'limit': 5,
+              'limit': 1,
+              'requestedLimit': 1,
+              'effectiveLimit': 5,
             },
           ),
         ),
@@ -648,6 +686,7 @@ void main() {
 
     expect(find.text('white t-shirt'), findsOneWidget);
     expect(find.text('top'), findsOneWidget);
+    expect(find.text('1 -> 5'), findsOneWidget);
     expect(find.text('white'), findsOneWidget);
     expect(find.textContaining('"query"'), findsNothing);
   });

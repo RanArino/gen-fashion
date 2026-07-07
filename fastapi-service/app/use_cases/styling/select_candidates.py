@@ -37,7 +37,14 @@ class SelectCandidatesUseCase:
         if session is None:
             raise StyleSessionNotFound(f"Style session not found: {session_id}")
         if session.state != StyleSessionState.PROPOSING:
-            raise ValueError(f"Cannot select candidates from {session.state.value}")
+            if session.state == StyleSessionState.ERROR:
+                raise ValueError(
+                    "This session failed before generation could start. "
+                    "Please start a new session."
+                )
+            raise ValueError(
+                "Candidate selection is only available after candidates are proposed."
+            )
         if not selected_item_ids:
             raise ValueError("At least one candidate must be selected")
 

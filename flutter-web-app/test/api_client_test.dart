@@ -37,6 +37,17 @@ void main() {
     );
   });
 
+  test('ApiException displays JSON detail instead of raw response JSON', () {
+    final exception = ApiException(
+      409,
+      jsonEncode({'detail': 'Cannot select candidates from ERROR'}),
+    );
+
+    expect(exception.message, 'Cannot select candidates from ERROR');
+    expect('$exception', 'API error 409: Cannot select candidates from ERROR');
+    expect('$exception', isNot(contains('"detail"')));
+  });
+
   test('getDownloadUrl parses download_url', () async {
     final mock = MockClient((req) async => http.Response(
           jsonEncode({'download_url': 'http://get/foo'}),
