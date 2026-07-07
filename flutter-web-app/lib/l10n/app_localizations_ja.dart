@@ -310,6 +310,87 @@ class AppLocalizationsJa extends AppLocalizations {
   String get colors => '色';
 
   @override
+  String get preferenceOther => 'その他';
+
+  @override
+  String get preferenceOtherInputLabel => '自由入力';
+
+  @override
+  String get preferenceOccasionCasualWeekend => 'カジュアルな週末';
+
+  @override
+  String get preferenceOccasionWork => '仕事';
+
+  @override
+  String get preferenceOccasionDate => 'デート';
+
+  @override
+  String get preferenceOccasionFormal => 'フォーマル';
+
+  @override
+  String get preferenceOccasionTravel => '旅行';
+
+  @override
+  String get preferenceStyleCleanCasual => 'きれいめカジュアル';
+
+  @override
+  String get preferenceStyleMinimal => 'ミニマル';
+
+  @override
+  String get preferenceStyleStreet => 'ストリート';
+
+  @override
+  String get preferenceStyleElegant => 'エレガント';
+
+  @override
+  String get preferenceStyleSporty => 'スポーティ';
+
+  @override
+  String get preferenceSeasonSpring => '春';
+
+  @override
+  String get preferenceSeasonSummer => '夏';
+
+  @override
+  String get preferenceSeasonAutumn => '秋';
+
+  @override
+  String get preferenceSeasonWinter => '冬';
+
+  @override
+  String get preferenceSeasonAllSeason => '通年';
+
+  @override
+  String get preferenceColorBlack => '黒';
+
+  @override
+  String get preferenceColorWhite => '白';
+
+  @override
+  String get preferenceColorGray => 'グレー';
+
+  @override
+  String get preferenceColorNavy => 'ネイビー';
+
+  @override
+  String get preferenceColorBlue => '青';
+
+  @override
+  String get preferenceColorRed => '赤';
+
+  @override
+  String get preferenceColorGreen => '緑';
+
+  @override
+  String get preferenceColorBeige => 'ベージュ';
+
+  @override
+  String get preferenceColorBrown => 'ブラウン';
+
+  @override
+  String get preferenceColorPastel => 'パステル';
+
+  @override
   String selectedGenerationLanguage(Object language) {
     return '生成言語: $language';
   }

@@ -60,10 +60,14 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
   late final DownloadUrlCache _thumbnailCache = DownloadUrlCache(_api);
   late final UploadService _uploads =
       widget._uploads ?? UploadService(api: _api);
-  final _occasion = TextEditingController(text: 'casual weekend');
-  final _style = TextEditingController(text: 'clean casual');
-  final _season = TextEditingController(text: 'spring');
-  final _color = TextEditingController(text: 'blue and white');
+  final Set<String> _selectedOccasions = {'casual_weekend'};
+  final Set<String> _selectedStyles = {'clean_casual'};
+  final Set<String> _selectedSeasons = {'spring'};
+  final Set<String> _selectedColors = {'blue', 'white'};
+  final _occasionOther = TextEditingController();
+  final _styleOther = TextEditingController();
+  final _seasonOther = TextEditingController();
+  final _colorOther = TextEditingController();
   final List<AgentEvent> _events = [];
   final List<Map<String, dynamic>> _candidates = [];
   final Set<String> _selectedCandidateIds = {};
@@ -120,10 +124,10 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
 
   @override
   void dispose() {
-    _occasion.dispose();
-    _style.dispose();
-    _season.dispose();
-    _color.dispose();
+    _occasionOther.dispose();
+    _styleOther.dispose();
+    _seasonOther.dispose();
+    _colorOther.dispose();
     super.dispose();
   }
 
@@ -139,11 +143,28 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
       _savedCandidateIds.clear();
       _coordinateImageUrl = null;
     });
+    final l10n = AppLocalizations.of(context)!;
     final userPreference = {
-      'occasion': _occasion.text,
-      'style': _style.text,
-      'season': _season.text,
-      'colorPreference': _color.text,
+      'occasion': _preferenceText(
+        _occasionOptions(l10n),
+        _selectedOccasions,
+        _occasionOther.text,
+      ),
+      'style': _preferenceText(
+        _styleOptions(l10n),
+        _selectedStyles,
+        _styleOther.text,
+      ),
+      'season': _preferenceText(
+        _seasonOptions(l10n),
+        _selectedSeasons,
+        _seasonOther.text,
+      ),
+      'colorPreference': _preferenceText(
+        _colorOptions(l10n),
+        _selectedColors,
+        _colorOther.text,
+      ),
       'gender': _gender,
       'language': languageCode,
     };
@@ -590,10 +611,14 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           source: _source,
           sharedClosetId: _sharedClosetId,
           running: _running,
-          occasion: _occasion,
-          style: _style,
-          season: _season,
-          color: _color,
+          selectedOccasions: _selectedOccasions,
+          selectedStyles: _selectedStyles,
+          selectedSeasons: _selectedSeasons,
+          selectedColors: _selectedColors,
+          occasionOther: _occasionOther,
+          styleOther: _styleOther,
+          seasonOther: _seasonOther,
+          colorOther: _colorOther,
           gender: _gender,
           languageCode: LocaleScope.of(context).languageCode,
           anchorPicker: _mode == 'ASSISTED'
@@ -614,6 +639,26 @@ class _CoordinationScreenState extends State<CoordinationScreen> {
           onSourceChanged: (value) => setState(() => _source = value),
           onSharedClosetChanged: (value) =>
               setState(() => _sharedClosetId = value),
+          onOccasionsChanged: (values) => setState(() {
+            _selectedOccasions
+              ..clear()
+              ..addAll(values);
+          }),
+          onStylesChanged: (values) => setState(() {
+            _selectedStyles
+              ..clear()
+              ..addAll(values);
+          }),
+          onSeasonsChanged: (values) => setState(() {
+            _selectedSeasons
+              ..clear()
+              ..addAll(values);
+          }),
+          onColorsChanged: (values) => setState(() {
+            _selectedColors
+              ..clear()
+              ..addAll(values);
+          }),
           onGenderChanged: (value) => setState(() => _gender = value),
           onStart: _start,
         );
@@ -698,16 +743,24 @@ class _Controls extends StatelessWidget {
     required this.source,
     required this.sharedClosetId,
     required this.running,
-    required this.occasion,
-    required this.style,
-    required this.season,
-    required this.color,
+    required this.selectedOccasions,
+    required this.selectedStyles,
+    required this.selectedSeasons,
+    required this.selectedColors,
+    required this.occasionOther,
+    required this.styleOther,
+    required this.seasonOther,
+    required this.colorOther,
     required this.gender,
     required this.languageCode,
     required this.startEnabled,
     required this.onModeChanged,
     required this.onSourceChanged,
     required this.onSharedClosetChanged,
+    required this.onOccasionsChanged,
+    required this.onStylesChanged,
+    required this.onSeasonsChanged,
+    required this.onColorsChanged,
     required this.onGenderChanged,
     required this.onStart,
     this.anchorPicker,
@@ -717,10 +770,14 @@ class _Controls extends StatelessWidget {
   final String source;
   final String sharedClosetId;
   final bool running;
-  final TextEditingController occasion;
-  final TextEditingController style;
-  final TextEditingController season;
-  final TextEditingController color;
+  final Set<String> selectedOccasions;
+  final Set<String> selectedStyles;
+  final Set<String> selectedSeasons;
+  final Set<String> selectedColors;
+  final TextEditingController occasionOther;
+  final TextEditingController styleOther;
+  final TextEditingController seasonOther;
+  final TextEditingController colorOther;
   final String gender;
   final String languageCode;
   final bool startEnabled;
@@ -728,6 +785,10 @@ class _Controls extends StatelessWidget {
   final ValueChanged<String> onModeChanged;
   final ValueChanged<String> onSourceChanged;
   final ValueChanged<String> onSharedClosetChanged;
+  final ValueChanged<Set<String>> onOccasionsChanged;
+  final ValueChanged<Set<String>> onStylesChanged;
+  final ValueChanged<Set<String>> onSeasonsChanged;
+  final ValueChanged<Set<String>> onColorsChanged;
   final ValueChanged<String> onGenderChanged;
   final VoidCallback onStart;
 
@@ -823,10 +884,42 @@ class _Controls extends StatelessWidget {
             ] else if (anchorPicker != null)
               anchorPicker!,
             const SizedBox(height: 12),
-            _TextField(controller: occasion, label: l10n.occasion),
-            _TextField(controller: style, label: l10n.style),
-            _TextField(controller: season, label: l10n.season),
-            _TextField(controller: color, label: l10n.colors),
+            _PreferenceMultiSelect(
+              fieldKey: 'occasion',
+              label: l10n.occasion,
+              options: _occasionOptions(l10n),
+              selectedIds: selectedOccasions,
+              otherController: occasionOther,
+              enabled: !running,
+              onChanged: onOccasionsChanged,
+            ),
+            _PreferenceMultiSelect(
+              fieldKey: 'style',
+              label: l10n.style,
+              options: _styleOptions(l10n),
+              selectedIds: selectedStyles,
+              otherController: styleOther,
+              enabled: !running,
+              onChanged: onStylesChanged,
+            ),
+            _PreferenceMultiSelect(
+              fieldKey: 'season',
+              label: l10n.season,
+              options: _seasonOptions(l10n),
+              selectedIds: selectedSeasons,
+              otherController: seasonOther,
+              enabled: !running,
+              onChanged: onSeasonsChanged,
+            ),
+            _PreferenceMultiSelect(
+              fieldKey: 'color',
+              label: l10n.colors,
+              options: _colorOptions(l10n),
+              selectedIds: selectedColors,
+              otherController: colorOther,
+              enabled: !running,
+              onChanged: onColorsChanged,
+            ),
             DropdownButtonFormField<String>(
               initialValue: gender,
               decoration: InputDecoration(
@@ -863,6 +956,147 @@ class _Controls extends StatelessWidget {
                   : const Icon(Icons.play_arrow),
               label: Text(running ? l10n.running : l10n.start),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+const String _otherPreferenceId = 'other';
+
+class _PreferenceOption {
+  const _PreferenceOption(this.id, this.label);
+
+  final String id;
+  final String label;
+}
+
+List<_PreferenceOption> _occasionOptions(AppLocalizations l10n) => [
+      _PreferenceOption(
+        'casual_weekend',
+        l10n.preferenceOccasionCasualWeekend,
+      ),
+      _PreferenceOption('work', l10n.preferenceOccasionWork),
+      _PreferenceOption('date', l10n.preferenceOccasionDate),
+      _PreferenceOption('formal', l10n.preferenceOccasionFormal),
+      _PreferenceOption('travel', l10n.preferenceOccasionTravel),
+      _PreferenceOption(_otherPreferenceId, l10n.preferenceOther),
+    ];
+
+List<_PreferenceOption> _styleOptions(AppLocalizations l10n) => [
+      _PreferenceOption('clean_casual', l10n.preferenceStyleCleanCasual),
+      _PreferenceOption('minimal', l10n.preferenceStyleMinimal),
+      _PreferenceOption('street', l10n.preferenceStyleStreet),
+      _PreferenceOption('elegant', l10n.preferenceStyleElegant),
+      _PreferenceOption('sporty', l10n.preferenceStyleSporty),
+      _PreferenceOption(_otherPreferenceId, l10n.preferenceOther),
+    ];
+
+List<_PreferenceOption> _seasonOptions(AppLocalizations l10n) => [
+      _PreferenceOption('spring', l10n.preferenceSeasonSpring),
+      _PreferenceOption('summer', l10n.preferenceSeasonSummer),
+      _PreferenceOption('autumn', l10n.preferenceSeasonAutumn),
+      _PreferenceOption('winter', l10n.preferenceSeasonWinter),
+      _PreferenceOption('all_season', l10n.preferenceSeasonAllSeason),
+      _PreferenceOption(_otherPreferenceId, l10n.preferenceOther),
+    ];
+
+List<_PreferenceOption> _colorOptions(AppLocalizations l10n) => [
+      _PreferenceOption('black', l10n.preferenceColorBlack),
+      _PreferenceOption('white', l10n.preferenceColorWhite),
+      _PreferenceOption('gray', l10n.preferenceColorGray),
+      _PreferenceOption('navy', l10n.preferenceColorNavy),
+      _PreferenceOption('blue', l10n.preferenceColorBlue),
+      _PreferenceOption('red', l10n.preferenceColorRed),
+      _PreferenceOption('green', l10n.preferenceColorGreen),
+      _PreferenceOption('beige', l10n.preferenceColorBeige),
+      _PreferenceOption('brown', l10n.preferenceColorBrown),
+      _PreferenceOption('pastel', l10n.preferenceColorPastel),
+      _PreferenceOption(_otherPreferenceId, l10n.preferenceOther),
+    ];
+
+String _preferenceText(
+  List<_PreferenceOption> options,
+  Set<String> selectedIds,
+  String otherText,
+) {
+  final optionLabels = {
+    for (final option in options) option.id: option.label,
+  };
+  final labels = [
+    for (final id in selectedIds)
+      if (id != _otherPreferenceId && optionLabels[id] != null)
+        optionLabels[id]!,
+    if (selectedIds.contains(_otherPreferenceId) && otherText.trim().isNotEmpty)
+      otherText.trim(),
+  ];
+  if (labels.isEmpty) {
+    return options.first.label;
+  }
+  return labels.join(', ');
+}
+
+class _PreferenceMultiSelect extends StatelessWidget {
+  const _PreferenceMultiSelect({
+    required this.fieldKey,
+    required this.label,
+    required this.options,
+    required this.selectedIds,
+    required this.otherController,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final String fieldKey;
+  final String label;
+  final List<_PreferenceOption> options;
+  final Set<String> selectedIds;
+  final TextEditingController otherController;
+  final bool enabled;
+  final ValueChanged<Set<String>> onChanged;
+
+  void _toggle(String id) {
+    final next = {...selectedIds};
+    next.contains(id) ? next.remove(id) : next.add(id);
+    onChanged(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final showOther = selectedIds.contains(_otherPreferenceId);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InputDecorator(
+        decoration: InputDecoration(labelText: label),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final option in options)
+                  FilterChip(
+                    key: ValueKey('$fieldKey-${option.id}'),
+                    label: Text(option.label),
+                    selected: selectedIds.contains(option.id),
+                    onSelected: enabled ? (_) => _toggle(option.id) : null,
+                  ),
+              ],
+            ),
+            if (showOther) ...[
+              const SizedBox(height: 10),
+              TextField(
+                key: ValueKey('$fieldKey-other-input'),
+                controller: otherController,
+                enabled: enabled,
+                decoration: InputDecoration(
+                  labelText: l10n.preferenceOtherInputLabel,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1035,26 +1269,6 @@ class _AnchorTile extends StatelessWidget {
                 ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TextField extends StatelessWidget {
-  const _TextField({required this.controller, required this.label});
-
-  final TextEditingController controller;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TextField(
-        controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
         ),
       ),
     );
