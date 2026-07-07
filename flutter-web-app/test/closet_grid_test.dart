@@ -101,6 +101,46 @@ void main() {
     expect(find.text('READY'), findsNWidgets(2));
   });
 
+  testWidgets('localizes canonical season and color metadata on closet cards',
+      (tester) async {
+    final item = ClosetItem(
+      id: 'localized',
+      status: ItemStatus.ready,
+      category: 'pants',
+      colors: const ['grey', 'blue'],
+      season: 'all season',
+      createdAt: DateTime.now(),
+    );
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ClosetCard(
+          item: item,
+          thumbnail: const SizedBox.shrink(),
+        ),
+        locale: const Locale('ja'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('通年'), findsOneWidget);
+    expect(find.textContaining('グレー/青'), findsOneWidget);
+
+    await tester.pumpWidget(
+      localizedTestApp(
+        ClosetCard(
+          item: item,
+          thumbnail: const SizedBox.shrink(),
+        ),
+        locale: const Locale('en'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('all season'), findsOneWidget);
+    expect(find.textContaining('gray/blue'), findsOneWidget);
+  });
+
   testWidgets(
       'shows a Rakuten product link only for Interesting items with a URL',
       (tester) async {
