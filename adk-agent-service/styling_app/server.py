@@ -779,8 +779,23 @@ def _preference_colors(preference: dict[str, Any]) -> list[str] | None:
     raw = preference.get("colorPreference") or preference.get("color_preference")
     if not raw:
         return None
+    aliases = {
+        "黒": "black",
+        "白": "white",
+        "グレー": "gray",
+        "灰色": "gray",
+        "ネイビー": "navy",
+        "紺": "navy",
+        "青": "blue",
+        "赤": "red",
+        "緑": "green",
+        "ベージュ": "beige",
+        "ブラウン": "brown",
+        "茶色": "brown",
+        "パステル": "pastel",
+    }
     colors = [
-        token.strip().lower()
+        aliases.get(token.strip(), token.strip().lower())
         for part in str(raw).replace("/", ",").replace(" and ", ",").split(",")
         for token in [part]
         if token.strip()

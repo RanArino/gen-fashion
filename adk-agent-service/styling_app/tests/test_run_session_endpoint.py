@@ -735,6 +735,16 @@ def test_generate_style_tool_defaults_empty_style_to_preference(monkeypatch):
     assert captured["language"] == "ja"
 
 
+def test_preference_colors_normalize_japanese_labels():
+    from styling_app.server import _preference_colors
+
+    assert _preference_colors({"colorPreference": "青, 白, グレー"}) == [
+        "blue",
+        "white",
+        "gray",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_generate_trace_and_result_normalize_to_server_values(monkeypatch):
     request = RunSessionRequest(

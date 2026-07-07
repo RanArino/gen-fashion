@@ -329,7 +329,7 @@ abstract class AppLocalizations {
   /// No description provided for @tagsComma.
   ///
   /// In en, this message translates to:
-  /// **'Tags (comma separated)'**
+  /// **'Tags in English (comma separated)'**
   String get tagsComma;
 
   /// No description provided for @gender.
@@ -667,6 +667,168 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Colors'**
   String get colors;
+
+  /// No description provided for @preferenceOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get preferenceOther;
+
+  /// No description provided for @preferenceOtherInputLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom value'**
+  String get preferenceOtherInputLabel;
+
+  /// No description provided for @preferenceOccasionCasualWeekend.
+  ///
+  /// In en, this message translates to:
+  /// **'casual weekend'**
+  String get preferenceOccasionCasualWeekend;
+
+  /// No description provided for @preferenceOccasionWork.
+  ///
+  /// In en, this message translates to:
+  /// **'work'**
+  String get preferenceOccasionWork;
+
+  /// No description provided for @preferenceOccasionDate.
+  ///
+  /// In en, this message translates to:
+  /// **'date'**
+  String get preferenceOccasionDate;
+
+  /// No description provided for @preferenceOccasionFormal.
+  ///
+  /// In en, this message translates to:
+  /// **'formal'**
+  String get preferenceOccasionFormal;
+
+  /// No description provided for @preferenceOccasionTravel.
+  ///
+  /// In en, this message translates to:
+  /// **'travel'**
+  String get preferenceOccasionTravel;
+
+  /// No description provided for @preferenceStyleCleanCasual.
+  ///
+  /// In en, this message translates to:
+  /// **'clean casual'**
+  String get preferenceStyleCleanCasual;
+
+  /// No description provided for @preferenceStyleMinimal.
+  ///
+  /// In en, this message translates to:
+  /// **'minimal'**
+  String get preferenceStyleMinimal;
+
+  /// No description provided for @preferenceStyleStreet.
+  ///
+  /// In en, this message translates to:
+  /// **'street'**
+  String get preferenceStyleStreet;
+
+  /// No description provided for @preferenceStyleElegant.
+  ///
+  /// In en, this message translates to:
+  /// **'elegant'**
+  String get preferenceStyleElegant;
+
+  /// No description provided for @preferenceStyleSporty.
+  ///
+  /// In en, this message translates to:
+  /// **'sporty'**
+  String get preferenceStyleSporty;
+
+  /// No description provided for @preferenceSeasonSpring.
+  ///
+  /// In en, this message translates to:
+  /// **'spring'**
+  String get preferenceSeasonSpring;
+
+  /// No description provided for @preferenceSeasonSummer.
+  ///
+  /// In en, this message translates to:
+  /// **'summer'**
+  String get preferenceSeasonSummer;
+
+  /// No description provided for @preferenceSeasonAutumn.
+  ///
+  /// In en, this message translates to:
+  /// **'autumn'**
+  String get preferenceSeasonAutumn;
+
+  /// No description provided for @preferenceSeasonWinter.
+  ///
+  /// In en, this message translates to:
+  /// **'winter'**
+  String get preferenceSeasonWinter;
+
+  /// No description provided for @preferenceSeasonAllSeason.
+  ///
+  /// In en, this message translates to:
+  /// **'all season'**
+  String get preferenceSeasonAllSeason;
+
+  /// No description provided for @preferenceColorBlack.
+  ///
+  /// In en, this message translates to:
+  /// **'black'**
+  String get preferenceColorBlack;
+
+  /// No description provided for @preferenceColorWhite.
+  ///
+  /// In en, this message translates to:
+  /// **'white'**
+  String get preferenceColorWhite;
+
+  /// No description provided for @preferenceColorGray.
+  ///
+  /// In en, this message translates to:
+  /// **'gray'**
+  String get preferenceColorGray;
+
+  /// No description provided for @preferenceColorNavy.
+  ///
+  /// In en, this message translates to:
+  /// **'navy'**
+  String get preferenceColorNavy;
+
+  /// No description provided for @preferenceColorBlue.
+  ///
+  /// In en, this message translates to:
+  /// **'blue'**
+  String get preferenceColorBlue;
+
+  /// No description provided for @preferenceColorRed.
+  ///
+  /// In en, this message translates to:
+  /// **'red'**
+  String get preferenceColorRed;
+
+  /// No description provided for @preferenceColorGreen.
+  ///
+  /// In en, this message translates to:
+  /// **'green'**
+  String get preferenceColorGreen;
+
+  /// No description provided for @preferenceColorBeige.
+  ///
+  /// In en, this message translates to:
+  /// **'beige'**
+  String get preferenceColorBeige;
+
+  /// No description provided for @preferenceColorBrown.
+  ///
+  /// In en, this message translates to:
+  /// **'brown'**
+  String get preferenceColorBrown;
+
+  /// No description provided for @preferenceColorPastel.
+  ///
+  /// In en, this message translates to:
+  /// **'pastel'**
+  String get preferenceColorPastel;
 
   /// No description provided for @selectedGenerationLanguage.
   ///

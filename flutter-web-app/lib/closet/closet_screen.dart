@@ -117,9 +117,9 @@ class _ClosetScreenState extends State<ClosetScreen> {
   Future<void> _onEdit(ClosetItem item) async {
     final l10n = AppLocalizations.of(context)!;
     final category = TextEditingController(text: item.category ?? '');
-    final colors = TextEditingController(text: item.colors.join(', '));
-    final season = TextEditingController(text: item.season ?? '');
     final tags = TextEditingController(text: item.tags.join(', '));
+    var selectedColors = _canonicalColorIds(item.colors);
+    var season = _canonicalSeasonId(item.season);
     var gender = item.gender ?? 'common';
     var ownership =
         item.ownership == ItemOwnership.interesting ? 'INTERESTING' : 'OWNED';
@@ -138,14 +138,27 @@ class _ClosetScreenState extends State<ClosetScreen> {
                       controller: category,
                       decoration: InputDecoration(labelText: l10n.category)),
                   const SizedBox(height: 12),
-                  TextField(
-                      controller: colors,
-                      decoration:
-                          InputDecoration(labelText: l10n.colorsComma)),
+                  _MetadataColorSelector(
+                    selectedIds: selectedColors,
+                    onChanged: (values) =>
+                        setDialogState(() => selectedColors = values),
+                  ),
                   const SizedBox(height: 12),
-                  TextField(
-                      controller: season,
-                      decoration: InputDecoration(labelText: l10n.season)),
+                  DropdownButtonFormField<String>(
+                    initialValue: season,
+                    decoration: InputDecoration(labelText: l10n.season),
+                    items: _metadataSeasonOptions(l10n)
+                        .map(
+                          (option) => DropdownMenuItem(
+                            value: option.id,
+                            child: Text(option.label),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) setDialogState(() => season = value);
+                    },
+                  ),
                   const SizedBox(height: 12),
                   TextField(
                       controller: tags,
@@ -223,8 +236,8 @@ class _ClosetScreenState extends State<ClosetScreen> {
     try {
       await _api.updateItemMetadata(item.id, {
         'category': category.text.trim(),
-        'colors': values(colors.text),
-        'season': season.text.trim(),
+        'colors': _canonicalColorValues(selectedColors),
+        'season': _canonicalSeasonValue(season),
         'tags': values(tags.text),
         'gender': gender,
         'ownershipStatus': ownership,
@@ -236,8 +249,6 @@ class _ClosetScreenState extends State<ClosetScreen> {
       );
     } finally {
       category.dispose();
-      colors.dispose();
-      season.dispose();
       tags.dispose();
     }
   }
@@ -354,6 +365,146 @@ class _ClosetScreenState extends State<ClosetScreen> {
           ],
         );
       },
+    );
+  }
+}
+
+class _MetadataOption {
+  const _MetadataOption(this.id, this.label);
+
+  final String id;
+  final String label;
+}
+
+List<_MetadataOption> _metadataColorOptions(AppLocalizations l10n) => [
+      _MetadataOption('black', l10n.preferenceColorBlack),
+      _MetadataOption('white', l10n.preferenceColorWhite),
+      _MetadataOption('gray', l10n.preferenceColorGray),
+      _MetadataOption('navy', l10n.preferenceColorNavy),
+      _MetadataOption('blue', l10n.preferenceColorBlue),
+      _MetadataOption('red', l10n.preferenceColorRed),
+      _MetadataOption('green', l10n.preferenceColorGreen),
+      _MetadataOption('beige', l10n.preferenceColorBeige),
+      _MetadataOption('brown', l10n.preferenceColorBrown),
+      _MetadataOption('pastel', l10n.preferenceColorPastel),
+    ];
+
+List<_MetadataOption> _metadataSeasonOptions(AppLocalizations l10n) => [
+      _MetadataOption('spring', l10n.preferenceSeasonSpring),
+      _MetadataOption('summer', l10n.preferenceSeasonSummer),
+      _MetadataOption('autumn', l10n.preferenceSeasonAutumn),
+      _MetadataOption('winter', l10n.preferenceSeasonWinter),
+      _MetadataOption('all_season', l10n.preferenceSeasonAllSeason),
+    ];
+
+String _canonicalColorId(String color) {
+  final normalized = color.trim().toLowerCase().replaceAll('_', ' ');
+  if (normalized == 'grey') return 'gray';
+  if (normalized == 'navy blue') return 'navy';
+  if (normalized == 'all season') return 'all_season';
+  return normalized;
+}
+
+Set<String> _canonicalColorIds(List<String> colors) {
+  final known = {
+    'black',
+    'white',
+    'gray',
+    'navy',
+    'blue',
+    'red',
+    'green',
+    'beige',
+    'brown',
+    'pastel',
+  };
+  return colors
+      .map(_canonicalColorId)
+      .where((color) => known.contains(color))
+      .toSet();
+}
+
+List<String> _canonicalColorValues(Set<String> colorIds) {
+  const order = [
+    'black',
+    'white',
+    'gray',
+    'navy',
+    'blue',
+    'red',
+    'green',
+    'beige',
+    'brown',
+    'pastel',
+  ];
+  return [
+    for (final id in order)
+      if (colorIds.contains(id)) id,
+  ];
+}
+
+String _canonicalSeasonId(String? season) {
+  final normalized = (season ?? '').trim().toLowerCase().replaceAll('_', ' ');
+  return switch (normalized) {
+    'spring' => 'spring',
+    'summer' => 'summer',
+    'autumn' || 'fall' => 'autumn',
+    'winter' => 'winter',
+    'all season' || 'all-season' || 'all seasons' => 'all_season',
+    _ => 'all_season',
+  };
+}
+
+String _canonicalSeasonValue(String seasonId) =>
+    seasonId == 'all_season' ? 'all season' : seasonId;
+
+String _localizedColorLabel(AppLocalizations l10n, String color) {
+  final options = {
+    for (final option in _metadataColorOptions(l10n)) option.id: option.label,
+  };
+  return options[_canonicalColorId(color)] ?? color;
+}
+
+String _localizedSeasonLabel(AppLocalizations l10n, String season) {
+  final options = {
+    for (final option in _metadataSeasonOptions(l10n)) option.id: option.label,
+  };
+  return options[_canonicalSeasonId(season)] ?? season;
+}
+
+class _MetadataColorSelector extends StatelessWidget {
+  const _MetadataColorSelector({
+    required this.selectedIds,
+    required this.onChanged,
+  });
+
+  final Set<String> selectedIds;
+  final ValueChanged<Set<String>> onChanged;
+
+  void _toggle(String id) {
+    final next = {...selectedIds};
+    next.contains(id) ? next.remove(id) : next.add(id);
+    onChanged(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return InputDecorator(
+      decoration: InputDecoration(labelText: l10n.colors),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final option in _metadataColorOptions(l10n))
+            FilterChip(
+              key: ValueKey('metadata-color-${option.id}'),
+              label: Text(option.label),
+              selected: selectedIds.contains(option.id),
+              onSelected: (_) => _toggle(option.id),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -663,8 +814,12 @@ class ClosetCard extends StatelessWidget {
                   Text(
                     [
                       if (item.gender != null) item.gender,
-                      if (item.season != null) item.season,
-                      if (item.colors.isNotEmpty) item.colors.join('/'),
+                      if (item.season != null)
+                        _localizedSeasonLabel(l10n, item.season!),
+                      if (item.colors.isNotEmpty)
+                        item.colors
+                            .map((color) => _localizedColorLabel(l10n, color))
+                            .join('/'),
                     ].whereType<String>().join(' · '),
                     style: Theme.of(context).textTheme.bodySmall,
                     overflow: TextOverflow.ellipsis,

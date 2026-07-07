@@ -94,9 +94,6 @@ class ImportSuggestedClosetItemUseCase:
             for value in candidate.get("tags") or []
             if str(value)
         ]
-        name = candidate.get("name")
-        if name and name not in [tag.value for tag in tags]:
-            tags.append(ClothingTag(name="tag", value=str(name)))
         item = ClothingItem(
             id=ClothingItemId(new_id),
             user_id=user_id,

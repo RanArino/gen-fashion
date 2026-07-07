@@ -410,9 +410,11 @@ async def test_import_suggestion_creates_interesting_ready_item():
     assert item.external_url == "https://item.rakuten.co.jp/shop/1001"
     assert item.price == 2980
     assert item.brand_or_shop == "Shop Name"
+    assert [tag.value for tag in item.tags] == ["casual"]
     assert storage.bytes_by_path[f"user-123/closet/{item.id}.jpg"] == b"external-jpeg"
     assert search.indexed[0]["ownership_status"] == "INTERESTING"
     assert search.indexed[0]["origin"] == "RAKUTEN"
+    assert search.indexed[0]["tags"] == ["casual"]
     assert search.indexed[0]["is_shared"] is False
 
 
