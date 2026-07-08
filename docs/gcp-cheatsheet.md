@@ -7,7 +7,7 @@
 
 ```bash
 # プロジェクトとデフォルトリージョンを設定（これをやっておくと --project / --region を毎回省略できる）
-gcloud config set project animation-agent
+gcloud config set project your-project-id
 gcloud config set compute/region asia-northeast1
 gcloud config set compute/zone asia-northeast1-a
 
@@ -61,7 +61,7 @@ VM に SSH してから実行する。
 sudo systemctl status elasticsearch
 
 # クラスタ健全性（green / yellow が正常）
-ES_API=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_API_KEY --project=animation-agent)
+ES_API=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_API_KEY --project=your-project-id)
 curl -sk -H "Authorization: ApiKey $ES_API" https://localhost:9200/_cluster/health | python3 -m json.tool
 
 # インデックス内のドキュメント数（210 以上あれば seed 完了済み）
@@ -91,27 +91,27 @@ gcloud compute instances describe gen-fashion-es \
 
 ```bash
 # 最新バージョンを取得して変数に格納
-ES_API=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_API_KEY --project=animation-agent)
-R2_KEY=$(gcloud secrets versions access latest --secret=R2_ACCESS_KEY_ID --project=animation-agent)
-R2_SECRET=$(gcloud secrets versions access latest --secret=R2_SECRET_ACCESS_KEY --project=animation-agent)
-TASK_SECRET=$(gcloud secrets versions access latest --secret=INTERNAL_TASK_SECRET --project=animation-agent)
-ES_SSL_FINGERPRINT=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_SSL_FINGERPRINT --project=animation-agent)
-RAKUTEN_APPLICATION_ID=$(gcloud secrets versions access latest --secret=RAKUTEN_APPLICATION_ID --project=animation-agent)
-RAKUTEN_ACCESS_KEY=$(gcloud secrets versions access latest --secret=RAKUTEN_ACCESS_KEY --project=animation-agent)
-RAKUTEN_AFFILIATE_ID=$(gcloud secrets versions access latest --secret=RAKUTEN_AFFILIATE_ID --project=animation-agent)
-RAKUTEN_APPLICATION_URL=$(gcloud secrets versions access latest --secret=RAKUTEN_APPLICATION_URL --project=animation-agent)
+ES_API=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_API_KEY --project=your-project-id)
+R2_KEY=$(gcloud secrets versions access latest --secret=R2_ACCESS_KEY_ID --project=your-project-id)
+R2_SECRET=$(gcloud secrets versions access latest --secret=R2_SECRET_ACCESS_KEY --project=your-project-id)
+TASK_SECRET=$(gcloud secrets versions access latest --secret=INTERNAL_TASK_SECRET --project=your-project-id)
+ES_SSL_FINGERPRINT=$(gcloud secrets versions access latest --secret=ELASTICSEARCH_SSL_FINGERPRINT --project=your-project-id)
+RAKUTEN_APPLICATION_ID=$(gcloud secrets versions access latest --secret=RAKUTEN_APPLICATION_ID --project=your-project-id)
+RAKUTEN_ACCESS_KEY=$(gcloud secrets versions access latest --secret=RAKUTEN_ACCESS_KEY --project=your-project-id)
+RAKUTEN_AFFILIATE_ID=$(gcloud secrets versions access latest --secret=RAKUTEN_AFFILIATE_ID --project=your-project-id)
+RAKUTEN_APPLICATION_URL=$(gcloud secrets versions access latest --secret=RAKUTEN_APPLICATION_URL --project=your-project-id)
 
 # 登録済みシークレット一覧
-gcloud secrets list --project=animation-agent
+gcloud secrets list --project=your-project-id
 
 # 楽天連携シークレットの存在確認
-gcloud secrets list --project=animation-agent --filter='name~RAKUTEN' --format='value(name)'
+gcloud secrets list --project=your-project-id --filter='name~RAKUTEN' --format='value(name)'
 
 # 新しいシークレットを登録（値はファイル経由で渡す — echo でパイプするとシェル履歴に残る）
-printf '%s' "<値>" | gcloud secrets create <SECRET_NAME> --data-file=- --project=animation-agent
+printf '%s' "<値>" | gcloud secrets create <SECRET_NAME> --data-file=- --project=your-project-id
 
 # 既存シークレットに新しいバージョンを追加
-printf '%s' "<新しい値>" | gcloud secrets versions add <SECRET_NAME> --data-file=- --project=animation-agent
+printf '%s' "<新しい値>" | gcloud secrets versions add <SECRET_NAME> --data-file=- --project=your-project-id
 ```
 
 ---
@@ -184,7 +184,7 @@ gcloud run services update-traffic fastapi-service \
 ## Artifact Registry（Milestone C 以降）
 
 ```bash
-REPO=asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion
+REPO=asia-northeast1-docker.pkg.dev/your-project-id/gen-fashion
 
 # イメージ一覧
 gcloud artifacts docker images list $REPO/fastapi-service --include-tags
@@ -197,23 +197,23 @@ gcloud auth configure-docker asia-northeast1-docker.pkg.dev
 ### Cloud Build でイメージをビルド & プッシュ
 
 ```bash
-REPO=asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion
+REPO=asia-northeast1-docker.pkg.dev/your-project-id/gen-fashion
 IMAGE_TAG=md-$(date +%Y%m%d-%H%M)
 
 # 両サービスを並行ビルド（ターミナル2枚で同時実行 or & でバックグラウンド）
-gcloud builds submit fastapi-service --tag $REPO/fastapi-service:$IMAGE_TAG --project=animation-agent
-gcloud builds submit adk-agent-service --tag $REPO/adk-agent-service:$IMAGE_TAG --project=animation-agent
+gcloud builds submit fastapi-service --tag $REPO/fastapi-service:$IMAGE_TAG --project=your-project-id
+gcloud builds submit adk-agent-service --tag $REPO/adk-agent-service:$IMAGE_TAG --project=your-project-id
 ```
 
 ### イメージタグを使った再デプロイ（コード修正後のロールアウト）
 
 ```bash
 # 現在のタグを確認してから最新イメージで更新
-REPO=asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion
+REPO=asia-northeast1-docker.pkg.dev/your-project-id/gen-fashion
 NEW_TAG=md-$(date +%Y%m%d-%H%M)
 
 bash scripts/deploy/deploy_adk.sh \
-  --project animation-agent --region asia-northeast1 \
+  --project your-project-id --region asia-northeast1 \
   --image "$REPO/adk-agent-service:$NEW_TAG" \
   --es-internal-ip 10.146.0.2 \
   --es-ssl-fingerprint "$ES_SSL_FINGERPRINT" \
@@ -224,7 +224,7 @@ bash scripts/deploy/deploy_adk.sh \
 ADK_URL=$(gcloud run services describe adk-agent-service --region=asia-northeast1 --format='value(status.url)')
 FASTAPI_URL=$(gcloud run services describe fastapi-service --region=asia-northeast1 --format='value(status.url)')
 bash scripts/deploy/deploy_fastapi.sh \
-  --project animation-agent --region asia-northeast1 \
+  --project your-project-id --region asia-northeast1 \
   --image "$REPO/fastapi-service:$NEW_TAG" \
   --adk-url "$ADK_URL" --fastapi-url "$FASTAPI_URL" \
   --es-internal-ip 10.146.0.2 \
@@ -239,7 +239,7 @@ bash scripts/deploy/deploy_fastapi.sh \
 
 ```bash
 gcloud artifacts repositories set-cleanup-policies gen-fashion \
-  --project=animation-agent --location=asia-northeast1 \
+  --project=your-project-id --location=asia-northeast1 \
   --policy='[{"name":"keep-recent","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":3}}]'
 ```
 
@@ -249,15 +249,15 @@ gcloud artifacts repositories set-cleanup-policies gen-fashion \
 
 ```bash
 # キュー一覧・状態確認
-gcloud tasks queues list --location=asia-northeast1 --project=animation-agent
+gcloud tasks queues list --location=asia-northeast1 --project=your-project-id
 
 # キュー詳細（バックログ件数、レート制限など）
 gcloud tasks queues describe gen-fashion-embed \
-  --location=asia-northeast1 --project=animation-agent
+  --location=asia-northeast1 --project=your-project-id
 
 # タスク一覧（滞留しているタスクがないか確認）
 gcloud tasks list --queue=gen-fashion-embed \
-  --location=asia-northeast1 --project=animation-agent
+  --location=asia-northeast1 --project=your-project-id
 ```
 
 ---
@@ -270,27 +270,27 @@ cd flutter-web-app
 flutter build web --release \
   --dart-define=API_BASE_URL=https://fastapi-service-hvwhpzcehq-an.a.run.app \
   --dart-define=USE_EMULATORS=false \
-  --dart-define=FIREBASE_PROJECT_ID=animation-agent \
+  --dart-define=FIREBASE_PROJECT_ID=your-project-id \
   --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" \
   --dart-define=FIREBASE_APP_ID=1:789766161934:web:e894240fca5dc80b9ede5f \
   --dart-define=FIREBASE_MESSAGING_SENDER_ID=789766161934 \
-  --dart-define=FIREBASE_AUTH_DOMAIN=animation-agent.firebaseapp.com \
-  --dart-define=FIREBASE_STORAGE_BUCKET=animation-agent.firebasestorage.app
+  --dart-define=FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com \
+  --dart-define=FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app
 cd ..
 
 # Firebase Hosting にデプロイ
-firebase deploy --only hosting --project animation-agent
+firebase deploy --only hosting --project your-project-id
 
 # デプロイ後の公開 URL
 # https://gen-fashion-app.web.app
 ```
 
-Legacy default Hosting site `animation-agent` is disabled. Re-enable it only if
-the old `https://animation-agent.web.app` URL is intentionally restored:
+Legacy default Hosting site `your-project-id` is disabled. Re-enable it only if
+the old `https://your-project-id.web.app` URL is intentionally restored:
 
 ```bash
 npx -y firebase-tools@latest hosting:disable \
-  --site animation-agent --project animation-agent --force
+  --site your-project-id --project your-project-id --force
 ```
 
 Firebase Auth authorized domains are separate from `FIREBASE_AUTH_DOMAIN`.
@@ -303,7 +303,7 @@ const { requireAuth } = require('/opt/homebrew/lib/node_modules/firebase-tools/l
 const firebaseAuth = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/auth');
 const { addAuthDomains } = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/hosting/api');
 const { getAuthDomains } = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/gcp/auth');
-const project = 'animation-agent';
+const project = 'your-project-id';
 const projectRoot = process.cwd();
 const target = 'gen-fashion-app.web.app';
 (async () => {
@@ -331,8 +331,8 @@ node - <<'NODE'
 const { requireAuth } = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/requireAuth');
 const firebaseAuth = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/auth');
 const { getAuthDomains, updateAuthDomains } = require('/opt/homebrew/lib/node_modules/firebase-tools/lib/gcp/auth');
-const project = 'animation-agent';
-const target = 'animation-agent.web.app';
+const project = 'your-project-id';
+const target = 'your-project-id.web.app';
 (async () => {
   const projectRoot = process.cwd();
   const selected = firebaseAuth.selectAccount(undefined, projectRoot);
@@ -373,19 +373,19 @@ wrangler r2 bucket cors list gen-fashion-images
 
 ```bash
 # TTL ポリシーの確認（agentEvents コレクションの ttlAt フィールド）
-gcloud firestore fields ttls list --project=animation-agent
+gcloud firestore fields ttls list --project=your-project-id
 
 # TTL ポリシーを有効化（Milestone E）
 gcloud firestore fields ttls update ttlAt \
-  --collection-group=agentEvents --enable-ttl --project=animation-agent
+  --collection-group=agentEvents --enable-ttl --project=your-project-id
 
 # 現在デプロイ済みの複合インデックス一覧（firestore.indexes.json との差分確認用）
-gcloud firestore indexes composite list --project=animation-agent \
+gcloud firestore indexes composite list --project=your-project-id \
   --format='table(collectionGroup,fields)'
 
 # firestore.indexes.json を本番に同期（CI/CD の deploy ジョブが毎回自動実行するが、
 # 手動で先にインデックスを温めたい/緊急修正したい場合はこれを直接叩く）
-bash scripts/deploy/deploy_firestore_indexes.sh --project=animation-agent
+bash scripts/deploy/deploy_firestore_indexes.sh --project=your-project-id
 ```
 
 **落とし穴 (2026-07-04 の障害):** Firestore はクエリが `.where()` の等価条件2つ以上
@@ -408,16 +408,16 @@ gcloud compute instances describe gen-fashion-es --zone=asia-northeast1-a \
   --format='table(name,status,networkInterfaces[0].networkIP,networkInterfaces[0].accessConfigs[0].natIP)'
 
 # Secret Manager の全シークレット名と更新日時
-gcloud secrets list --project=animation-agent \
+gcloud secrets list --project=your-project-id \
   --format='table(name,updateTime)'
 
 # 有効な API 一覧（デプロイに必要な API が全部 enabled か確認）
-gcloud services list --enabled --project=animation-agent \
+gcloud services list --enabled --project=your-project-id \
   --filter="name:(run OR artifactregistry OR cloudbuild OR secretmanager OR cloudtasks OR compute OR firestore OR aiplatform OR logging OR iamcredentials)" \
   --format='value(name)'
 
 # Cloud Run サービス 2 本の稼働状況まとめ確認
-gcloud run services list --region=asia-northeast1 --project=animation-agent \
+gcloud run services list --region=asia-northeast1 --project=your-project-id \
   --format='table(metadata.name,status.url,status.conditions[0].status,status.conditions[0].message)'
 
 # fastapi + adk の /health を一発確認
@@ -434,7 +434,7 @@ GitHub Actions が SA の JSON 鍵なしで GCP にデプロイするための W
 **一度だけ実行すれば OK。** `<GITHUB_ORG>/<GITHUB_REPO>` は実際のリポジトリ名に替えること。
 
 ```bash
-PROJECT=animation-agent
+PROJECT=your-project-id
 PROJECT_NUMBER=789766161934
 GITHUB_REPO="<GITHUB_ORG>/<GITHUB_REPO>"
 
@@ -497,7 +497,7 @@ echo "WIF_SA: github-deployer@${PROJECT}.iam.gserviceaccount.com"
 | Secret 名 | 値 |
 |---|---|
 | `WIF_PROVIDER` | `projects/789766161934/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
-| `WIF_SA` | `github-deployer@animation-agent.iam.gserviceaccount.com` |
+| `WIF_SA` | `github-deployer@your-project-id.iam.gserviceaccount.com` |
 | `ES_INTERNAL_IP` | `10.146.0.2` |
 | `ES_SSL_FINGERPRINT` | ES VM が `:9200` で提示する leaf certificate の SHA-256 fingerprint |
 | `R2_ENDPOINT_URL` | `https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com` |
@@ -506,8 +506,8 @@ echo "WIF_SA: github-deployer@${PROJECT}.iam.gserviceaccount.com"
 | `FIREBASE_API_KEY` | Firebase SDK config の `apiKey`（credentials/firebase-sdk.md 参照） |
 | `FIREBASE_APP_ID` | Firebase SDK config の `appId` |
 | `FIREBASE_MESSAGING_SENDER_ID` | `789766161934` |
-| `FIREBASE_AUTH_DOMAIN` | `animation-agent.firebaseapp.com` |
-| `FIREBASE_STORAGE_BUCKET` | `animation-agent.firebasestorage.app` |
+| `FIREBASE_AUTH_DOMAIN` | `your-project-id.firebaseapp.com` |
+| `FIREBASE_STORAGE_BUCKET` | `your-project-id.firebasestorage.app` |
 
 ### GitHub Actions 環境（production）の設定
 
@@ -520,13 +520,13 @@ deployment branch policy で `main` のみに制限する。WIF provider 側も
 ```bash
 # 現在の WIF 条件を確認
 gcloud iam workload-identity-pools providers describe github-provider \
-  --project=animation-agent --location=global \
+  --project=your-project-id --location=global \
   --workload-identity-pool=github-pool \
   --format='value(attributeCondition)'
 
 # 条件を main branch のみに再適用
 gcloud iam workload-identity-pools providers update-oidc github-provider \
-  --project=animation-agent --location=global \
+  --project=your-project-id --location=global \
   --workload-identity-pool=github-pool \
   --attribute-condition="assertion.repository=='RanArino/gen-fashion' && assertion.ref=='refs/heads/main'"
 ```
@@ -538,8 +538,8 @@ Firebase Web API key は公開クライアント設定だが、濫用を抑え�
 
 ```bash
 gcloud services api-keys update f185ac73-ab70-486d-a139-3b821854afdf \
-  --project=animation-agent \
-  --allowed-referrers='https://gen-fashion-app.web.app/*,https://animation-agent.firebaseapp.com/*,http://localhost:8088/*'
+  --project=your-project-id \
+  --allowed-referrers='https://gen-fashion-app.web.app/*,https://your-project-id.firebaseapp.com/*,http://localhost:8088/*'
 ```
 
 ---
