@@ -20,7 +20,7 @@ class FakeCloudTasksClient:
 
 @pytest.fixture(autouse=True)
 def cloud_tasks_settings(monkeypatch):
-    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "animation-agent")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
     monkeypatch.setenv("CLOUD_TASKS_LOCATION", "asia-northeast1")
     monkeypatch.setenv("CLOUD_TASKS_QUEUE_EMBED", "embed")
     monkeypatch.setenv("FASTAPI_INTERNAL_BASE_URL", "https://fastapi-service.example.test")
@@ -51,10 +51,10 @@ async def test_cloud_tasks_adapter_can_be_constructed_from_worker_thread(monkeyp
     )
 
     assert task_name == (
-        "projects/animation-agent/locations/asia-northeast1/queues/embed/tasks/task-123"
+        "projects/test-project/locations/asia-northeast1/queues/embed/tasks/task-123"
     )
     parent, task = FakeCloudTasksClient.calls[0]
-    assert parent == "projects/animation-agent/locations/asia-northeast1/queues/embed"
+    assert parent == "projects/test-project/locations/asia-northeast1/queues/embed"
     assert task["http_request"]["url"] == (
         "https://fastapi-service.example.test/internal/tasks/process-upload"
     )
