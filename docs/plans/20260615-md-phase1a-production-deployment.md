@@ -26,16 +26,16 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
 
 
 - [x] (2026-06-15) Authored this ExecPlan; selected the deployment requirements (MD-1…MD-14); set them to 🟡 In progress in `docs/feature-matrix-phase01.md`; recorded the new deployment ADLs in `docs/req-phase01.md`; synced `docs/architecture-overview.md`.
-- [x] (2026-06-21) Pre-deploy **local re-verification** (`docs/plans/20260621-md-phase1a-local-verification-checklist.md`): ran the local gate end-to-end and found three real bugs the prior "verified locally" claims had masked. Fixed: (a) **MD-8 base-URL split — local portion landed early** (`fastapi_internal_base_url` + `FASTAPI_INTERNAL_BASE_URL`), because the conflation broke `make dev` (upload→READY 404), not just the cloud; (b) Firestore client bound to the Vertex project instead of the Firebase project (`firestore_project_id` added); (c) `closetId` dynamic-`text` mapping broke SHARED_CLOSET search (keyword mapping added). After fixes the local M5 browser E2E reached `COMPLETED` with a **real Nano Banana image** (`gemini-2.5-flash-image`) — confirming the MD-11 model works at least in `us-central1` for project `animation-agent`. **MD-8 remaining (cloud): OIDC tokens on both hops + worker-route OIDC verification + Cloud Tasks audience.**
+- [x] (2026-06-21) Pre-deploy **local re-verification** (`docs/plans/20260621-md-phase1a-local-verification-checklist.md`): ran the local gate end-to-end and found three real bugs the prior "verified locally" claims had masked. Fixed: (a) **MD-8 base-URL split — local portion landed early** (`fastapi_internal_base_url` + `FASTAPI_INTERNAL_BASE_URL`), because the conflation broke `make dev` (upload→READY 404), not just the cloud; (b) Firestore client bound to the Vertex project instead of the Firebase project (`firestore_project_id` added); (c) `closetId` dynamic-`text` mapping broke SHARED_CLOSET search (keyword mapping added). After fixes the local M5 browser E2E reached `COMPLETED` with a **real Nano Banana image** (`gemini-2.5-flash-image`) — confirming the MD-11 model works at least in `us-central1` for project `your-project-id`. **MD-8 remaining (cloud): OIDC tokens on both hops + worker-route OIDC verification + Cloud Tasks audience.**
 - [x] (2026-06-21) Resolved the two non-blocking follow-ups from the local re-verification. **MD-10 de-risked:** embedding model corrected to `gemini-embedding-001` (768-dim `embed_content`) and the index side switched from image to **analyzed-text** embeddings so it shares the text-query space; local `--with-embeddings` seeded 90×768-dim vectors and a kNN probe returned semantically relevant hits (the seed's Vertex vs Firestore project was also split, mirroring the app fix; no-op in prod). **Agent timeout/UX:** `adk_run_timeout_seconds` made configurable (45→90) and fastapi `STREAM_MAX_SECONDS` raised (120→150) so the SSE stream always outlasts the ADK timeout + deterministic fallback — the coordination smoke then completed via the **primary** LLM path. Only MD-10's prod execution (seed against GCE ES inside the VPC) remains.
 - [x] (2026-06-27) Pre-production deployment readiness audit completed and this plan was resolved before any cloud deployment. Added an explicit **Milestone 0 — deploy readiness patch** for the remaining code/docs/scripts blockers: Cloud Tasks must target `FASTAPI_INTERNAL_BASE_URL`, both internal hops must use OIDC, the worker route must verify the OIDC bearer, Cloud Run containers must honor `$PORT`, `.env.example` must expose production-only deploy knobs, and `scripts/deploy/` helpers must exist before manual deployment or later MF CI/CD automation. Also resolved the ES bootstrap egress gap by allowing a temporary external IP only during VM install/seed and requiring it to be removed before acceptance; no architecture-overview update is needed because this is bootstrap procedure, not a steady-state component.
 - [x] (2026-06-27) Milestone 0 — Deploy readiness patch: code/config/script fixes before provisioning (`CloudTasksAdapter`, `HttpAgentRunAdapter`, `require_internal_secret`, Dockerfiles, `.env.example`, deploy helper scripts). Verified: FastAPI 67 passed / ADK 41 passed; both images respond on injected `PORT` (18000 / 13000); `teardown.sh --dry-run` lists exactly the plan resources.
-- [x] (2026-06-27) Milestone A — GCP foundation complete (project `animation-agent`, region `asia-northeast1`). Enabled 11 core APIs + Firebase Management/Hosting/Identity Toolkit; created `fastapi-sa`/`adk-sa`/`tasks-invoker-sa` with least-privilege IAM (incl. `fastapi-sa`→`tasks-invoker-sa` `serviceAccountUser` for Cloud Tasks OIDC); created Firestore (Native, `asia-northeast1`) and deployed `firestore.rules` + `firestore.indexes.json`; added Firebase to the project (via console — CLI `addfirebase` 403'd until Firebase ToS accepted), enabled Google sign-in, registered Web app `gen-fashion-web` (config saved to gitignored `credentials/firebase-sdk.md` for MD-12 `--dart-define`); created Cloudflare R2 bucket `gen-fashion-images` + CORS for the `animation-agent.web.app` origin; stored `INTERNAL_TASK_SECRET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` in Secret Manager (both `fastapi-sa`/`adk-sa` hold `secretmanager.secretAccessor`). MD-1 ✅, MD-9 ✅; MD-2 stays 🟡 (`ELASTICSEARCH_API_KEY` minted in Milestone B; `--set-env-vars` config applied at Cloud Run deploy in Milestone C). **`ELASTICSEARCH_API_KEY` not yet created — deferred to Milestone B per plan step 9.**
+- [x] (2026-06-27) Milestone A — GCP foundation complete (project `your-project-id`, region `asia-northeast1`). Enabled 11 core APIs + Firebase Management/Hosting/Identity Toolkit; created `fastapi-sa`/`adk-sa`/`tasks-invoker-sa` with least-privilege IAM (incl. `fastapi-sa`→`tasks-invoker-sa` `serviceAccountUser` for Cloud Tasks OIDC); created Firestore (Native, `asia-northeast1`) and deployed `firestore.rules` + `firestore.indexes.json`; added Firebase to the project (via console — CLI `addfirebase` 403'd until Firebase ToS accepted), enabled Google sign-in, registered Web app `gen-fashion-web` (config saved to gitignored `credentials/firebase-sdk.md` for MD-12 `--dart-define`); created Cloudflare R2 bucket `gen-fashion-images` + CORS for the `your-project-id.web.app` origin; stored `INTERNAL_TASK_SECRET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` in Secret Manager (both `fastapi-sa`/`adk-sa` hold `secretmanager.secretAccessor`). MD-1 ✅, MD-9 ✅; MD-2 stays 🟡 (`ELASTICSEARCH_API_KEY` minted in Milestone B; `--set-env-vars` config applied at Cloud Run deploy in Milestone C). **`ELASTICSEARCH_API_KEY` not yet created — deferred to Milestone B per plan step 9.**
 - [x] (2026-06-28) Milestone B — Data plane complete (MD-3 ✅, MD-10 ✅; MD-4 infrastructure ready, verification deferred to Milestone C): `gen-fashion-es` (`e2-medium`, `pd-balanced 30GB`, `asia-northeast1-a`); static internal IP `gen-fashion-es-ip`; ES 8.19 installed + two config conflicts resolved (duplicate `xpack.security.enabled`, `cluster.initial_master_nodes` vs `discovery.type: single-node`); cluster health `green`; `ELASTICSEARCH_API_KEY` in Secret Manager (`fastapi-sa`/`adk-sa` granted `secretmanager.secretAccessor`); firewall `allow-es-from-cloudrun` (subnet CIDR → tcp:9200); night-stop schedule `es-night-off` (JST 02:00–08:00); full vector seed `--with-embeddings` completed (`created=209, skipped=1, errors=0`, 210 total, 768-dim embeddings); `_count=210` verified; external IP removed (step 12.1 ✅). Discovered: VM seed `.env` had `FIRESTORE_EMULATOR_HOST=localhost:8080` — commented out before seed.
 - [x] (2026-06-28) Milestone C — Services: Artifact Registry images, Cloud Run `fastapi-service` + `adk-agent-service`, Cloud Tasks queue, OIDC hardening + internal-base-url split (MD-5, MD-6, MD-7, MD-8).
 - [x] (2026-06-28) Milestone D — Generation + frontend: production Nano Banana image generation on Vertex AI, Flutter Web build + Firebase Hosting (MD-11, MD-12).
 - [x] (2026-06-29) Milestone D.5 — Pre-acceptance bug fixes + Firebase URL rename fallback: increased live `fastapi-service` Cloud Run timeout to 300 s and updated `scripts/deploy/deploy_fastapi.sh`; added `GET /sessions/{sessionId}` + Flutter post-SSE session-state recovery for proposed candidates / completed image URL; `gen-fashion.web.app` was unavailable globally, so created/deployed `gen-fashion-app.web.app` instead. R2 CORS update for the new origin was attempted via the existing R2 API keys but failed with `AccessDenied`; update that in Cloudflare before testing direct closet uploads from the new origin.
-- [x] (2026-07-06) Retired legacy default Hosting URL from the active app surface: removed `animation-agent.web.app` from submission copy, FastAPI CORS defaults, CI deploy CORS, live Cloud Run `CORS_ALLOW_ORIGINS`, Firebase browser-key referrers, and Firebase Auth authorized domains; disabled the default Hosting site `animation-agent`. Verified `https://animation-agent.web.app/` returns 404 and `https://gen-fashion-app.web.app/` returns 200. R2 CORS cleanup remains blocked until `wrangler` has a valid `CLOUDFLARE_API_TOKEN`.
+- [x] (2026-07-06) Retired legacy default Hosting URL from the active app surface: removed `your-project-id.web.app` from submission copy, FastAPI CORS defaults, CI deploy CORS, live Cloud Run `CORS_ALLOW_ORIGINS`, Firebase browser-key referrers, and Firebase Auth authorized domains; disabled the default Hosting site `your-project-id`. Verified `https://your-project-id.web.app/` returns 404 and `https://gen-fashion-app.web.app/` returns 200. R2 CORS cleanup remains blocked until `wrangler` has a valid `CLOUDFLARE_API_TOKEN`.
 - [~] Milestone E — Acceptance + ops (in progress, 2026-06-29): ops steps E-21a/b/c/d complete; E-20 browser E2E pending user action. Cloud Logging ✅ (ADK events visible); Firestore agentEvents TTL enabled ✅; Artifact Registry keep-3 cleanup policy set ✅; teardown.sh --dry-run lists exactly plan resources ✅. Blocker: R2 CORS for `gen-fashion-app.web.app` must be added in Cloudflare before closet uploads work from the new origin. ES VM left RUNNING for E2E test.
 
 
@@ -66,12 +66,12 @@ This milestone is **Phase 1a** deployment. It is independent of and must not pul
   6. The `adk-agent-service` background task keeps running after the fastapi SSE dies. It eventually completes the session (COMPLETED in Firestore), which is why the image appears in History (fetched via `GET /sessions` REST endpoint) but not in the Coordinate screen.
   7. With `_running=false` and candidates visible (if Phase 1 completed within 60 s), the user can press Generate again. `POST /select` is sent; `SelectCandidatesUseCase` checks `session.state != PROPOSING` → raises `ValueError("Cannot select candidates from Completed")` → HTTP 409.
   Evidence: `fastapi-service/app/handlers/session_routes.py` STREAM_MAX_SECONDS=150; `STREAM_POLL_SECONDS=1`; terminal events only at PROPOSING/COMPLETED/ERROR/TIMEOUT state. Cloud Run deploy in Milestone C used `--timeout=60` for `fastapi-service`.
-- Observation (2026-06-29): **Firebase Hosting URL `animation-agent.web.app` uses the GCP project ID which cannot be changed; however Firebase Hosting supports multiple sites per project with independent `<site-name>.web.app` URLs.** Creating a site named `gen-fashion` within the `animation-agent` project yields `gen-fashion.web.app` if that site name is globally available (Firebase site names are a worldwide flat namespace). No backend, Firestore, Auth, or Vertex AI changes are required — only Hosting redeploy, R2 CORS, and Firebase Auth authorized-domain additions.
-  Evidence: Firebase Hosting multi-site docs; `gcloud projects describe animation-agent` confirms project ID is immutable; the existing hosting site is named `animation-agent` (default = project ID).
-- Observation (2026-06-29): `gen-fashion` is already reserved by another Firebase project, so `gen-fashion.web.app` cannot be created in project `animation-agent`. The fallback site `gen-fashion-app` was available, created, and deployed at `https://gen-fashion-app.web.app`.
-  Evidence: `firebase hosting:sites:create gen-fashion --project animation-agent` returned `Invalid name: gen-fashion is reserved by another project`; `firebase hosting:sites:create gen-fashion-app --project animation-agent` succeeded.
+- Observation (2026-06-29): **Firebase Hosting URL `your-project-id.web.app` uses the GCP project ID which cannot be changed; however Firebase Hosting supports multiple sites per project with independent `<site-name>.web.app` URLs.** Creating a site named `gen-fashion` within the `your-project-id` project yields `gen-fashion.web.app` if that site name is globally available (Firebase site names are a worldwide flat namespace). No backend, Firestore, Auth, or Vertex AI changes are required — only Hosting redeploy, R2 CORS, and Firebase Auth authorized-domain additions.
+  Evidence: Firebase Hosting multi-site docs; `gcloud projects describe your-project-id` confirms project ID is immutable; the existing hosting site is named `your-project-id` (default = project ID).
+- Observation (2026-06-29): `gen-fashion` is already reserved by another Firebase project, so `gen-fashion.web.app` cannot be created in project `your-project-id`. The fallback site `gen-fashion-app` was available, created, and deployed at `https://gen-fashion-app.web.app`.
+  Evidence: `firebase hosting:sites:create gen-fashion --project your-project-id` returned `Invalid name: gen-fashion is reserved by another project`; `firebase hosting:sites:create gen-fashion-app --project your-project-id` succeeded.
 - Observation (2026-06-29): Firebase Auth did **not** automatically authorize the fallback multisite domain. Google sign-in on `https://gen-fashion-app.web.app` failed with `unauthorized-domain` until `gen-fashion-app.web.app` was added to Firebase Auth authorized domains.
-  Evidence: live authorized domains changed from `localhost`, `animation-agent.firebaseapp.com`, `animation-agent.web.app` to include `gen-fashion-app.web.app`.
+  Evidence: live authorized domains changed from `localhost`, `your-project-id.firebaseapp.com`, `your-project-id.web.app` to include `gen-fashion-app.web.app`.
 
 
 ## Decision Log
@@ -110,17 +110,17 @@ Recorded so far (Milestones A + B + C + D, 2026-06-28):
 
 **Milestone D (2026-06-28):**
 - Flutter Web build: `flutter build web --release` with production `--dart-define`s (API_BASE_URL, USE_EMULATORS=false, all FIREBASE_* values); build succeeded (51.8 s, `build/web` 32 files)
-- Firebase Hosting: `firebase.json` updated with `hosting` section (public: `flutter-web-app/build/web`, SPA rewrite); `.firebaserc` created; deployed to `https://animation-agent.web.app` ✅
-- SPA live check: `curl https://animation-agent.web.app/ → 200` ✅
-- Hosting domain `animation-agent.web.app` auto-added to Firebase Auth authorized domains by Firebase Hosting deployment ✅
-- R2 CORS: already set for `https://animation-agent.web.app` origin (Milestone A) ✅
+- Firebase Hosting: `firebase.json` updated with `hosting` section (public: `flutter-web-app/build/web`, SPA rewrite); `.firebaserc` created; deployed to `https://your-project-id.web.app` ✅
+- SPA live check: `curl https://your-project-id.web.app/ → 200` ✅
+- Hosting domain `your-project-id.web.app` auto-added to Firebase Auth authorized domains by Firebase Hosting deployment ✅
+- R2 CORS: already set for `https://your-project-id.web.app` origin (Milestone A) ✅
 - ES VM: started for testing (RUNNING, ES health `yellow` — single-node normal)
 - MD-12 ✅; MD-11 pending user E2E test (Nano Banana path verification via browser — see Milestone E)
 
 Recorded so far (Milestones A + B + C, 2026-06-28):
 
 **Milestone C (2026-06-28):**
-- Artifact Registry: `gen-fashion` repo created (`asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion`)
+- Artifact Registry: `gen-fashion` repo created (`asia-northeast1-docker.pkg.dev/your-project-id/gen-fashion`)
 - Images built via Cloud Build: `fastapi-service:md-20260628-2132`, `adk-agent-service:md-20260628-2134`
 - Cloud Tasks queue: `gen-fashion-embed` (`asia-northeast1`)
 - `adk-agent-service`: deployed private (`--no-allow-unauthenticated`), min 0 / max 5, 2 GB / 1 CPU / 600 s, Direct VPC egress → `https://adk-agent-service-hvwhpzcehq-an.a.run.app`; `fastapi-sa` granted `roles/run.invoker`
@@ -143,11 +143,11 @@ Recorded so far (Milestones A + B, 2026-06-28):
 - Discoveries: VM `.env` had `FIRESTORE_EMULATOR_HOST=localhost:8080` and `GOOGLE_APPLICATION_CREDENTIALS` pointing at a missing SA JSON; both commented out for production seed via ADC.
 
 **Milestone A (2026-06-27):**
-- GCP project: `animation-agent` (project number 789766161934); billing account `0140CC-06E4FF-5940D6`.
+- GCP project: `your-project-id` (project number 789766161934); billing account `0140CC-06E4FF-5940D6`.
 - Regions: infrastructure `asia-northeast1`; Vertex AI `GOOGLE_CLOUD_LOCATION=us-central1` (where `gemini-2.5-flash-image` is confirmed).
-- Service accounts: `fastapi-sa`, `adk-sa`, `tasks-invoker-sa` @ `animation-agent.iam.gserviceaccount.com`.
+- Service accounts: `fastapi-sa`, `adk-sa`, `tasks-invoker-sa` @ `your-project-id.iam.gserviceaccount.com`.
 - Firestore: `(default)`, Native mode, `asia-northeast1`; `firestore.rules` + `firestore.indexes.json` deployed.
-- Firebase: added to project; Web app `gen-fashion-web` (`1:789766161934:web:e894240fca5dc80b9ede5f`); Google sign-in enabled; web config in gitignored `credentials/firebase-sdk.md`. Hosting origin will be `https://animation-agent.web.app`.
+- Firebase: added to project; Web app `gen-fashion-web` (`1:789766161934:web:e894240fca5dc80b9ede5f`); Google sign-in enabled; web config in gitignored `credentials/firebase-sdk.md`. Hosting origin will be `https://your-project-id.web.app`.
 - R2: Cloudflare bucket `gen-fashion-images` + CORS; endpoint `https://251f1f3bfe0fba6b30914150579f34b5.r2.cloudflarestorage.com`; account ID `251f1f3bfe0fba6b30914150579f34b5`.
 - Secret Manager: `INTERNAL_TASK_SECRET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (`ELASTICSEARCH_API_KEY` pending Milestone B).
 
@@ -556,7 +556,7 @@ Milestone D.5 — Pre-acceptance bug fixes + Firebase URL rename
 **Context.** Three user-visible failures were observed after Milestone D deployment (2026-06-29):
 (a) the agent Accordion stops updating at ~60 s; (b) the generated coordinate image does not appear in the Coordinate screen even though it is visible in History; (c) a 409 "Cannot select candidates from Completed" appears if the user presses Generate again after the stream dies.
 Root cause: `fastapi-service` is deployed with Cloud Run `--timeout=60`, which kills the SSE stream before Phase 1 (`session.proposed`) or Phase 2 (`session.completed`) terminal events are delivered to Flutter. All three failures trace back to this single misconfiguration. A secondary Flutter-side gap: `_coordinateImageUrl` is only set from SSE `agent.event` messages; no recovery path exists when the stream closes before the image URL arrives.
-Additionally, the user requested renaming the public hosting URL from `animation-agent.web.app` to `gen-fashion.web.app`. That exact site ID was unavailable globally; use `gen-fashion-app.web.app` unless a custom domain is added later.
+Additionally, the user requested renaming the public hosting URL from `your-project-id.web.app` to `gen-fashion.web.app`. That exact site ID was unavailable globally; use `gen-fashion-app.web.app` unless a custom domain is added later.
 
 
 **D.5-1. Increase fastapi-service Cloud Run request timeout (primary fix, no code change).**
@@ -602,19 +602,19 @@ Note: Fix D.5-1 (increase timeout to 300 s) is the primary fix. D.5-2 is a defen
 Verify (D.5-2): run a SHARED_CLOSET session in the browser; simulate SSE disconnect by throttling the network after candidates appear; confirm the Coordinate image is still displayed after reconnect.
 
 
-**D.5-3. Firebase Hosting URL rename: `animation-agent.web.app` → `gen-fashion-app.web.app` fallback.**
+**D.5-3. Firebase Hosting URL rename: `your-project-id.web.app` → `gen-fashion-app.web.app` fallback.**
 
 
-The GCP project ID `animation-agent` is permanent and cannot be changed. Firebase Hosting supports multiple sites per project; each site gets its own `<site-name>.web.app` URL. The site name `gen-fashion` is in a global namespace — check availability before creating.
+The GCP project ID `your-project-id` is permanent and cannot be changed. Firebase Hosting supports multiple sites per project; each site gets its own `<site-name>.web.app` URL. The site name `gen-fashion` is in a global namespace — check availability before creating.
 
 
 Step 1 — Check availability and create the new hosting site:
 
 
-    firebase hosting:sites:create gen-fashion --project animation-agent
+    firebase hosting:sites:create gen-fashion --project your-project-id
 
 
-If the command succeeds, `gen-fashion.web.app` is now owned by the `animation-agent` project. In practice it failed because `gen-fashion` is reserved by another project; `gen-fashion-app` was created instead.
+If the command succeeds, `gen-fashion.web.app` is now owned by the `your-project-id` project. In practice it failed because `gen-fashion` is reserved by another project; `gen-fashion-app` was created instead.
 
 
 Step 2 — Update `.firebaserc` to target the new site:
@@ -622,10 +622,10 @@ Step 2 — Update `.firebaserc` to target the new site:
 
     {
       "projects": {
-        "default": "animation-agent"
+        "default": "your-project-id"
       },
       "targets": {
-        "animation-agent": {
+        "your-project-id": {
           "hosting": {
             "gen-fashion-app": ["gen-fashion-app"]
           }
@@ -648,26 +648,26 @@ Update `firebase.json` to add a `target` field:
 Step 3 — Add `gen-fashion-app.web.app` to Firebase Auth authorized domains. Status: done 2026-06-29 after Google sign-in failed with `unauthorized-domain`.
 
 
-Step 4 — Add `gen-fashion-app.web.app` to R2 CORS (Cloudflare dashboard or `wrangler r2 bucket cors put gen-fashion-images`; keep `animation-agent.web.app` in the list until the old URL is decommissioned). The existing R2 API keys returned `AccessDenied` on `PutBucketCors`, so this still requires a Cloudflare token/role with bucket-CORS permission.
+Step 4 — Add `gen-fashion-app.web.app` to R2 CORS (Cloudflare dashboard or `wrangler r2 bucket cors put gen-fashion-images`; keep `your-project-id.web.app` in the list until the old URL is decommissioned). The existing R2 API keys returned `AccessDenied` on `PutBucketCors`, so this still requires a Cloudflare token/role with bucket-CORS permission.
 
 
-Step 5 — Rebuild and deploy Flutter Web to the new site (same `--dart-define` values; `FIREBASE_AUTH_DOMAIN` remains `animation-agent.firebaseapp.com` because that is the Firebase project's auth domain, not the hosting URL):
+Step 5 — Rebuild and deploy Flutter Web to the new site (same `--dart-define` values; `FIREBASE_AUTH_DOMAIN` remains `your-project-id.firebaseapp.com` because that is the Firebase project's auth domain, not the hosting URL):
 
 
     cd flutter-web-app
     flutter build web --release \
       --dart-define=API_BASE_URL=https://fastapi-service-hvwhpzcehq-an.a.run.app \
       --dart-define=USE_EMULATORS=false \
-      --dart-define=FIREBASE_PROJECT_ID=animation-agent \
+      --dart-define=FIREBASE_PROJECT_ID=your-project-id \
       --dart-define=FIREBASE_API_KEY=<same key> \
       --dart-define=FIREBASE_APP_ID=<same app id> \
       --dart-define=FIREBASE_MESSAGING_SENDER_ID=789766161934 \
-      --dart-define=FIREBASE_AUTH_DOMAIN=animation-agent.firebaseapp.com \
-      --dart-define=FIREBASE_STORAGE_BUCKET=animation-agent.firebasestorage.app
-    firebase deploy --only hosting:gen-fashion-app --project animation-agent
+      --dart-define=FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com \
+      --dart-define=FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app
+    firebase deploy --only hosting:gen-fashion-app --project your-project-id
 
 
-Step 6 — Verify: `curl https://gen-fashion-app.web.app/` → 200; Firebase Auth authorized domains include `gen-fashion-app.web.app`; open in browser, sign in with Google, confirm login works (Auth domain still `animation-agent.firebaseapp.com`).
+Step 6 — Verify: `curl https://gen-fashion-app.web.app/` → 200; Firebase Auth authorized domains include `gen-fashion-app.web.app`; open in browser, sign in with Google, confirm login works (Auth domain still `your-project-id.firebaseapp.com`).
 
 
 Milestone E — Acceptance + ops
@@ -757,7 +757,7 @@ Requirements traceability: MD-1/MD-2 ← req §9.1, §12.1/§12.2, ADL-012; MD-3
 
 2026-06-28 — Milestone B **in progress** (data plane): ES VM `gen-fashion-es` provisioned (`e2-medium`, `pd-balanced 30GB`, `asia-northeast1-a`); static internal IP `gen-fashion-es-ip` reserved; Elasticsearch 8.19 installed (two config conflicts resolved); cluster health `green`; `ELASTICSEARCH_API_KEY` in Secret Manager; firewall `allow-es-from-cloudrun` (subnet CIDR → tcp:9200); night-stop schedule `es-night-off` attached (JST 02:00–08:00); ADC configured on VM. Full vector seed `--with-embeddings` executing (100+/210 items). Discovered: seed `.env` on VM had `FIRESTORE_EMULATOR_HOST=localhost:8080` and `GOOGLE_APPLICATION_CREDENTIALS` pointing at a missing SA JSON — both commented out; prod Firestore now reached via ADC `authorized_user`.
 
-2026-06-27 — Milestone A complete (GCP foundation): project `animation-agent` / `asia-northeast1`; 11 APIs + Firebase; 3 service accounts + least-privilege IAM; Firestore Native + rules/indexes deployed; Firebase + Google sign-in + Web app `gen-fashion-web`; R2 bucket `gen-fashion-images` + CORS; `INTERNAL_TASK_SECRET`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` in Secret Manager. MD-1 ✅, MD-9 ✅; MD-2 stays 🟡 (`ELASTICSEARCH_API_KEY` in Milestone B, env config at Cloud Run deploy).
+2026-06-27 — Milestone A complete (GCP foundation): project `your-project-id` / `asia-northeast1`; 11 APIs + Firebase; 3 service accounts + least-privilege IAM; Firestore Native + rules/indexes deployed; Firebase + Google sign-in + Web app `gen-fashion-web`; R2 bucket `gen-fashion-images` + CORS; `INTERNAL_TASK_SECRET`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` in Secret Manager. MD-1 ✅, MD-9 ✅; MD-2 stays 🟡 (`ELASTICSEARCH_API_KEY` in Milestone B, env config at Cloud Run deploy).
 
 2026-06-28 — Milestone C complete (services). Artifact Registry `gen-fashion` created; `fastapi-service:md-20260628-2132` and `adk-agent-service:md-20260628-2134` built via Cloud Build; Cloud Tasks queue `gen-fashion-embed` created; `adk-agent-service` deployed private (min 0, Direct VPC egress) at `https://adk-agent-service-hvwhpzcehq-an.a.run.app`; `fastapi-service` deployed public (two-pass, OIDC active) at `https://fastapi-service-hvwhpzcehq-an.a.run.app`. Acceptance: `/health` 200 ✅, adk 403 ✅. MD-5 ✅, MD-6 ✅, MD-7 ✅, MD-8 ✅, MD-2 ✅. Note: `--min-instances` for `adk-agent-service` changed to 0 (from plan's 1) to reduce idle cost; consistent with `fastapi-service` zero-idle policy.
 
@@ -767,7 +767,7 @@ Requirements traceability: MD-1/MD-2 ← req §9.1, §12.1/§12.2, ADL-012; MD-3
 
 2026-06-29 — Milestone D.5 executed. Built and deployed `fastapi-service:md-d5-20260629-2044`; live revision `fastapi-service-00005-4s9` has timeout `300` and OpenAPI includes `GET /sessions/{session_id}`. Added direct session recovery and Flutter refresh after SSE closes; verified FastAPI 69 passed / 1 skipped, Flutter test 15 passed, Flutter analyze clean. `gen-fashion.web.app` was unavailable globally, so `gen-fashion-app.web.app` was created, configured in `.firebaserc`/`firebase.json`, built, deployed, and verified with `curl` 200. Incident follow-up: Google sign-in failed on the new domain until `gen-fashion-app.web.app` was added to Firebase Auth authorized domains; verified the live domain list includes it. R2 CORS update for `gen-fashion-app.web.app` is still pending because the existing R2 API keys returned `AccessDenied` on `PutBucketCors`.
 
-2026-06-28 — Milestone D complete (generation + frontend). `firebase.json` hosting section added; `.firebaserc` created; Flutter Web built (`flutter build web --release`, 32 files, production `--dart-define`s) and deployed to Firebase Hosting (`https://animation-agent.web.app`, 200 ✅). ES VM started for Milestone E acceptance test. MD-12 ✅. MD-11 (Nano Banana) verified in Milestone E browser E2E.
+2026-06-28 — Milestone D complete (generation + frontend). `firebase.json` hosting section added; `.firebaserc` created; Flutter Web built (`flutter build web --release`, 32 files, production `--dart-define`s) and deployed to Firebase Hosting (`https://your-project-id.web.app`, 200 ✅). ES VM started for Milestone E acceptance test. MD-12 ✅. MD-11 (Nano Banana) verified in Milestone E browser E2E.
 
 2026-06-28 — Milestone B complete (data plane). `gen-fashion-es` (`e2-medium`, `pd-balanced 30GB`, `asia-northeast1-a`); static IP `gen-fashion-es-ip`; ES 8.19 health `green`; `ELASTICSEARCH_API_KEY` in Secret Manager; firewall `allow-es-from-cloudrun`; night-stop `es-night-off`; full vector seed `--with-embeddings` completed (`created=209/210`, 768-dim, `_count=210`); external IP removed. MD-3 ✅, MD-10 ✅; MD-4 infrastructure ready (Cloud Run verification deferred to Milestone C). Discoveries: VM `.env` had `FIRESTORE_EMULATOR_HOST=localhost:8080` — commented out before seed.
 
