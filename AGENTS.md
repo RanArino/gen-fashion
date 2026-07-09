@@ -119,7 +119,7 @@ Common types are `feat`, `fix`, `docs`, `refactor`, `test`, `build`, and `chore`
 
 ## GCP Operations Cheatsheet
 
-`docs/gcp-cheatsheet.md` is the living reference for project-specific `gcloud` commands (project `animation-agent`, region `asia-northeast1`). It covers VM start/stop/SSH, Secret Manager access, Elasticsearch verification, Cloud Run, Artifact Registry, Firestore TTL, and troubleshooting.
+`docs/gcp-cheatsheet.md` is the living reference for project-specific `gcloud` commands (project `your-project-id`, region `asia-northeast1`). It covers VM start/stop/SSH, Secret Manager access, Elasticsearch verification, Cloud Run, Artifact Registry, Firestore TTL, and troubleshooting.
 
 **Agents must keep this document up to date:**
 

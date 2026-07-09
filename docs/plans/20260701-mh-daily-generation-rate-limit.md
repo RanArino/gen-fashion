@@ -34,7 +34,7 @@ After this change:
   Evidence: `python3 -m venv .venv && pip install -r requirements.txt` failed while building `pydantic-core` with `ForwardRef._evaluate() missing 1 required keyword-only argument: 'recursive_guard'`. Retried with `/opt/homebrew/bin/python3.12`, and the test suite passed.
 
 - Observation: Production Cloud Run did not previously have `MAX_DAILY_GENERATIONS_PER_USER` set.
-  Evidence: `gcloud run services describe fastapi-service --project animation-agent --region asia-northeast1` before redeploy showed no env var with that name; after redeploy, the filtered env output was `[{'name': 'MAX_DAILY_GENERATIONS_PER_USER', 'value': '5'}]`.
+  Evidence: `gcloud run services describe fastapi-service --project your-project-id --region asia-northeast1` before redeploy showed no env var with that name; after redeploy, the filtered env output was `[{'name': 'MAX_DAILY_GENERATIONS_PER_USER', 'value': '5'}]`.
 
 - Observation: Enforcing only at `/select` is too late for cost control.
   Evidence: the user could reach the 6th run's `PROPOSING` screen and only then receive 429 before image selection; the propose ADK run and Elasticsearch search had already happened. The first check now runs in `SelectClothingSourceUseCase` before `AgentRunPort.start_session_run(phase="propose")`.
@@ -79,7 +79,7 @@ Implemented and deployed.
 
 Backend enforcement now runs in `SelectClothingSourceUseCase.execute()` before `session.select_source(...)` and before `AgentRunPort.start_session_run(phase="propose")`. The same check also remains in `SelectCandidatesUseCase.execute()` before `session.select_candidates(...)` and before `AgentRunPort.start_session_run(phase="generate")`. `MAX_DAILY_GENERATIONS_PER_USER=0` skips the Firestore count entirely; positive values query completed sessions since UTC midnight and raise `DailyGenerationLimitExceeded` when `count >= limit`. Both route handlers map that exception to HTTP 429.
 
-Deployment/local wiring is in place: `.env.example` and `docker-compose.yml` default local development to `MAX_DAILY_GENERATIONS_PER_USER=5`, and `scripts/deploy/deploy_fastapi.sh` sets `MAX_DAILY_GENERATIONS_PER_USER=5` for Cloud Run. Cloud Build pushed `asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion/fastapi-service:mh-20260701-083153`; Cloud Run revision `fastapi-service-00015-f48` is serving 100% traffic. Local container `/health` returns `{"status":"ok"}` and reads `max_daily_generations_per_user=5`.
+Deployment/local wiring is in place: `.env.example` and `docker-compose.yml` default local development to `MAX_DAILY_GENERATIONS_PER_USER=5`, and `scripts/deploy/deploy_fastapi.sh` sets `MAX_DAILY_GENERATIONS_PER_USER=5` for Cloud Run. Cloud Build pushed `asia-northeast1-docker.pkg.dev/your-project-id/gen-fashion/fastapi-service:mh-20260701-083153`; Cloud Run revision `fastapi-service-00015-f48` is serving 100% traffic. Local container `/health` returns `{"status":"ok"}` and reads `max_daily_generations_per_user=5`.
 
 The exact authenticated 429 production smoke after real completed generations was not run, because it would require creating paid Vertex AI generations. The behavior is covered by use-case and route tests, and the live service has the production env var set.
 
@@ -279,10 +279,10 @@ Add one line to the `ENV_VARS` block (before the OIDC conditional block):
 Run the deploy script (second-pass form, with `--fastapi-url` already known):
 
     FASTAPI_URL=$(gcloud run services describe fastapi-service \
-      --project animation-agent --region asia-northeast1 --format='value(status.url)')
+      --project your-project-id --region asia-northeast1 --format='value(status.url)')
 
     bash scripts/deploy/deploy_fastapi.sh \
-      --project animation-agent \
+      --project your-project-id \
       --region asia-northeast1 \
       --image <current-image-tag> \
       --adk-url <adk-service-url> \
@@ -295,7 +295,7 @@ Run the deploy script (second-pass form, with `--fastapi-url` already known):
 After deploy, verify the env var is present:
 
     gcloud run services describe fastapi-service \
-      --project animation-agent --region asia-northeast1 \
+      --project your-project-id --region asia-northeast1 \
       --format='value(spec.template.spec.containers[0].env)'
 
 Confirm `MAX_DAILY_GENERATIONS_PER_USER=5` appears in the output.
@@ -335,7 +335,7 @@ Step 10 — Edit `.env.example`: set `MAX_DAILY_GENERATIONS_PER_USER=5` for loca
 
 Step 11 — Edit `scripts/deploy/deploy_fastapi.sh`: add `ENV_VARS+="|MAX_DAILY_GENERATIONS_PER_USER=5"`.
 
-Step 12 — Build and push updated `fastapi-service` image; run deploy script (Milestone B-3 above). Completed with image `asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion/fastapi-service:mh-20260701-083153` and revision `fastapi-service-00015-f48`.
+Step 12 — Build and push updated `fastapi-service` image; run deploy script (Milestone B-3 above). Completed with image `asia-northeast1-docker.pkg.dev/your-project-id/gen-fashion/fastapi-service:mh-20260701-083153` and revision `fastapi-service-00015-f48`.
 
 Step 13 — Smoke test production limit:
 
@@ -365,7 +365,7 @@ Observed after local hardening: 76 passed. Tests exercise:
 Condition: `MAX_DAILY_GENERATIONS_PER_USER=5` is set on the Cloud Run service (confirmed via `gcloud run services describe`).
 
 Observed:
-- `gcloud run services describe fastapi-service --project animation-agent --region asia-northeast1 --format='value(status.url,status.latestReadyRevisionName,spec.template.spec.containers[0].image)'` returned `https://fastapi-service-hvwhpzcehq-an.a.run.app`, `fastapi-service-00015-f48`, and `asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion/fastapi-service:mh-20260701-083153`.
+- `gcloud run services describe fastapi-service --project your-project-id --region asia-northeast1 --format='value(status.url,status.latestReadyRevisionName,spec.template.spec.containers[0].image)'` returned `https://fastapi-service-hvwhpzcehq-an.a.run.app`, `fastapi-service-00015-f48`, and `asia-northeast1-docker.pkg.dev/your-project-id/gen-fashion/fastapi-service:mh-20260701-083153`.
 - Filtering the live env returned `MAX_DAILY_GENERATIONS_PER_USER=5`.
 - `curl -fsS "$FASTAPI_URL/health"` returned `{"status":"ok"}`.
 
@@ -399,7 +399,7 @@ If the Firestore `count_completed_today` query fails at runtime with a missing-i
 
 Then deploy it with:
 
-    firebase deploy --only firestore:indexes --project animation-agent
+    firebase deploy --only firestore:indexes --project your-project-id
 
 
 ## Artifacts and Notes
@@ -432,10 +432,10 @@ Verification artifacts:
       tests/test_session_routes.py::test_select_source_returns_429_when_daily_generation_limit_reached
     # 2 passed
 
-    gcloud builds submit fastapi-service --tag asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion/fastapi-service:mh-20260701-083153 --project animation-agent
+    gcloud builds submit fastapi-service --tag asia-northeast1-docker.pkg.dev/your-project-id/gen-fashion/fastapi-service:mh-20260701-083153 --project your-project-id
     # Build 43eec9cd-a686-41e3-bcf8-70e261280292 SUCCESS
 
-    bash scripts/deploy/deploy_fastapi.sh ... --image asia-northeast1-docker.pkg.dev/animation-agent/gen-fashion/fastapi-service:mh-20260701-083153 ...
+    bash scripts/deploy/deploy_fastapi.sh ... --image asia-northeast1-docker.pkg.dev/your-project-id/gen-fashion/fastapi-service:mh-20260701-083153 ...
     # Service [fastapi-service] revision [fastapi-service-00015-f48] has been deployed and is serving 100 percent of traffic.
 
     curl -fsS "$FASTAPI_URL/health"

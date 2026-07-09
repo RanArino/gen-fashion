@@ -42,11 +42,32 @@ _COLOR_KEYWORDS = {
     "purple": "紫",
 }
 
+_COLOR_TAG_ALIASES = {
+    **{color: color for color in _COLOR_KEYWORDS},
+    "黒": "black",
+    "白": "white",
+    "青": "blue",
+    "赤": "red",
+    "緑": "green",
+    "黄": "yellow",
+    "茶": "brown",
+    "茶色": "brown",
+    "ベージュ": "beige",
+    "グレー": "gray",
+    "灰色": "gray",
+    "ネイビー": "navy",
+    "紺": "navy",
+    "ピンク": "pink",
+    "紫": "purple",
+    "grey": "gray",
+}
+
 
 def search_rakuten(
     query: str,
     category: str | None = None,
     colors: list[str] | None = None,
+    tags: list[str] | None = None,
     limit: int = 5,
 ) -> list[dict]:
     """Search Rakuten Ichiba for purchasable items and accessories.
@@ -58,6 +79,10 @@ def search_rakuten(
         category: Optional category hint recorded on the results (e.g. "hat",
             "bag", "shoes", "top").
         colors: Optional colors appended to the search keyword.
+        tags: Optional English metadata tags for the intended item, such as
+            garment type, material, fit, formality, season, or style. These are
+            saved on returned candidates and do not need to be repeated in the
+            Rakuten query.
         limit: Maximum number of items to return.
 
     Returns:
@@ -70,7 +95,12 @@ def search_rakuten(
     results_by_id = {}
     for keyword in keywords:
         items = rakuten.search_items(keyword, limit=limit)
-        for result in _candidate_results(items, category=category, colors=colors):
+        for result in _candidate_results(
+            items,
+            category=category,
+            colors=colors,
+            tags=tags,
+        ):
             results_by_id.setdefault(result["item_id"], result)
             if len(results_by_id) >= limit:
                 return list(results_by_id.values())
@@ -82,8 +112,10 @@ def _candidate_results(
     *,
     category: str | None,
     colors: list[str] | None,
+    tags: list[str] | None,
 ) -> list[dict]:
     results = []
+    candidate_tags = _metadata_tags(colors=colors, tags=tags)
     for item in items:
         if not item.get("item_code") or not item.get("image_url"):
             continue
@@ -95,7 +127,7 @@ def _candidate_results(
                 "image_url": item["image_url"],
                 "price": item.get("price"),
                 "category": category,
-                "tags": list(colors or []),
+                "tags": candidate_tags,
                 "external_url": item.get("external_url"),
                 "affiliate_url": item.get("affiliate_url"),
                 "shop_name": item.get("shop_name"),
@@ -103,6 +135,26 @@ def _candidate_results(
             }
         )
     return results
+
+
+def _metadata_tags(
+    *,
+    colors: list[str] | None,
+    tags: list[str] | None,
+) -> list[str]:
+    normalized: list[str] = []
+    for value in [*(colors or []), *(tags or [])]:
+        tag = _normalize_metadata_tag(value)
+        if tag and tag not in normalized:
+            normalized.append(tag)
+    return normalized
+
+
+def _normalize_metadata_tag(value: str) -> str | None:
+    normalized = " ".join(str(value).strip().lower().split())
+    if not normalized:
+        return None
+    return _COLOR_TAG_ALIASES.get(normalized, normalized)
 
 
 def _search_keywords(

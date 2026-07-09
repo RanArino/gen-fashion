@@ -87,7 +87,7 @@ jobs:
       id-token: write
       contents: read
     env:
-      PROJECT: animation-agent
+      PROJECT: ${{ vars.GCP_PROJECT_ID }}
       REGION: asia-northeast1
 
     steps:
@@ -103,7 +103,7 @@ jobs:
       - name: Set up gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: animation-agent
+          project_id: ${{ vars.GCP_PROJECT_ID }}
 
       - name: Configure Docker auth for Artifact Registry
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet

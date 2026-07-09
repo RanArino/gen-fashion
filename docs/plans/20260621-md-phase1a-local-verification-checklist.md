@@ -130,7 +130,7 @@ M5 の `SHARED_CLOSET` フロー（スモーク/E2E）は事前にシード済�
 - [x] **T3-2 コーディネーション・スモーク（SHARED_CLOSET → COMPLETED）**— COMPLETED 到達。`modelUsed=gemini-2.5-flash-image`（実Nano Banana, ~1.15MB画像）。バグ#3（closetId が text マッピングで検索常時0件）を修正。所見: 主LLM経路は45秒タイムアウトし決定論フォールバックで完走（下記「所見」）。
   - 何を確認するか: セッション作成 → ソース選択（SHARED_CLOSET / adult-01）→ SSE で thinking-trace を
     受信 → ADK オーケストレーション → `status: COMPLETED`。
-  - ⚠️ **落とし穴**: スクリプトの `--project` 既定値は `animation-agent` だが、ローカルの Firestore は
+  - ⚠️ **落とし穴**: スクリプトの `--project` 既定値は `your-project-id` だが、ローカルの Firestore は
     `gen-fashion-local` プロジェクトに書かれる。**必ず `--project gen-fashion-local` を渡す**こと
     （渡さないと最後の Firestore 照合だけが失敗する）。
   - 実行:
@@ -183,8 +183,8 @@ M5 の `SHARED_CLOSET` フロー（スモーク/E2E）は事前にシード済�
      [docker-compose.yml](../../docker-compose.yml) に `FASTAPI_INTERNAL_BASE_URL=http://fastapi-service:8000`。
    - デプロイ計画の "Surprises" / MD-8 が予告していた問題の**ローカル分**。OIDC等のクラウド分は MD-8 に残置。
 2. **Firestore プロジェクト分離**（バックエンドとフロント/Authで別名前空間 → UIがデータを見られない）
-   - 症状: バックエンドは Vertex 用 `GOOGLE_CLOUD_PROJECT=animation-agent` を Firestore にも流用し
-     `animation-agent` 名前空間へ書込。フロント/Auth は `gen-fashion-local`。エミュレータ上で不一致。
+   - 症状: バックエンドは Vertex 用 `GOOGLE_CLOUD_PROJECT=your-project-id` を Firestore にも流用し
+     `your-project-id` 名前空間へ書込。フロント/Auth は `gen-fashion-local`。エミュレータ上で不一致。
    - 修正: `firestore_project_id`（= Firebase プロジェクト）を両サービスに追加し Firestore クライアントへ適用
      （[fastapi config](../../fastapi-service/app/config.py) / [adk config](../../adk-agent-service/styling_app/config.py) /
      3つの firestore アダプタ）、adk compose に `FIREBASE_PROJECT_ID` を追加。本番は3プロジェクト同一のためno-op。
@@ -209,7 +209,7 @@ M5 の `SHARED_CLOSET` フロー（スモーク/E2E）は事前にシード済�
      `adapters/gemini.py`（ADK クエリ）、`scripts/seed_shared_closet/run_seed.py`（`_embed_image`→`_embed_text`）、
      `adk-agent-service/.env(.example)` の `EMBEDDING_MODEL`、テストの `FakeGemini`。
    - シードの Vertex 403 も是正: seed が Vertex を `gen-fashion-local`（権限なし）で呼んでいた。
-     アプリと同じく **Vertex=`GOOGLE_CLOUD_PROJECT`(animation-agent) / Firestore=`FIREBASE_PROJECT_ID`(gen-fashion-local)**
+     アプリと同じく **Vertex=`GOOGLE_CLOUD_PROJECT`(your-project-id) / Firestore=`FIREBASE_PROJECT_ID`(gen-fashion-local)**
      に分離（`run_seed.py` + seed `.env(.example)`）。
    - 検証: `run_seed.py --with-embeddings` で 90件すべて 200 OK・768次元、kNN プローブで
      「casual blue summer t-shirt」→ 青いシャツ/Tシャツが上位ヒット（意味的に的確）。

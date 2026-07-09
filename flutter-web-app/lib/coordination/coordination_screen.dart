@@ -1527,6 +1527,8 @@ class _SearchRakutenPreview extends StatelessWidget {
           : 'Limit';
       final rawColors = args['colors'];
       final colors = rawColors is List ? rawColors.cast<String>() : <String>[];
+      final rawTags = args['tags'];
+      final tags = rawTags is List ? rawTags.cast<String>() : <String>[];
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1546,6 +1548,8 @@ class _SearchRakutenPreview extends StatelessWidget {
             ),
           if (colors.isNotEmpty)
             _PreviewField(label: l10n.colors, child: _ChipRow(values: colors)),
+          if (tags.isNotEmpty)
+            _PreviewField(label: l10n.traceTags, child: _ChipRow(values: tags)),
         ],
       );
     }

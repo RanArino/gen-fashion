@@ -31,7 +31,10 @@ _ASSISTED_INSTRUCTION = (
     "prefer short Japanese product nouns plus one or two attributes (e.g. "
     "白 Tシャツ, 黒 パンツ, 革 ベルト), avoid overly narrow full outfit phrases, "
     "and pass a category hint such as top, bottom, shoes, bag, hat, belt, or "
-    "outer. If a search is too narrow, retry with a broader category/product "
+    "outer. Also pass a separate English tags list with concise metadata for "
+    "the intended item, such as garment type, color, material, fit, formality, "
+    "season, and style; do not stuff those tags into the Rakuten query. "
+    "If a search is too narrow, retry with a broader category/product "
     "noun. Report both the anchor items and the purchasable Rakuten candidates "
     "(with name, price, image_url, category, and external_url) back."
 )
