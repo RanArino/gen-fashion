@@ -5,6 +5,7 @@
 #     --project <PROJECT_ID> \
 #     --region asia-northeast1 \
 #     --image <REPO>/adk-agent-service:<TAG> \
+#     --genai-location global \
 #     --es-internal-ip <ES_VM_INTERNAL_IP> \
 #     --r2-endpoint-url https://<account_id>.r2.cloudflarestorage.com \
 #     --r2-public-endpoint-url https://<account_id>.r2.cloudflarestorage.com \
@@ -19,6 +20,7 @@ R2_ENDPOINT_URL=""
 R2_PUBLIC_ENDPOINT_URL=""
 R2_BUCKET_NAME="gen-fashion-images"
 ES_SSL_FINGERPRINT=""
+GENAI_LOCATION="global"
 # Direct VPC egress (ADL-023): reach the private ES VM with no Serverless VPC Access connector.
 VPC_NETWORK="default"
 VPC_SUBNET="default"
@@ -33,6 +35,7 @@ while [[ $# -gt 0 ]]; do
     --r2-public-endpoint-url) R2_PUBLIC_ENDPOINT_URL="$2"; shift 2 ;;
     --r2-bucket-name)    R2_BUCKET_NAME="$2";       shift 2 ;;
     --es-ssl-fingerprint) ES_SSL_FINGERPRINT="$2";  shift 2 ;;
+    --genai-location)    GENAI_LOCATION="$2";       shift 2 ;;
     --network)           VPC_NETWORK="$2";          shift 2 ;;
     --subnet)            VPC_SUBNET="$2";           shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
@@ -70,7 +73,7 @@ gcloud run deploy adk-agent-service \
   --network="${VPC_NETWORK}" \
   --subnet="${VPC_SUBNET}" \
   --vpc-egress=private-ranges-only \
-  --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=us-central1,AGENT_MODEL=gemini-2.5-flash,ELASTICSEARCH_URL=https://${ES_INTERNAL_IP}:9200,ELASTICSEARCH_SSL_ASSERT_FINGERPRINT=${ES_SSL_FINGERPRINT},R2_ENDPOINT_URL=${R2_ENDPOINT_URL},R2_PUBLIC_ENDPOINT_URL=${R2_PUBLIC_ENDPOINT_URL},R2_BUCKET_NAME=${R2_BUCKET_NAME}" \
+  --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=${GENAI_LOCATION},AGENT_MODEL=gemini-2.5-flash,ELASTICSEARCH_URL=https://${ES_INTERNAL_IP}:9200,ELASTICSEARCH_SSL_ASSERT_FINGERPRINT=${ES_SSL_FINGERPRINT},R2_ENDPOINT_URL=${R2_ENDPOINT_URL},R2_PUBLIC_ENDPOINT_URL=${R2_PUBLIC_ENDPOINT_URL},R2_BUCKET_NAME=${R2_BUCKET_NAME}" \
   --set-secrets="ELASTICSEARCH_API_KEY=ELASTICSEARCH_API_KEY:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,INTERNAL_TASK_SECRET=INTERNAL_TASK_SECRET:latest,RAKUTEN_APPLICATION_ID=RAKUTEN_APPLICATION_ID:latest,RAKUTEN_ACCESS_KEY=RAKUTEN_ACCESS_KEY:latest,RAKUTEN_AFFILIATE_ID=RAKUTEN_AFFILIATE_ID:latest,RAKUTEN_APPLICATION_URL=RAKUTEN_APPLICATION_URL:latest"
 
 echo "==> Granting fastapi-sa roles/run.invoker on adk-agent-service..."
