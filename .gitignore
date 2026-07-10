@@ -61,8 +61,13 @@ credentials/
 *.tmp
 .tmp/
 
-# PoC generated outputs (inputs are committed; outputs are not)
+# PoC generated outputs and local input photos
 poc/image_generation/results/
+
+# Public repo safety: keep locally supplied PoC garment photos out of Git unless
+# their redistribution rights are explicitly documented.
+poc/image_generation/samples/*
+!poc/image_generation/samples/README.md
 poc/adk_event_stream/.env
 
 # ローカル限定ドキュメント（コミットしない）
