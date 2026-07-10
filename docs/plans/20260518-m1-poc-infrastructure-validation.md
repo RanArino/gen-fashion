@@ -116,12 +116,11 @@ Create the following directory layout:
     └── image_generation/
         ├── run_poc.py
         ├── requirements.txt
-        ├── samples/          ← placeholder clothing images checked in here
-        │   ├── shirt.jpg
-        │   └── pants.jpg
+        ├── samples/          ← local clothing images, ignored by Git
+        │   └── README.md
         └── results/          ← git-ignored; generated images written here
 
-The `samples/` directory must contain at least two clothing item images (a top and a bottom). These can be freely-licensed placeholder images (e.g., downloaded from Unsplash or similar) committed to the repository so any team member can run the PoC cold. Do not use images that require login or are behind a paywall.
+The `samples/` directory must contain at least two clothing item images (a top and a bottom) before running the PoC locally. Keep these images out of Git unless redistribution rights are explicitly documented. Do not use images that require login or are behind a paywall.
 
 The `results/` directory is git-ignored (add `poc/image_generation/results/` to `.gitignore`). The script writes `imagen4_result.jpg` and `nanobanana2_result.jpg` there.
 
@@ -244,7 +243,7 @@ Add the results directory to `.gitignore` by appending the following line:
 
 ### Step 2: Add sample clothing images
 
-Download two freely-licensed placeholder images (one shirt, one pair of pants) and save them as `poc/image_generation/samples/shirt.jpg` and `poc/image_generation/samples/pants.jpg`. Both must be JPEG, under 1 MB each, and under a license that permits redistribution.
+Add two local placeholder images (one shirt, one pair of pants) under `poc/image_generation/samples/`. Both should be JPEG/PNG, under 1 MB each, and either your own photos or images whose local PoC use is permitted.
 
 ### Step 3: Write `poc/image_generation/run_poc.py`
 
