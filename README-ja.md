@@ -7,7 +7,7 @@ Gen Fashion は、手持ち服の写真からデジタルクローゼットを�
 ファッション支援サービスです。自分の服を起点に、楽天の商品検索で不足アイテムを補う Assisted Coordinate
 にも対応しています。
 
-公開デモ: https://gen-fashion-app.web.app
+公開アプリ: https://gen-fashion-app.web.app
 
 ![gen-fashion system architecture](docs/assets/system-architecture.svg)
 
@@ -63,7 +63,7 @@ agent flow は、提案と生成を分けています。検索・推薦 tool が
 | Async work | Cloud Tasks, local HTTP queue | アップロード後の非同期分析 |
 | External API | Rakuten Ichiba API | Assisted shopping suggestions |
 | Infrastructure | Cloud Run, Compute Engine, Secret Manager | 本番 runtime と secret 管理 |
-| CI/CD | GitHub Actions, Workload Identity Federation | test、image build、本番 deploy |
+| CI/CD | GitHub Actions, Workload Identity Federation | test gate と本番 deploy workflow |
 | Local dev | Docker Compose, Firebase emulators, MinIO | 再現可能なローカル stack |
 
 ## 本番構成
@@ -123,9 +123,10 @@ cd flutter-web-app && flutter analyze && flutter test
 cd firebase && npm install && firebase emulators:exec --only firestore --project gen-fashion-local "npm test"
 ```
 
-CI では FastAPI tests、ADK tests、Flutter analyze/test、deployment-script tests を実行します。本番 deploy workflow は、
-両 service image の build、Cloud Run deploy、Firestore index deploy、Flutter Web build、Firebase Hosting deploy、
-post-deploy smoke check までを行います。
+CI/CD workflow には FastAPI tests、ADK tests、Flutter analyze/test、deployment-script tests を定義しています。
+本番 deploy job は、両 service image の build、Cloud Run deploy、Firestore index deploy、Flutter Web build、
+Firebase Hosting deploy、post-deploy smoke check までを行う構成です。直近確認した `main` workflow run は成功済みで、
+残る CI/CD work は MF-5 と MF-6 で追跡しています。CI での認証付き coordination smoke と、専用 pipeline runbook です。
 
 ## 開発と設計記録
 

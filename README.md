@@ -81,7 +81,7 @@ runs only with approved items.
 | Async work | Cloud Tasks, local HTTP queue | Background analysis after upload |
 | External API | Rakuten Ichiba API | Assisted-shopping suggestions |
 | Infrastructure | Cloud Run, Compute Engine, Secret Manager | Production runtime and secret management |
-| CI/CD | GitHub Actions, Workload Identity Federation | Tests, image builds, production deploy |
+| CI/CD | GitHub Actions, Workload Identity Federation | Test gate and production deploy workflow |
 | Local dev | Docker Compose, Firebase emulators, MinIO | Reproducible local stack |
 
 ## Production Runtime
@@ -147,10 +147,13 @@ cd flutter-web-app && flutter analyze && flutter test
 cd firebase && npm install && firebase emulators:exec --only firestore --project gen-fashion-local "npm test"
 ```
 
-CI runs FastAPI tests, ADK tests, Flutter analyze/test, and deployment-script
-tests. The production deploy workflow builds both service images, deploys Cloud
-Run, deploys Firestore indexes, builds Flutter Web, deploys Firebase Hosting,
-and finishes with a post-deploy smoke check.
+The CI/CD workflow is defined with FastAPI tests, ADK tests, Flutter
+analyze/test, and deployment-script tests. Its production deploy job is wired to
+build both service images, deploy Cloud Run, deploy Firestore indexes, build
+Flutter Web, deploy Firebase Hosting, and finish with a post-deploy smoke check.
+The latest audited `main` workflow run completed successfully. The remaining
+CI/CD work is tracked in MF-5 and MF-6: authenticated coordination smoke in CI,
+plus a dedicated pipeline runbook.
 
 ## Engineering Notes
 
