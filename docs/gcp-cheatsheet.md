@@ -22,7 +22,8 @@ gcloud config list
 VM 名: `gen-fashion-es` / ゾーン: `asia-northeast1-a`
 
 > **コスト方針:** 使っていないときは止めることを推奨。課金は `pd-balanced` ディスク（約 $3/月）のみになる。
-> 夜間 (JST 02:00) は `es-night-off` スケジュールで自動停止、08:00 に自動起動。
+> 通常運用では夜間 (JST 02:00) に `es-night-off` スケジュールで自動停止、08:00 に自動起動。
+> ただし公開デモ期間中は、2026-08-31 までは全時間帯で使えるように `es-night-off` を VM から外している。
 
 ### 起動 / 停止
 
@@ -36,6 +37,33 @@ gcloud compute instances stop gen-fashion-es --zone=asia-northeast1-a
 # 状態確認
 gcloud compute instances describe gen-fashion-es \
   --zone=asia-northeast1-a --format='value(status)'
+```
+
+### 夜間停止スケジュール
+
+2026-07-10 時点では、公開デモ期間（2026-08-31 まで）の可用性を優先し、
+`es-night-off` resource policy は存在させたまま VM から外している。
+
+```bash
+# VM に夜間停止スケジュールが付いていないことを確認
+gcloud compute instances describe gen-fashion-es \
+  --zone=asia-northeast1-a \
+  --format='value(resourcePolicies)'
+
+# 温存しているスケジュール本体を確認（JST 02:00 停止 / 08:00 起動）
+gcloud compute resource-policies describe es-night-off \
+  --region=asia-northeast1 \
+  --format='yaml(status,instanceSchedulePolicy)'
+
+# 2026-09-01 以降、夜間停止を再開する場合
+gcloud compute instances add-resource-policies gen-fashion-es \
+  --zone=asia-northeast1-a \
+  --resource-policies=es-night-off
+
+# 再び公開期間を延長する場合
+gcloud compute instances remove-resource-policies gen-fashion-es \
+  --zone=asia-northeast1-a \
+  --resource-policies=es-night-off
 ```
 
 ### SSH 接続
