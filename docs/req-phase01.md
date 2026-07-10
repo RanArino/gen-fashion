@@ -206,7 +206,7 @@ class CandidateItem(BaseModel):
 |---|---|
 | **配置場所** | `gen-fashion/poc/image_generation/` |
 | **スクリプト** | `run_poc.py`（単一ファイル、`python run_poc.py` で即起動） |
-| **テスト画像** | 同ディレクトリ `gen-fashion/poc/image_generation/samples/` に保管 |
+| **テスト画像** | 同ディレクトリ `gen-fashion/poc/image_generation/samples/` にローカル保管（Git にはコミットしない） |
 | **テスト対象** | Imagen 4 と Nano Banana 2 の両モデルを同一入力で実行し結果を並列保存 |
 | **出力** | `gen-fashion/poc/image_generation/results/` に `imagen4_result.jpg` / `nanobanana2_result.jpg` を出力 |
 | **依存関係** | コンテナ不要。`pip install -r requirements.txt` のみで動作（requirements.txt を同ディレクトリに配置） |
