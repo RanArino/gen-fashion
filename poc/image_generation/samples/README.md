@@ -1,7 +1,8 @@
 # Sample Images
 
-Put **real clothing photos** here before running `run_poc.py`. Both models receive
-these images as input and attempt to generate a person wearing them (virtual try-on).
+Put **real clothing photos** here before running `run_poc.py`. These local input
+images are intentionally ignored by Git so the public repository does not
+redistribute photos whose license is unclear.
 
 | File | Contents |
 |---|---|
