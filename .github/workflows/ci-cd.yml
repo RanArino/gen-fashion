@@ -78,7 +78,7 @@ jobs:
 
   deploy:
     name: Deploy to Production
-    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [test-fastapi, test-adk, test-flutter, test-deploy-scripts]
     runs-on: ubuntu-latest
     environment: production
@@ -104,6 +104,17 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      # The production environment is normally paused. Bring up only the
+      # dependencies needed for this deployment and its smoke check.
+      - name: Resume production dependencies temporarily
+        run: |
+          gcloud compute instances start gen-fashion-es \
+            --zone="${REGION}-a" \
+            --quiet
+          gcloud tasks queues resume gen-fashion-embed \
+            --location="${REGION}" \
+            --quiet
 
       - name: Configure Docker auth for Artifact Registry
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
@@ -231,3 +242,49 @@ jobs:
             exit 1
           fi
           echo "Smoke check passed (/health → ${HTTP_CODE})"
+
+  # Always return production to its paused state after a main deployment,
+  # including when an earlier deploy step fails.
+  shutdown-production:
+    name: Pause Production Infrastructure
+    if: ${{ always() && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT_ID }}
+      REGION: asia-northeast1
+
+    steps:
+      - name: Authenticate to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SA }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Pause production infrastructure
+        run: |
+          gcloud compute instances stop gen-fashion-es \
+            --zone="${REGION}-a" \
+            --quiet
+          gcloud tasks queues pause gen-fashion-embed \
+            --location="${REGION}" \
+            --quiet
+          INVOKERS="$(gcloud run services get-iam-policy fastapi-service \
+            --region="${REGION}" \
+            --format='value(bindings.members)')"
+          if [[ "${INVOKERS}" == *"allUsers"* ]]; then
+            gcloud run services remove-iam-policy-binding fastapi-service \
+              --region="${REGION}" \
+              --member="allUsers" \
+              --role="roles/run.invoker" \
+              --quiet
+          fi
