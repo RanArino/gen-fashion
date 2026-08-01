@@ -32,9 +32,10 @@ on:
 
 - Every `push` (any branch) runs the four test jobs.
 - Every PR targeting `main` or `develop` runs the four test jobs.
-- `Deploy to Production` only runs when **either**:
-  - the event is a `push` to `refs/heads/main`, **or**
-  - the workflow was triggered manually via `workflow_dispatch`.
+- `Deploy to Production` only runs on a `push` to `refs/heads/main`.
+- `Pause Production Infrastructure` always runs after that main-push deploy,
+  even if the deploy job fails. It returns the production environment to its
+  paused state.
 - `concurrency: group: ${{ github.workflow }}-${{ github.ref }}` with
   `cancel-in-progress: true` means a new push to the same ref cancels an
   in-flight run for that ref (so pushing twice to `main` in quick succession
@@ -44,7 +45,7 @@ on:
 
 ```
 test-fastapi ─┐
-test-adk ─────┼──► Deploy to Production   (only on push to main, or workflow_dispatch)
+test-adk ─────┼──► Deploy to Production   (only on push to main) ─► Pause Production Infrastructure
 test-flutter ─┤
 test-deploy-scripts ─┘
 ```
@@ -72,30 +73,32 @@ in order:
    `secrets.WIF_PROVIDER` / `secrets.WIF_SA`. No JSON key is stored anywhere
    (ADL-030).
 2. **Set up gcloud CLI** — `google-github-actions/setup-gcloud@v2`.
-3. **Configure Docker auth for Artifact Registry** —
+3. **Resume production dependencies temporarily** — starts `gen-fashion-es`
+   and resumes `gen-fashion-embed`; these are paused again by the final job.
+4. **Configure Docker auth for Artifact Registry** —
    `gcloud auth configure-docker ${REGION}-docker.pkg.dev`.
-4. **Deploy Firestore composite indexes** — runs
+5. **Deploy Firestore composite indexes** — runs
    `bash scripts/deploy/deploy_firestore_indexes.sh --project "${PROJECT}"`
    *before* the image build/deploy steps, so a query needing a new composite
    index never reaches prod without one (MF-6 note in the workflow). The
    script is idempotent: it diffs `firestore.indexes.json` against
    `gcloud firestore indexes composite list` and only creates indexes that
    don't already exist; new indexes build asynchronously in the background.
-5. **Set image tag and registry path** — `IMAGE_TAG=ci-$(date
+6. **Set image tag and registry path** — `IMAGE_TAG=ci-$(date
    +%Y%m%d)-${GITHUB_SHA::7}`, `REPO=${REGION}-docker.pkg.dev/${PROJECT}/gen-fashion`.
-6. **Set up Docker Buildx** (`docker/setup-buildx-action@v3`), then build
+7. **Set up Docker Buildx** (`docker/setup-buildx-action@v3`), then build
    and push **both** service images with `docker/build-push-action@v5`,
    each using a GitHub Actions cache scope (`scope=fastapi` /
    `scope=adk`, `mode=max`) to speed up repeat builds:
    - `${REPO}/fastapi-service:${IMAGE_TAG}` from `./fastapi-service`
    - `${REPO}/adk-agent-service:${IMAGE_TAG}` from `./adk-agent-service`
-7. **Get existing Cloud Run service URLs** — `gcloud run services describe`
+8. **Get existing Cloud Run service URLs** — `gcloud run services describe`
    for both `adk-agent-service` and `fastapi-service`, capturing
    `ADK_URL` / `FASTAPI_URL` into `$GITHUB_ENV`. Cloud Run URLs are stable
    across revisions of the same named service, so this avoids a two-pass
    bootstrap (that's only needed the first time a service is provisioned;
    see the `--bootstrap` flag note in `deploy_fastapi.sh`).
-8. **Record pre-deploy fastapi revision (for rollback)** — lists
+9. **Record pre-deploy fastapi revision (for rollback)** — lists
    `fastapi-service` revisions sorted by `~metadata.creationTimestamp` and
    takes the top one into `PREV_FASTAPI_REV`. This is the revision the
    automated rollback (§4) will restore traffic to if the post-deploy smoke
@@ -103,24 +106,24 @@ in order:
    deployed, so it is the last-known-good revision at the start of this run,
    not necessarily "the revision that was serving traffic 5 minutes ago" if
    a prior run left something in a partial state.
-9. **Deploy adk-agent-service** — `bash scripts/deploy/deploy_adk.sh
+10. **Deploy adk-agent-service** — `bash scripts/deploy/deploy_adk.sh
    --project ... --region ... --image ...` plus `--es-internal-ip`,
    `--es-ssl-fingerprint`, `--r2-endpoint-url`, `--r2-public-endpoint-url`,
    `--r2-bucket-name`, all sourced from GitHub Secrets. This service is
    deployed `--no-allow-unauthenticated` (private; only `fastapi-sa` can
    invoke it).
-10. **Deploy fastapi-service** — `bash scripts/deploy/deploy_fastapi.sh
+11. **Deploy fastapi-service** — `bash scripts/deploy/deploy_fastapi.sh
     --project ... --region ... --image ... --adk-url "${ADK_URL}"
     --fastapi-url "${FASTAPI_URL}" --es-internal-ip ... --es-ssl-fingerprint
     ... --cors-allow-origins "https://gen-fashion-app.web.app" --r2-... `.
     This service is public (`--allow-unauthenticated`) and gets the second
     (full-OIDC) pass of `deploy_fastapi.sh`, wiring `FASTAPI_INTERNAL_BASE_URL`
     and `INTERNAL_INVOKER_SA` for the internal worker route.
-11. **Set up Flutter**, then **Build Flutter web (production)** —
+12. **Set up Flutter**, then **Build Flutter web (production)** —
     `flutter build web --release` with production `--dart-define`s:
     `API_BASE_URL=${FASTAPI_URL}`, `USE_EMULATORS=false`,
     `FIREBASE_PROJECT_ID`, and the `FIREBASE_*` values from GitHub Secrets.
-12. **Deploy to Firebase Hosting** — `python3
+13. **Deploy to Firebase Hosting** — `python3
     scripts/deploy/deploy_firebase_hosting.py --site gen-fashion-app
     --build-dir flutter-web-app/build/web`. This is a custom REST-API-based
     deploy script, **not** `firebase deploy`, because `firebase-tools` does
@@ -128,7 +131,17 @@ in order:
     `gcloud auth print-access-token` (which does work with WIF) and drives
     the Firebase Hosting REST API directly (create version → populate files
     → upload missing gzipped files by sha256 → finalize → create release).
-13. **Post-deploy smoke check** — see §3.
+14. **Post-deploy smoke check** — see §3.
+
+### Automatic shutdown after deployment
+
+`shutdown-production` runs with `if: always()` after every `main` push, even
+when the deployment fails. It stops `gen-fashion-es`, pauses
+`gen-fashion-embed`, and removes `allUsers` from `fastapi-service`'s Cloud Run
+invoker policy.
+The next eligible deploy starts the VM and resumes the queue before deployment;
+`deploy_fastapi.sh --allow-unauthenticated` restores public invocation for its
+smoke check. Cloud Run services retain zero idle instances.
 
 ---
 
@@ -149,10 +162,8 @@ Federation 設定 (MF-1)". Do not re-derive those commands here — refer to
 that doc directly so the two don't drift. Notably:
 
 - The WIF provider's `attribute-condition` is scoped to
-  `assertion.repository=='<org>/<repo>' && assertion.ref=='refs/heads/main'`,
-  so `workflow_dispatch` runs from any branch other than `main` cannot
-  obtain GCP credentials even though the workflow trigger technically allows
-  `workflow_dispatch` from any ref.
+  `assertion.repository=='<org>/<repo>' && assertion.ref=='refs/heads/main'`.
+  This matches the workflow's main-push-only production deploy condition.
 - The GitHub `production` Environment is restricted (via deployment branch
   policy) to `main` only, since the current GitHub plan doesn't support
   Required reviewers.
@@ -248,8 +259,7 @@ Replace `<REVISION_NAME>` with the revision identified in Step 1 (e.g.
   only adds indexes (it never deletes one), and Firebase Hosting rollback
   would need a separate manual release-revert via the Firebase Hosting API
   or console (not scripted anywhere in this repo today).
-- After rolling back, re-run the pipeline (`workflow_dispatch` or a new
-  push to `main`) once the underlying issue is fixed, rather than leaving
+- After rolling back, push the fix to `main` to re-run the pipeline, rather than leaving
   production pinned to an old revision indefinitely.
 
 ---
@@ -289,6 +299,9 @@ secrets, which you'd need to fetch from Secret Manager per that doc's
   WIF one-time setup, GitHub Secrets table, Cloud Run inspection/rollback,
   Artifact Registry, Firestore indexes, Elasticsearch VM operations, and
   general troubleshooting one-liners.
+- [`docs/runbooks/production-pause-rollback.md`](production-pause-rollback.md)
+  — temporary restoration and permanent rollback of the production
+  cost-control automation.
 - [`docs/feature-matrix-phase01.md`](../feature-matrix-phase01.md) — "MF —
   CI/CD (Continuous Delivery)" section for the current implementation
   status of MF-1…MF-6, including the still-open MF-5 gap referenced in §3.

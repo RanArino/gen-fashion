@@ -207,6 +207,29 @@ gcloud run services update-traffic fastapi-service \
   --region=asia-northeast1 --to-revisions=<REVISION_NAME>=100
 ```
 
+### 本番の休止 / 一時再開
+
+通常は、Cloud Run の最小インスタンスを 0 に保ち、公開 API、Cloud Tasks、ES VM
+を休止する。Cloud Run のサービス定義や Firestore データは削除しないため、保存容量
+などの課金は残る。
+
+```bash
+# 休止: 外部リクエスト、非同期ワーカー、ES VM を止める
+gcloud tasks queues pause gen-fashion-embed --location=asia-northeast1 --quiet
+gcloud run services remove-iam-policy-binding fastapi-service \
+  --region=asia-northeast1 --member=allUsers --role=roles/run.invoker --quiet
+gcloud compute instances stop gen-fashion-es --zone=asia-northeast1-a --quiet
+
+# 一時再開: main への push による CI/CD が自動で実行する内容
+gcloud compute instances start gen-fashion-es --zone=asia-northeast1-a --quiet
+gcloud tasks queues resume gen-fashion-embed --location=asia-northeast1 --quiet
+# fastapi-service の次回 deploy は --allow-unauthenticated により allUsers を復元する
+
+# ADK にサービスレベルの最小インスタンスが残っていないことを確認する
+gcloud run services describe adk-agent-service --region=asia-northeast1 \
+  --format='value(metadata.annotations.run.googleapis.com/minScale)'
+```
+
 ---
 
 ## Artifact Registry（Milestone C 以降）
@@ -490,6 +513,17 @@ gcloud projects add-iam-policy-binding ${PROJECT} \
   --member="serviceAccount:github-deployer@${PROJECT}.iam.gserviceaccount.com" \
   --role=roles/run.admin
 
+# main push 後の一時起動・休止に必要な最小権限
+gcloud iam roles create githubDeployerPauseProduction \
+  --project=${PROJECT} \
+  --title="GitHub Deployer Pause Production" \
+  --description="Pause and resume the production ES VM and Cloud Tasks queue." \
+  --permissions="compute.instances.get,compute.instances.start,compute.instances.stop,cloudtasks.queues.get,cloudtasks.queues.pause,cloudtasks.queues.resume" \
+  --stage=GA
+gcloud projects add-iam-policy-binding ${PROJECT} \
+  --member="serviceAccount:github-deployer@${PROJECT}.iam.gserviceaccount.com" \
+  --role="projects/${PROJECT}/roles/githubDeployerPauseProduction"
+
 # Artifact Registry へのイメージプッシュ
 gcloud projects add-iam-policy-binding ${PROJECT} \
   --member="serviceAccount:github-deployer@${PROJECT}.iam.gserviceaccount.com" \
@@ -542,8 +576,8 @@ echo "WIF_SA: github-deployer@${PROJECT}.iam.gserviceaccount.com"
 GitHub repo → Settings → Environments → New environment → 名前: `production`。
 現在の GitHub plan では Required reviewers が使えないため、production 環境は
 deployment branch policy で `main` のみに制限する。WIF provider 側も
-`assertion.ref=='refs/heads/main'` に制限しているため、他ブランチの
-`workflow_dispatch` は GCP credentials を取得できない。
+`assertion.ref=='refs/heads/main'` に制限している。CI/CD の production deploy も
+`main` への `push` 時だけ実行する。
 
 ```bash
 # 現在の WIF 条件を確認
