@@ -5,13 +5,7 @@
 
 ---
 
-## 1. LINE Channel Integration
-
-(LINE channel integration requirements have been moved here from Phase 1. Refer to the previous req-phase01.md for detailed specs like `ReplyCoordinateToLineUseCase`, `LineWebhookAdapter`, LIFF integration, etc.)
-
----
-
-## 2. Client-Side Routing & Browser Navigation (Web)
+## 1. Client-Side Routing & Browser Navigation (Web)
 
 ### ADL-033: Flutter Web のナビゲーションは URL アドレス可能なルーティング（go_router + path URL strategy）
 
@@ -23,7 +17,7 @@
 
 ---
 
-## 3. Assisted Coordinate Mode (Web)
+## 2. Assisted Coordinate Mode (Web)
 
 > **ExecPlan:** [20260703-mk-assisted-coordinate-mode.md](plans/20260703-mk-assisted-coordinate-mode.md)
 > **Tracker:** feature-matrix rows **MK-1...MK-8**.
