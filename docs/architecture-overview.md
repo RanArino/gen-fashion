@@ -57,7 +57,7 @@ flowchart LR
   class A done; class B wip; class C stub; class D todo;
 ```
 
-> **🟧 Stub と ⬜ Not started はどちらも「これから実装予定」**である。違いは、M0 で骨組み（ポート IF・空のユースケース・空のエージェント）まで先行配置済みか否か。M5 は session/ADK/SSE/Flutter UI と rendered browser E2E まで完了、Phase 1b（M6・LINE）は ⬜ 未着手。M3 は local で実装完了（フル vector seed のみ deployment 待ち）。M4 は Python ADK で実装完了（ローカル ADK Web UI / api_server で稼働）。
+> **🟧 Stub と ⬜ Not started はどちらも「これから実装予定」**である。違いは、M0 で骨組み（ポート IF・空のユースケース・空のエージェント）まで先行配置済みか否か。M5 は session/ADK/SSE/Flutter UI と rendered browser E2E まで完了。M3 は local で実装完了（フル vector seed のみ deployment 待ち）。M4 は Python ADK で実装完了（ローカル ADK Web UI / api_server で稼働）。
 
 ---
 
@@ -75,9 +75,8 @@ flowchart LR
 | **MD** | Phase 1a Production Deployment & Hardening | 1a | 🟨 **WIP（ME gate closed; resume next）**（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-1…MD-14。Milestone 0/A 完了（MD-1/MD-9 ✅）。GCE ES + Cloud Run **Direct VPC egress**（ADL-023、connector 不採用）、フル vector seed、Cloud Run ×2、Secret Manager + OIDC、Vertex AI Nano Banana、Firebase Hosting。） |
 | **MF** | CI/CD（Continuous Delivery） | 1a | ⬜ **Planned（tracking only, no ExecPlan yet）**（MF-1…MF-6。GitHub Actions + Workload Identity Federation で MD の手動デプロイを自動化: CI ゲート（per-service tests + image build）+ CD（Artifact Registry → Cloud Run ×2 + Firebase Hosting）+ デプロイ後スモーク/ロールバック。req §19 / ADL-030–032。**MD 依存**、ExecPlan は MD 完了後。） |
 | **MK** | Assisted Coordinate Mode（Web） | 2 | 🟩 **Done（local, 2026-07-03）**（`docs/plans/20260703-mk-assisted-coordinate-mode.md`、MK-1…MK-8 実装・ローカル検証済み。1-3 own anchor clothes、`search_rakuten` tool + fallback、save suggestion as `INTERESTING`、change to `OWNED`、Interesting READY items reusable in closet Coordinate。live Rakuten 出力も検証済み（403 の原因は `Origin`/`Referer` ヘッダー必須化。Rakuten 不通時は anchor-only degradation）。） |
-| **M6** | LINE チャネル統合 | 1b | ⬜ **Not started**（ファイル無し） |
 
-**現在地:** Phase 1a は **ME（ME-1…ME-7）までローカル検証完了**。ME-3/ME-6 の must-fix は閉じ、次は **MD（本番デプロイ）を再開**する。MD 完了後に **MF（CI/CD）** を別 ExecPlan として起票し、MD の手動デプロイを GitHub Actions + WIF で自動化する（req §19、追跡のみ）。履歴の weather / duplication 拡張は将来。Phase 2 Web の Assisted Coordinate（MK）は実装・ローカル検証済み（live Rakuten 込み）。Phase 1b の LINE / LIFF（M6）には着手しない。
+**現在地:** Phase 1a は **ME（ME-1…ME-7）までローカル検証完了**。ME-3/ME-6 の must-fix は閉じ、次は **MD（本番デプロイ）を再開**する。MD 完了後に **MF（CI/CD）** を別 ExecPlan として起票し、MD の手動デプロイを GitHub Actions + WIF で自動化する（req §19、追跡のみ）。履歴の weather / duplication 拡張は将来。Phase 2 Web の Assisted Coordinate（MK）は実装・ローカル検証済み（live Rakuten 込み）。
 
 **ME 実装追加（implemented and locally verified）:**
 - **入力アダプタ（routes）:** `POST /sessions/{id}/select`（候補確定 → generate フェーズ起動）、`GET /sessions`（認証ユーザーの完了履歴、`completedAt` 降順）、`GET /shared-closets` ＋ `GET /shared-closets/{closetId}/items`（共有クローゼット閲覧、読み取り専用・バックエンド経由）、`PATCH /closet/items/{id}`（自分のアイテムの検索用メタデータ編集、ADL-028）。
@@ -97,7 +96,6 @@ flowchart TB
     flutter_auth["Flutter Web: 認証 + クローゼット管理UI<br/>(flutter-web-app/lib/auth, /closet)"]
     flutter_acc["Flutter Web: Coordination + Accordion + 結果UI + History<br/>(M5/ME Done)"]
     flutter_assisted["Flutter Web: Assisted Coordinate + ownership UI<br/>(MK Done local)"]
-    lineapp["LINE App / LIFF (M6)"]
   end
 
   subgraph cloudrun["Google Cloud Run"]
@@ -108,7 +106,6 @@ flowchart TB
       r_session["/sessions/* (create/list/source/select/stream)"]
       r_assist["/sessions/{id}/assist (MK)"]
       r_shared["/shared-closets/* gallery reads"]
-      r_line["LINE Webhook ルート (M6)"]
     end
     subgraph adk["adk-agent-service (Python ADK・ADL-022) — FastAPI wrapper + ADK app"]
       orch["StylingOrchestratorAgent + sub-agents (M4)"]
@@ -122,7 +119,7 @@ flowchart TB
     ct["Cloud Tasks / LocalHttpTaskQueue"]
     gem_an["Gemini 2.0 Flash (画像分析・Embedding)"]
     gem_img["Nano Banana (コーデ画像生成)"]
-    rakuten["Rakuten Ichiba API / Affiliate<br/>(MK adapter/tool implemented; live verified; M6 LINE later)"]
+    rakuten["Rakuten Ichiba API / Affiliate<br/>(MK adapter/tool implemented; live verified)"]
     fauth["Firebase Authentication"]
     shared_seed["scripts/seed_shared_closet/run_seed.py<br/>(live seed 済み: 3クローゼット210件; フル vector seed は deployment 待ち)"]
   end
@@ -137,7 +134,6 @@ flowchart TB
   flutter_assisted -.->|"assist proposal + selection"| r_assist
   flutter_assisted -.->|"save suggested item"| r_import
   flutter_assisted -->|"ownership updates"| r_closet
-  lineapp -.-> r_line
 
   r_closet --> fs
   r_closet --> r2
@@ -157,7 +153,6 @@ flowchart TB
   r_assist -.-> adk
   r_shared --> es
   r_shared --> fs
-  r_line -.-> ct
   orch -.-> gem_an
   orch -.-> gem_img
   orch -.-> es
@@ -171,8 +166,6 @@ flowchart TB
 
   class flutter_auth,flutter_acc,flutter_assisted,r_closet,r_import,r_internal,r_session,r_assist,r_shared,fs,r2,ct,gem_an,fauth,shared_seed,adk,orch,rakuten done;
   class es,gem_img wip;
-  class r_line stub;
-  class lineapp todo;
 ```
 
 **読み取りポイント:**
@@ -182,7 +175,6 @@ flowchart TB
 - 🟩 **Nano Banana 画像生成**: `style_synthesizer` の生成呼び出しは実装済み。**2026-06-21 のローカル検証で Vertex AI（SA = プロジェクト `your-project-id`）の `gemini-2.5-flash-image` で実生成を確認**（コーデ画像 ~1.15 MB、`modelUsed=gemini-2.5-flash-image`、collage fallback ではない）。以前の「ローカルは free-tier quota の都合で collage のみ」という制約は解消。本番（MD-11）はモデル可用リージョン + 課金で再確認する。2026-07-06 以降、collage fallback は完成済みコーディネートとして保存せず、画像生成が retry 後も失敗した場合はセッションを ERROR にする。
 - 🟩 **M5 Done**: `/sessions/*`、ADK `/internal/run-session`、`agentEvents` 書き込み、SSE、Accordion UI は実装済み。review hardening で SSE terminal race、orphaned `SEARCHING`、unbounded stream、unprotected ADK internal route、shared-closet picker filtering、ADK/FastAPI status-sequence mismatch を修正済み。local API/SSE smoke と rendered browser E2E は authenticated `SHARED_CLOSET` session → `COMPLETED` result まで通過。
 - 🟩 **MK Done (local)**: Assisted Coordinate は実装済み。`/sessions/{id}/assist`、`/closet/import-suggestion`、Rakuten `search_rakuten` tool + deterministic fallback、closet `ownershipStatus`（`INTERESTING` / `OWNED`）が Firestore / ES / Flutter UI まで配線済み。Rakuten API 不通時は anchor/closet-only 提案へ degrade し、セッションを ERROR にしない。live Rakuten 出力も `--require-rakuten` smoke で検証済み（20260701 endpoint は `Origin`/`Referer` ヘッダー必須 — `RAKUTEN_APPLICATION_URL` から送出）。
-- ⬜ **未着手**: LINE / LIFF。
 - 🟨 ES はローカル Docker では動作。GCE VM + VPC + Cloud Run プライベート接続はデプロイ期に延期（M1-3）。
 
 ---
@@ -200,7 +192,6 @@ flowchart LR
     h_session["session_routes create/list/source/select/stream (M5/ME)"]
     h_assist["session_routes assist mode (MK)"]
     h_shared["shared_closet_routes list/items (ME)"]
-    h_line["LINE webhook (M6)"]
   end
 
   subgraph uc["Use Cases"]
@@ -235,7 +226,6 @@ flowchart LR
     p6["StylingRepositoryPort → FirestoreStyleSessionRepository"]
     p7["ClothingSearchPort → SharedCloset / Closet / Rakuten"]
     p8["ImageGenerationPort → image_generation_stub"]
-    p9["LineReplyPort → LineReplyAdapter"]
     p10["SharedClosetGalleryPort → SharedClosetSearchAdapter"]
     p11["RakutenSearchPort / search_rakuten tool (MK)"]
   end
@@ -270,7 +260,6 @@ flowchart LR
   class h_closet,h_import,h_internal,h_session,h_assist,h_shared,u1,u2,u3,u4,u5,u6,u7,u8,s1,s2,s3,s4,s5,s6,s7,s8,p1,p3,p4,p5,p6,p10,p11 done;
   class p2,p7 wip;
   class p8 stub;
-  class h_line,p9 todo;
 ```
 
 > `ClothingSearchPort`(p7) は `SharedClosetSearchAdapter` が実装済み（署名付き共有画像 URL + attribution 返却）だが、`ClosetSearchAdapter` / `RakutenItemAdapter` は未作成（⬜）のため全体としては 🟨。MK の `search_rakuten` / Rakuten adapter（p11）は ADK 側に実装済み（credentials 無効時は unavailable として degrade）。`EmbeddingSearchPort`(p2) はキーワード検索まで実装済みだがベクトル/ハイブリッド検索の本番運用は ES デプロイ（M1-3）待ちで 🟨。
@@ -382,30 +371,7 @@ sequenceDiagram
 
 ---
 
-## 6. フロー図③ — LINE チャネル（⬜ M6: 未着手 / Phase 1b）
-
-req §1 Phase 1b / §7.4 / §10.2 / ADL-006。**ファイル自体が存在しない**。M5 完了後の次フェーズとして着手する（req §14）。
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant U as LINE User ⬜
-  participant API as fastapi LINE Webhook ⬜
-  participant Q as Cloud Tasks ⬜
-  participant ADK as adk-agent-service 🟩
-  participant LINE as LINE Reply/Push ⬜
-
-  U-->>API: 画像メッセージ送信
-  API-->>U: 即時 200 OK (5秒制約, ADL-006)
-  API-->>Q: enqueue agent job
-  Q-->>ADK: 非同期 Agent 実行
-  ADK-->>LINE: コーデ画像 Reply (失効時は Push)
-  LINE-->>U: トーク画面に返信
-```
-
----
-
-## 7. 実装ロードマップ（依存関係）
+## 6. 実装ロードマップ（依存関係）
 
 ```mermaid
 flowchart LR
@@ -420,16 +386,15 @@ flowchart LR
   M5 --> ME["ME プレデプロイUX/硬化 (Phase 1a)"]
   ME --> MD["MD 本番デプロイ (Phase 1a)"]
   M5 --> MK["MK Assisted Coordinate (Phase 2 Web)"]
-  M5 --> M6["M6 LINE統合 (Phase 1b)"]
 
   classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20;
   classDef wip fill:#fff3cd,stroke:#f9a825,color:#795548;
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
-  class M0,M2,M3,M4,M5,MK done; class M1,ME,MD wip; class M6 todo;
+  class M0,M2,M3,M4,M5,MK done; class M1,ME,MD wip;
 ```
 
-**次の一手:** ME-1…ME-7 と must-fix（ME-3/ME-6）は完了したため、**MD（`docs/plans/20260615-md-phase1a-production-deployment.md`）を再開する**。MK（Assisted Coordinate）は実装・ローカル検証済み（live Rakuten credentials のみ未検証）。履歴の weather / duplication 拡張と M6（LINE / LIFF, Phase 1b）には着手しない。
+**次の一手:** ME-1…ME-7 と must-fix（ME-3/ME-6）は完了したため、**MD（`docs/plans/20260615-md-phase1a-production-deployment.md`）を再開する**。MK（Assisted Coordinate）は実装・ローカル検証済み（live Rakuten credentials のみ未検証）。履歴の weather / duplication 拡張は将来対応とする。
 
 ---
 
