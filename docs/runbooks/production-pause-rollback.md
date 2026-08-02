@@ -4,6 +4,10 @@ This runbook restores production availability after the cost-control change
 that pauses the Elasticsearch VM, Cloud Tasks queue, and public FastAPI
 invocation outside a `main`-push deployment. It does not delete data.
 
+If Firebase Hosting was fully stopped, its site was deleted. Recreate
+`gen-fashion-app` before the next deployment as documented in
+[`docs/gcp-cheatsheet.md`](../gcp-cheatsheet.md#firebase-hosting-の完全停止).
+
 ## Preconditions
 
 - Use an identity with Cloud Run Admin, Compute instance start, Cloud Tasks
