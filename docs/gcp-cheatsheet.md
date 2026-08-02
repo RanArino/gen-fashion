@@ -230,6 +230,25 @@ gcloud run services describe adk-agent-service --region=asia-northeast1 \
   --format='value(metadata.annotations.run.googleapis.com/minScale)'
 ```
 
+### Firebase Hosting の完全停止
+
+Firebase Hosting には停止状態がない。公開配信とアクセス時の CDN 転送を止めるには
+Hosting site を削除する。これは全リリースを削除する操作であり、再開前に site の
+再作成が必要となる。
+
+```bash
+PROJECT=your-project-id
+SITE=gen-fashion-app
+FIREBASE_ACCESS_TOKEN=$(gcloud auth print-access-token)
+curl --fail --request DELETE \
+  --header "Authorization: Bearer ${FIREBASE_ACCESS_TOKEN}" \
+  --header "x-goog-user-project: ${PROJECT}" \
+  "https://firebasehosting.googleapis.com/v1beta1/projects/${PROJECT}/sites/${SITE}"
+
+# 再開時: Firebase CLI にログイン後、site を再作成してから次の main deploy を行う
+firebase hosting:sites:create "${SITE}" --project="${PROJECT}"
+```
+
 ---
 
 ## Artifact Registry（Milestone C 以降）
