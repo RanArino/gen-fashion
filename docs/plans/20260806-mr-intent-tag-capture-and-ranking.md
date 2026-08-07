@@ -37,7 +37,17 @@ Tracker: `docs/feature-matrix-phase03.md` rows **MR-1 … MR-7**.
 ## Progress
 
 
-- [ ] Milestone A — Domain vocabulary and persistence (MR-1, MR-2, MR-4).
+- [x] Milestone A — Domain vocabulary and persistence (MR-1, MR-2, MR-4). 2026-08-07.
+      Steps A1-A5 implemented and A6's `pytest` verification passed (124
+      passed, 1 skipped, up from 113 passed, 1 skipped before this milestone —
+      11 new tests). The `make dev` / live-infrastructure half of A6 (upload
+      an item, PATCH intent tags, curl the ES mapping) was **not performed**:
+      the Docker daemon is unreachable from this environment's sandboxed
+      shell (`docker ps` / `docker-compose up -d` both fail with "Cannot
+      connect to the Docker daemon at unix:///Users/ran/.docker/run/docker.sock").
+      This must be run by someone with a working local Docker daemon before
+      Milestone A is considered fully verified per the plan's own acceptance
+      bar.
 - [ ] Milestone B — Ranking read path, on/off flag, and the ranking-change proof (MR-5, MR-6).
 - [ ] Milestone C — Capture UI, API surface, and localization (MR-3, MR-7).
 - [ ] Final: feature-matrix rows MR-1…MR-7 set to their end state and `docs/architecture-overview.md` synced.
@@ -62,6 +72,36 @@ Tracker: `docs/feature-matrix-phase03.md` rows **MR-1 … MR-7**.
   in `docs/architecture-overview.md` §8 item 4, where a missing keyword
   declaration silently produced zero-hit term filters and ended coordination
   sessions in `ERROR`. Milestone A step 4 addresses it directly.
+
+- Observation: `app/ports/embedding_search.py` (the `EmbeddingSearchPort`
+  ABC) was not in the plan's file list for A4/A5, but its abstract
+  `index_item` and `update_item_metadata` signatures already matched the
+  concrete `ElasticsearchEmbeddingRepository` adapter's signatures exactly
+  before this change (same parameter names, same optional-with-default
+  pattern for `ownership_status`/`origin`/etc.). Treated as a companion
+  change: added `intent_tags: Optional[List[str]] = None` to both abstract
+  methods in the port to preserve that existing invariant, rather than
+  letting the port's documented contract silently drift from the adapter
+  that implements it. Python ABCs do not enforce signature equality at
+  runtime, so nothing would have failed without this — the port would just
+  have been an inaccurate description of the adapter.
+  Evidence: `fastapi-service/app/ports/embedding_search.py:17` and `:43`.
+
+- Observation: the Docker daemon is not reachable from this agent's sandboxed
+  shell environment, even though the `docker` CLI itself reports a valid
+  client version and `docker-compose config` can parse `docker-compose.yml`.
+  `docker ps` and `docker-compose up -d` both fail with "Cannot connect to
+  the Docker daemon at unix:///Users/ran/.docker/run/docker.sock. Is the
+  docker daemon running?" — this looks like sandboxed socket access being
+  blocked rather than Docker Desktop actually being stopped. Consequence:
+  the live-infrastructure half of A6 (upload via UI, PATCH intent tags via
+  API, `curl` the ES `_mapping` endpoint to confirm `intentTags` is
+  `keyword` not `text`) could not be executed in this session. The unit-level
+  equivalent (`test_ensure_index_issues_put_mapping_when_index_already_exists`
+  in `tests/adapters/test_elasticsearch_embedding_repo.py`, mocking
+  `AsyncElasticsearch`) was added and passes, but it does not substitute for
+  the plan's live check against a real Elasticsearch index that may already
+  have `intentTags` dynamically mapped as `text` from an earlier partial run.
 
 - (Add findings here as work proceeds.)
 
@@ -665,6 +705,67 @@ On completion, record here:
   differs from the proposed set in A1.
 - The `intent_boost_weight` value shipped, and any evidence that informed it.
 - Test counts before and after for all three suites.
+
+### Milestone A verification evidence (2026-08-07, role 4 — verifier)
+
+**Environment check.** Confirmed independently before attempting the live check:
+
+    $ docker ps
+    Cannot connect to the Docker daemon at unix:///Users/ran/.docker/run/docker.sock. Is the docker daemon running?
+    exit=1
+
+    $ curl -s --max-time 3 http://localhost:9200
+    (no output, curl exit=7 — connection refused)
+
+Docker is unreachable in this sandboxed shell; `make dev` cannot be started here.
+This matches the implementer's and scope-auditor's prior reports.
+
+**A6 check 1 — full unit test suite.** Run independently (not trusting prior
+reported counts):
+
+    $ cd /Users/ran/my-app/gen-fashion/fastapi-service && source .venv/bin/activate && python -m pytest -q
+    ....................................s................................... [ 57%]
+    .....................................................                    [100%]
+    124 passed, 1 skipped, 2 warnings in 1.32s
+
+Skip reason confirmed via `pytest -q -rs`:
+
+    SKIPPED [1] tests/adapters/test_elasticsearch_embedding_repo.py:16: Elasticsearch is not reachable at http://localhost:9200
+
+— this is the pre-existing live-ES integration test (`test_elasticsearch_embedding_repo_index_lifecycle`), unrelated to this milestone's new code, self-skipping for the same reason `make dev` can't run (no reachable ES/Docker).
+
+All four scenarios the plan's A6 names were confirmed present and passing,
+run explicitly by node ID:
+
+    $ python -m pytest -q \
+      "tests/domain/test_clothing_item.py::test_set_intent_tags_rejects_more_than_three_values" \
+      "tests/domain/test_clothing_item.py::test_set_intent_tags_rejects_duplicates" \
+      "tests/use_cases/test_closet_use_cases.py::test_update_metadata_rejects_unknown_intent_tag" \
+      "tests/adapters/test_firestore_closet_repo_mapping.py::test_firestore_document_without_intent_tags_loads_as_empty" \
+      "tests/adapters/test_elasticsearch_embedding_repo.py::test_ensure_index_issues_put_mapping_when_index_already_exists" \
+      -v
+    5 passed in 0.86s
+
+Mapped to the plan's required scenarios:
+  - set_intent_tags rejecting 4 values -> `test_set_intent_tags_rejects_more_than_three_values` PASS
+  - set_intent_tags rejecting duplicates -> `test_set_intent_tags_rejects_duplicates` PASS
+  - unknown enum name -> domain error -> `test_update_metadata_rejects_unknown_intent_tag` PASS
+  - Firestore doc without intentTags loads as [] -> `test_firestore_document_without_intent_tags_loads_as_empty` PASS
+  - ensure_index issues put_mapping when index already exists -> `test_ensure_index_issues_put_mapping_when_index_already_exists` PASS
+
+**A6 check 2 — live `make dev` / ES mapping check.** UNPROVEN. Docker daemon
+is unreachable in this environment (see environment check above), so `make dev`
+cannot be started, no Elasticsearch instance is reachable at
+`localhost:9200`, and the `curl .../_mapping | grep intentTags` command
+specified by the plan cannot be executed. This is an environmental gap, not a
+behavioral one: the code path it would exercise (additive `put_mapping` on an
+already-existing index) is covered by a mocked-client unit test
+(`test_ensure_index_issues_put_mapping_when_index_already_exists`), but that
+does not substitute for observing a real Elasticsearch index's mapping, which
+is the exact failure mode (`closetId` dynamically mapped as `text`,
+documented in `docs/architecture-overview.md` §8 item 4) A4/A6 exist to
+guard against. This criterion remains open until run by someone with a
+working Docker daemon.
 
 
 ## Interfaces and Dependencies

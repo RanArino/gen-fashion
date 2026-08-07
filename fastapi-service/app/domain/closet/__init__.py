@@ -12,6 +12,7 @@ from app.domain.closet.exceptions import (
     MaxClosetItemsExceeded,
     InvalidImageUrl,
 )
+from app.domain.shared.affective import IntentTag
 
 __all__ = [
     "ClothingItem",
@@ -24,4 +25,5 @@ __all__ = [
     "ClosetItemNotFound",
     "MaxClosetItemsExceeded",
     "InvalidImageUrl",
+    "IntentTag",
 ]

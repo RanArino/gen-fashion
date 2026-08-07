@@ -6,6 +6,7 @@ from app.domain.closet import (
     ClothingItem,
     ClothingItemId,
     ClothingItemStatus,
+    IntentTag,
 )
 from app.domain.closet.exceptions import ClosetItemNotFound, MaxClosetItemsExceeded
 from app.domain.styling import StyleSession, StyleSessionId, StyleSessionNotFound
@@ -83,7 +84,7 @@ class FakeEmbeddingSearch:
     async def index_item(
         self, item_id, user_id, *, is_shared, tags, category, colors, season,
         embedding, gender=None, ownership_status=None, origin=None,
-        external_item_id=None, external_url=None
+        external_item_id=None, external_url=None, intent_tags=None
     ):
         self.indexed.append(
             {
@@ -100,6 +101,7 @@ class FakeEmbeddingSearch:
                 "origin": origin,
                 "external_item_id": external_item_id,
                 "external_url": external_url,
+                "intent_tags": intent_tags,
             }
         )
 
@@ -109,7 +111,8 @@ class FakeEmbeddingSearch:
         self.deleted.append((item_id, user_id))
 
     async def update_item_metadata(
-        self, item_id, *, tags, category, colors, season, gender, ownership_status=None
+        self, item_id, *, tags, category, colors, season, gender, ownership_status=None,
+        intent_tags=None
     ):
         self.indexed.append(
             {
@@ -120,6 +123,7 @@ class FakeEmbeddingSearch:
                 "season": season,
                 "gender": gender,
                 "ownership_status": ownership_status,
+                "intent_tags": intent_tags,
             }
         )
 
@@ -491,6 +495,39 @@ async def test_import_suggestion_enforces_closet_cap(monkeypatch):
 
     with pytest.raises(MaxClosetItemsExceeded):
         await use_case.execute("user-123", str(session.id), candidate["item_id"])
+
+
+@pytest.mark.asyncio
+async def test_update_metadata_persists_and_reindexes_intent_tags():
+    repo = FakeClosetRepo()
+    search = FakeEmbeddingSearch()
+    item = closet_item()
+    item.mark_ready("shirt", ["blue"], "spring", "common", [])
+    await repo.create(item)
+
+    await UpdateClosetItemMetadataUseCase(repo, search).execute(
+        item.user_id,
+        str(item.id),
+        intent_tags=["CONFIDENT", "AT_EASE"],
+    )
+
+    assert item.intent_tags == [IntentTag.CONFIDENT, IntentTag.AT_EASE]
+    assert search.indexed[0]["intent_tags"] == ["CONFIDENT", "AT_EASE"]
+
+
+@pytest.mark.asyncio
+async def test_update_metadata_rejects_unknown_intent_tag():
+    repo = FakeClosetRepo()
+    item = closet_item()
+    item.mark_ready("shirt", ["blue"], "spring", "common", [])
+    await repo.create(item)
+
+    with pytest.raises(ValueError):
+        await UpdateClosetItemMetadataUseCase(repo, FakeEmbeddingSearch()).execute(
+            item.user_id,
+            str(item.id),
+            intent_tags=["NOT_A_REAL_INTENT"],
+        )
 
 
 @pytest.mark.asyncio

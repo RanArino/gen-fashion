@@ -3,6 +3,7 @@ from typing import Optional, List
 from dataclasses import dataclass
 from datetime import datetime
 from app.domain.shared.base_models import AggregateRoot
+from app.domain.shared.affective import IntentTag, INTENT_VOCABULARY_VERSION
 from app.domain.closet.value_objects import (
     ClosetOwnershipStatus,
     ClothingItemId,
@@ -38,6 +39,8 @@ class ClothingItem(AggregateRoot):
     affiliate_url: Optional[str] = None
     price: Optional[float] = None
     brand_or_shop: Optional[str] = None
+    intent_tags: List[IntentTag] = None
+    intent_vocabulary_version: Optional[int] = None
 
     def __post_init__(self):
         """Validate invariants."""
@@ -47,6 +50,8 @@ class ClothingItem(AggregateRoot):
             raise ValueError("image_url must not be empty")
         if self.colors is None:
             object.__setattr__(self, 'colors', [])
+        if self.intent_tags is None:
+            object.__setattr__(self, 'intent_tags', [])
         if self.created_at is None:
             object.__setattr__(self, 'created_at', datetime.utcnow())
         if self.updated_at is None:
@@ -90,6 +95,7 @@ class ClothingItem(AggregateRoot):
         colors: Optional[List[str]] = None,
         season: Optional[str] = None,
         tags: Optional[List[ClothingTag]] = None,
+        intent_tags: Optional[List[IntentTag]] = None,
     ) -> None:
         """Update user-correctable searchable metadata."""
         if gender is not None:
@@ -104,7 +110,24 @@ class ClothingItem(AggregateRoot):
             object.__setattr__(self, 'season', season)
         if tags is not None:
             object.__setattr__(self, 'tags', tags)
+        if intent_tags is not None:
+            self._set_intent_tags(intent_tags)
         self._mark_updated()
+
+    def set_intent_tags(self, intent_tags: List[IntentTag]) -> None:
+        """Set the intent vocabulary values for this item (0-3, no duplicates)."""
+        self._set_intent_tags(intent_tags)
+        self._mark_updated()
+
+    def _set_intent_tags(self, intent_tags: List[IntentTag]) -> None:
+        """Validate and store intent_tags without marking the item updated."""
+        if len(intent_tags) > 3:
+            raise ValueError("intent_tags accepts at most 3 values")
+        if len(set(intent_tags)) != len(intent_tags):
+            raise ValueError("intent_tags must not contain duplicates")
+        object.__setattr__(self, 'intent_tags', intent_tags)
+        if intent_tags:
+            object.__setattr__(self, 'intent_vocabulary_version', INTENT_VOCABULARY_VERSION)
 
     def set_ownership_status(self, ownership_status: ClosetOwnershipStatus) -> None:
         """Switch between OWNED and INTERESTING."""

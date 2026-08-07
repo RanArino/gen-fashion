@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock, patch
+
 import httpx
 import pytest
 from app.adapters.elasticsearch_embedding_repo import ElasticsearchEmbeddingRepository
@@ -42,3 +44,27 @@ async def test_elasticsearch_embedding_repo_index_lifecycle(monkeypatch):
         await repo.delete_item("test-item", "user-123")
     finally:
         await repo._client.close()
+
+
+@pytest.mark.asyncio
+async def test_ensure_index_issues_put_mapping_when_index_already_exists():
+    """A4: an existing index must gain intentTags via put_mapping, not a no-op.
+
+    Without this, intentTags falls to dynamic `text` mapping on every
+    pre-existing index and the Milestone B boost clause silently matches
+    nothing (see docs/architecture-overview.md §8 item 4 for the closetId
+    precedent of this exact failure mode).
+    """
+    with patch("app.adapters.elasticsearch_embedding_repo.AsyncElasticsearch") as mock_cls:
+        mock_client = AsyncMock()
+        mock_cls.return_value = mock_client
+        mock_client.indices.exists.return_value = True
+
+        repo = ElasticsearchEmbeddingRepository()
+        await repo.ensure_index()
+
+        mock_client.indices.put_mapping.assert_awaited_once_with(
+            index=repo._index,
+            properties={"intentTags": {"type": "keyword"}},
+        )
+        mock_client.indices.create.assert_not_called()
