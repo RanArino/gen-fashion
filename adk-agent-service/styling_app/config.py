@@ -68,6 +68,15 @@ class Settings(BaseSettings):
     # client always sees COMPLETED rather than a stream TIMEOUT.
     adk_run_timeout_seconds: int = 90
 
+    # MR-6: gates the intentTags boost clause in hybrid_search. Exists so the
+    # ranking-change proof (scripts/mr6_intent_ranking_proof.py) can run the
+    # same query with the clause on and off, and so the clause can be turned
+    # off quickly in production if it misbehaves. The weight ships at a fixed
+    # default; tuning it against real usage data is out of scope for phase 3
+    # (req-phase03.md §1.4).
+    intent_boost_enabled: bool = True
+    intent_boost_weight: float = 2.0
+
     @property
     def project_id(self) -> str:
         return self.google_cloud_project or "gen-fashion-local"
