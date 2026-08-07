@@ -6,6 +6,7 @@ from app.domain.closet import (
     ClosetOwnershipStatus,
     ClothingItemId,
     ClothingTag,
+    IntentTag,
 )
 from app.ports import ClosetRepositoryPort, EmbeddingSearchPort
 
@@ -31,6 +32,7 @@ class UpdateClosetItemMetadataUseCase:
         season: str | None = None,
         tags: list[str] | None = None,
         ownership_status: str | None = None,
+        intent_tags: list[str] | None = None,
     ) -> dict:
         item = await self.closet_repo.get_by_id(user_id, ClothingItemId(UUID(item_id)))
         if item is None:
@@ -43,6 +45,7 @@ class UpdateClosetItemMetadataUseCase:
             colors=colors,
             season=season,
             tags=None if tags is None else [ClothingTag(name="tag", value=value) for value in tags],
+            intent_tags=None if intent_tags is None else [IntentTag(value) for value in intent_tags],
         )
         await self.closet_repo.update(item)
         try:
@@ -54,6 +57,7 @@ class UpdateClosetItemMetadataUseCase:
                 season=item.season,
                 gender=item.gender,
                 ownership_status=item.ownership_status.value,
+                intent_tags=[t.value for t in item.intent_tags],
             )
         except Exception:
             logger.exception("Failed to reindex closet item %s", item_id)

@@ -10,6 +10,7 @@ from app.domain.closet import (
     ClothingItemId,
     ClothingItemStatus,
     ClothingTag,
+    IntentTag,
 )
 from app.domain.closet.value_objects import ImageEmbedding
 
@@ -58,6 +59,8 @@ class FirestoreClosetRepository(ClosetRepositoryPort):
             "affiliateUrl": item.affiliate_url,
             "price": item.price,
             "brandOrShop": item.brand_or_shop,
+            "intentTags": [tag.value for tag in item.intent_tags],
+            "intentVocabularyVersion": item.intent_vocabulary_version,
             "createdAt": item.created_at,
             "updatedAt": item.updated_at,
         }
@@ -107,6 +110,8 @@ class FirestoreClosetRepository(ClosetRepositoryPort):
             affiliate_url=data.get("affiliateUrl"),
             price=data.get("price"),
             brand_or_shop=data.get("brandOrShop"),
+            intent_tags=[IntentTag(value) for value in data.get("intentTags", [])],
+            intent_vocabulary_version=data.get("intentVocabularyVersion"),
         )
 
     async def create(self, item: ClothingItem) -> None:

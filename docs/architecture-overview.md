@@ -1,4 +1,40 @@
-# Architecture Overview — gen-fashion (Phase 1 / Phase 2 planning)
+# Architecture Overview — gen-fashion (Phase 1 / Phase 2 / Phase 3 planning)
+
+> **Phase 3 scope revision (2026-08-07):** 締切を **2026-09-30**（Shipaton 提出、
+> 実質 7.5 週・1人）と確定し、req §0.4 / ADL-051 に**提出戦略と切り捨て順**を
+> 固定した。**初回提出に MX + MV + MW + NE + MY を同梱**する（消費型 IAP は初回
+> バイナリと同時審査が必要なため、後追いにすると審査が2回直列になる）。MS / NA は
+> 審査待ち時間に実装して2本目のビルドで載せる。**マイルストーンは 14 本**
+> （**NE = アカウント削除**を新設）。本改訂で構成に効く決定:
+> - **ADL-041 改訂 — debit 確定点が変わった。** `PROPOSING → GENERATING` は
+>   **原子的遷移ではなく、`fastapi-service` で起きてもいない**（`GENERATING` は
+>   `adk-agent-service/styling_app/server.py:151` が Firestore に直接 `set(merge=True)`、
+>   ガードは `firestore_session.py:44` のインスタンス内単調カウンタのみ。
+>   `fastapi-service` 側は `aggregates.py:123` で `PROPOSING` のまま）。debit は
+>   **`fastapi-service` の `SelectCandidatesUseCase.execute`**（`ref_id = session_id`、
+>   ADK 起動失敗時は同じ `except` で補償クレジット）で確定する。
+> - **ADL-046 の適用範囲拡大** — 既存 try-on 生成
+>   （`adk-agent-service/styling_app/adapters/image_generation.py`）も機微データ
+>   変換層を経由する。phase 3 では**経路の集約のみでペイロードは不変**。
+> - **NE（アカウント削除）** — Firestore / R2 / Elasticsearch を跨ぐカスケード削除。
+>   `CoinTransaction` 台帳のみ匿名化して保持（ADL-050）。
+> - **ADL-048** — サインアップ時に生成4回分のコインを台帳経由で1回だけ付与。
+>
+> **Phase 3 planning sync (2026-08-06):** [req-phase03.md](req-phase03.md) /
+> [feature-matrix-phase03.md](feature-matrix-phase03.md) を新設し、差別化
+> （意図タグ層）・課金（コイン + RevenueCat）・モバイル（Android/iOS）・
+> 第2 EC（eBay）・マンスリー誌画像のマイルストーン（**MR…ND**）を追加した。
+> 現時点で **ExecPlan があるのは MR のみ**（"one ExecPlan at a time"）。
+> **MR は構成図を変えない**（既存 `ClothingItem` へのフィールド追加と
+> `hybrid_search` への引数追加のみで、コンポーネント／ポート／アダプタ／
+> データストア／外部サービスの増減が無い）ため、本ドキュメントの更新は
+> マイルストーンサマリとロードマップに限る。**将来のマイルストーンで
+> 構成図に入る予定の新規要素**（各 ExecPlan 起票時に図へ反映すること）:
+> `domain/billing/`（CoinWallet + CoinTransaction 台帳、MV）、RevenueCat
+> webhook 入力アダプタ（MW）、`adapters/ebay.py` + `tools/search_ebay.py`（MZ）、
+> `ImageGenPort` + 機微データ変換層 + Nano Banana アダプタ（NB、**既存 try-on も経由**）、
+> 誌面合成エンジン（NA、生成モデル呼び出しゼロ）、Android/iOS クライアント（MX）、
+> アカウント削除カスケード（NE）。
 
 > **ME completion sync (2026-06-24):** ME-1…ME-7 are implemented and locally
 > verified. The diagrams below include the two-phase candidate-selection gate,
@@ -31,7 +67,7 @@
 
 > **生成日:** 2026-06-08
 > **最終同期:** 2026-07-03 — **MK（Assisted Coordinate Mode, Phase 2 Web）実装完了・ローカル検証済み（冒頭の MK note 参照）。** Prior: 2026-06-30 — **Security hardening follow-up（`docs/plans/20260630-security-hardening-followup.md`）で既存構成の防御設定を更新。** Cloud Run → Compute Engine ES は引き続き Direct VPC egress だが、ES VM は network tag `gen-fashion-es` を持ち、`allow-es-from-cloudrun`（priority 800, source `10.146.0.0/20`, tcp:9200）と `deny-es-other-internal`（priority 900, source `10.128.0.0/9`, tcp:9200 deny）で default VPC の broad internal allow を上書きする。ES HTTPS は `verify_certs=False` ではなく、`:9200` で提示される leaf certificate の SHA-256 fingerprint を `ELASTICSEARCH_SSL_ASSERT_FINGERPRINT` で pin する。FastAPI CORS は `CORS_ALLOW_ORIGINS` で Firebase Hosting domains に制限する。GitHub Actions WIF は `RanArino/gen-fashion` の `refs/heads/main` のみに制限し、Firebase Web API key は Hosting domains + localhost dev referrer に制限済み。Prior: 2026-06-27 — **MD Milestone B のプライベート接続を Serverless VPC Access connector → Direct VPC egress に変更（ハッカソン低コスト化、ADL-023 改訂）。** Cloud Run → Compute Engine ES の閉域経路は connector ではなく Direct VPC egress（`--network`/`--subnet` + `--vpc-egress=private-ranges-only`）で実現する。connector のアイドル固定費（最小 e2-micro×2）を排除しつつ「ES VM は外部 IP なし・`tcp:9200` は Cloud Run egress サブネットレンジのみ」という閉域姿勢は維持。ES VM は `pd-standard` 30GB + **静的内部 IP**、停止運用 + 任意の `Asia/Tokyo` 深夜停止スケジュールでコスト最小化。**構成図上は `Serverless VPC Access connector` ノードを削除し、Cloud Run → ES を Direct VPC egress 経路として読み替えること。** Prior: 2026-06-27 — Milestone 0（デプロイ前パッチ）+ Milestone A（GCP 基盤: API 有効化・SA×3 + IAM・Firestore + rules・Firebase + Web app・R2 + Secret Manager）完了（MD-1 ✅ / MD-9 ✅、MD-2 🟡）。Prior: 2026-06-21 — **デプロイ前ローカル実機検証で実バグ3件を発見・修正**（`docs/plans/20260621-md-phase1a-local-verification-checklist.md`）。(1) 内部 worker base-URL 混在が `make dev` でも実害（アップロード→READY が常時 404）→ MD-8 の base-URL 分離ローカル分を先行着手（`FASTAPI_INTERNAL_BASE_URL`）。(2) Firestore がバックエンドの Vertex プロジェクト（`your-project-id`）にバインドされフロント/Auth（`gen-fashion-local`）と名前空間分離 → `firestore_project_id`（Firebase プロジェクト）へ修正。(3) `closetId` が動的 `text` 化で SHARED_CLOSET 検索 0 件 → M2-9 マッピングに keyword 宣言を追加し再シード。修正後、fastapi pytest 59 / adk pytest 28 / flutter clean、M5 コーデ smoke + ブラウザ E2E が `COMPLETED` + **実 Nano Banana 画像**（§8 #2–#4 参照）。同日是正: 埋め込みを `gemini-embedding-001`＋**テキスト埋め込み**（インデックスもクエリも同一空間）に修正し、`--with-embeddings` で 90×768次元 + kNN 意味検索を確認（MD-10 de-risk）。ADK タイムアウトを config 化（45→90）し SSE 上限を 150 に整合 → 主LLM経路で COMPLETED。Prior: 2026-06-15 — **MD（Phase 1a Production Deployment & Hardening）起票**（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-1…MD-14 🟡 In progress）。ローカル検証済みの Phase 1a スタックを Google Cloud へデプロイする計画: Compute Engine ES + Serverless VPC Access connector（ADL-023、M1-3 完了）、フル vector seed（`--with-embeddings`、M3-2）、Cloud Run ×2 + Secret Manager + OIDC（ADL-024、M2-5 ゲート）、Vertex AI 上の Nano Banana 実生成（M4-7/M5-6）、Firebase Hosting（ADL-025）。計画中に判明した配線課題: `ADK_INTERNAL_BASE_URL` が run-session と process-upload で混在（worker ルートは `fastapi-service` 実装だが adapter は ADK URL を参照）→ MD-8 で `FASTAPI_INTERNAL_BASE_URL` を分離。**M6（LINE, Phase 1b）には着手しない。** Prior: 2026-06-14 — M5 完了（`docs/plans/20260612-m5-coordination-flow-accordion-ui.md`）。FastAPI `/sessions`、ADK `/internal/run-session`、`agentEvents` 書き込み、SSE polling stream、Flutter Coordination/Accordion UI は実装済み。review hardening として final SSE drain、cursor event reads、ADK trigger failure compensation、ADK internal-secret guard、selected shared-closet filtering、ADK status sequencing を追加済み。local Docker/API smoke と rendered Flutter Web browser E2E は authenticated `SHARED_CLOSET` session → Accordion event evidence → `COMPLETED` result image まで通過。
-> **ベース:** [req-phase01.md](req-phase01.md) / [req-phase02.md](req-phase02.md)（仕様の source of truth）・[feature-matrix-phase01.md](feature-matrix-phase01.md) / [feature-matrix-phase02.md](feature-matrix-phase02.md)（実装状況）
+> **ベース:** [req-phase01.md](req-phase01.md) / [req-phase02.md](req-phase02.md) / [req-phase03.md](req-phase03.md)（仕様の source of truth）・[feature-matrix-phase01.md](feature-matrix-phase01.md) / [feature-matrix-phase02.md](feature-matrix-phase02.md) / [feature-matrix-phase03.md](feature-matrix-phase03.md)（実装状況）
 > **目的:** アーキテクチャ／システム構成を可視化し、**既に実装済みのコード**と**これから実装予定のコード**の境界を明確に強調する。
 
 ---
@@ -75,6 +111,31 @@ flowchart LR
 | **MD** | Phase 1a Production Deployment & Hardening | 1a | 🟨 **WIP（ME gate closed; resume next）**（`docs/plans/20260615-md-phase1a-production-deployment.md`、MD-1…MD-14。Milestone 0/A 完了（MD-1/MD-9 ✅）。GCE ES + Cloud Run **Direct VPC egress**（ADL-023、connector 不採用）、フル vector seed、Cloud Run ×2、Secret Manager + OIDC、Vertex AI Nano Banana、Firebase Hosting。） |
 | **MF** | CI/CD（Continuous Delivery） | 1a | ⬜ **Planned（tracking only, no ExecPlan yet）**（MF-1…MF-6。GitHub Actions + Workload Identity Federation で MD の手動デプロイを自動化: CI ゲート（per-service tests + image build）+ CD（Artifact Registry → Cloud Run ×2 + Firebase Hosting）+ デプロイ後スモーク/ロールバック。req §19 / ADL-030–032。**MD 依存**、ExecPlan は MD 完了後。） |
 | **MK** | Assisted Coordinate Mode（Web） | 2 | 🟩 **Done（local, 2026-07-03）**（`docs/plans/20260703-mk-assisted-coordinate-mode.md`、MK-1…MK-8 実装・ローカル検証済み。1-3 own anchor clothes、`search_rakuten` tool + fallback、save suggestion as `INTERESTING`、change to `OWNED`、Interesting READY items reusable in closet Coordinate。live Rakuten 出力も検証済み（403 の原因は `Origin`/`Referer` ヘッダー必須化。Rakuten 不通時は anchor-only degradation）。） |
+
+### Phase 3（2026-08-06 起票・差別化 / 課金 / モバイル、2026-08-07 締切確定）
+
+詳細は [feature-matrix-phase03.md](feature-matrix-phase03.md)。**14 マイルストーン**。
+締切 **2026-09-30** に対し、着手順と切り捨て順は req §0.4 / ADL-051 で固定済み
+（`MY-0 → MR → MX → MV+MW → NE → MY →（提出）→ MS → NA`。切り捨ては
+`ND → MZ → NB → NC残り → MT → MU-4` の順に**下から**）。
+
+| Milestone | 内容 | 依存 | 状態 |
+|---|---|---|---|
+| **MY-0** | 外部アカウント整備（Apple/Play/RevenueCat + 課金アイテム承認） | — | ⬜ Planned（**優先度1・着手日が全て**。コードなし。MW-6 のサンドボックス購入の隠れた前提） |
+| **MR** | 意図タグ語彙・付与 UI・`hybrid_search` 読み口・on/off 検証 | — | 🟨 **WIP（ExecPlan 起票済み）**（`docs/plans/20260806-mr-intent-tag-capture-and-ranking.md`、MR-1…MR-7。**リリースゲート = MR-6**: 同一クローゼット・同一クエリで boost on/off により候補順が変わることを再実行可能な証跡で示せなければ、出荷せず削除する。フィクスチャ条件は「疎なタグ付け／上位N の顔ぶれが変わる／異なる intent で異なる順序」の3点。`ownership_status`（書かれるが誰も読まない）の再発防止。） |
+| **MS** | セッション意図セレクタ（クエリ時シグナル） | MR | ⬜ Planned |
+| **MT** | 自己発見ミラーリング（LLM 呼び出しゼロ） | MR | ⬜ Planned（**切り捨て線の下**） |
+| **MU** | アプリ内 事後フィードバック（3択） | — | ⬜ Planned（**MU-1…3 は NA の valence 軸供給源＝硬依存**、ADL-049。MU-4 の加点のみ切り捨て線の下） |
+| **MV** | コイン台帳 + debit ゲート + サインアップ付与（新 `domain/billing/`） | — | ⬜ Planned（**debit 確定点 = `SelectCandidatesUseCase.execute`**、`ref_id = session_id`、ADK 起動失敗時は補償クレジット。ADL-041 改訂。新規アカウントに生成4回分を台帳経由で1回付与、ADL-048） |
+| **NE** | アカウント削除カスケード + 台帳匿名化 | — | ⬜ Planned（Firestore / R2 / Elasticsearch を跨ぐ削除。`CoinTransaction` のみ `user_id` を非連結サロゲートに置換して保持、ADL-050。**ストア審査ブロッカー**） |
+| **MW** | RevenueCat IAP + 署名検証 webhook | MV, MX, MY-0 | ⬜ Planned（クライアント SDK の申告は付与根拠にしない、ADL-042。**初回提出に同梱**＝消費型 IAP は初回バイナリと同時審査が必要、ADL-051） |
+| **MX** | モバイル基盤（Android/iOS） | — | ⬜ Planned（**最長の実作業・依存なし**。`flutter-web-app/` に `android/`・`ios/` を追加。現状 `web/` のみ存在。ADL-044） |
+| **MY** | ストア提出準備・内部配信 | MX, MY-0, NE | ⬜ Planned（審査待ち時間は工数で短縮できない。MY-2 の開示には**削除後の台帳匿名保持**も含める、ADL-050） |
+| **MZ** | eBay アダプタ + `search_ebay`（共有 `ProductResult` 形状） | — | ⬜ Planned（**切り捨て線の下**。実装前に画質スパイク。使えなければ「検証の結果 非採用」で閉じる。port 抽出はまだしない、ADL-043） |
+| **NA** | マンスリー誌・無料4スタイル合成（**生成モデル呼び出しゼロ**） | MR, **MU-1…3** | ⬜ Planned（既存 `final_result` 画像のサーバー側合成。既存 `image_generation.generate` は collage 禁止プロンプトのため流用不可、ADL-045。**感情軸 = intent の静的 arousal × フィードバック valence**、ADL-049） |
+| **NB** | マンスリー誌・有料1スタイル生成 | NA, MV | ⬜ Planned（**切り捨て線の下**。`ImageGenPort` + 機微データ変換層、adapter は Nano Banana 単一。**既存 try-on も同じ変換層を経由**（phase 3 では経路集約のみ・ペイロード不変）、ADL-046） |
+| **NC** | 誌面シェアのプライバシー死守線 | NA | ⬜ Planned（**NC-2/3/4 は NA と同時、残りは切り捨て線の下**。`PRIVATE_ONLY` は実行時フィルタでなく**型で**外部経路に到達不能、ADL-040。最小サブセットすら間に合わない場合、NA は**エクスポート経路を持たずに**出す） |
+| **ND** | アフィリ確定購入によるコイン付与 | MV | ⬜ Planned（**切り捨て線の最下**。帰属取得可否が未検証。不可なら「非採用」で閉じ、他は無影響） |
 
 **現在地:** Phase 1a は **ME（ME-1…ME-7）までローカル検証完了**。ME-3/ME-6 の must-fix は閉じ、次は **MD（本番デプロイ）を再開**する。MD 完了後に **MF（CI/CD）** を別 ExecPlan として起票し、MD の手動デプロイを GitHub Actions + WIF で自動化する（req §19、追跡のみ）。履歴の weather / duplication 拡張は将来。Phase 2 Web の Assisted Coordinate（MK）は実装・ローカル検証済み（live Rakuten 込み）。
 
@@ -387,14 +448,40 @@ flowchart LR
   ME --> MD["MD 本番デプロイ (Phase 1a)"]
   M5 --> MK["MK Assisted Coordinate (Phase 2 Web)"]
 
+  MK --> MR["MR 意図タグ + 読み口 (P3)"]
+  MR --> MS["MS 意図セレクタ"]
+  MR --> MT["MT 自己発見ミラーリング"]
+  MR --> NA["NA 無料誌 4スタイル合成"]
+  MK --> MU["MU-1…3 事後フィードバック"]
+  MU --> NA
+  MK --> MV["MV コイン台帳 + debit gate"]
+  MY0["MY-0 外部アカウント整備"] --> MW["MW RevenueCat IAP"]
+  MY0 --> MY["MY ストア提出準備"]
+  MV --> MW
+  MV --> NB["NB 有料1スタイル生成"]
+  MV --> ND["ND アフィリ確定購入付与"]
+  MD --> MX["MX モバイル基盤 (Android/iOS)"]
+  MX --> MY
+  MX --> MW
+  MK --> NE["NE アカウント削除"]
+  NE --> MY
+  NA --> NB
+  NA --> NC["NC シェア死守線"]
+  MK --> MZ["MZ eBay アダプタ"]
+
   classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20;
   classDef wip fill:#fff3cd,stroke:#f9a825,color:#795548;
   classDef stub fill:#ffe0b2,stroke:#e65100,color:#bf360c,stroke-dasharray:5 3;
   classDef todo fill:#eceff1,stroke:#90a4ae,color:#455a64,stroke-dasharray:6 3;
-  class M0,M2,M3,M4,M5,MK done; class M1,ME,MD wip;
+  classDef cut fill:#fafafa,stroke:#bdbdbd,color:#9e9e9e,stroke-dasharray:2 4;
+  class M0,M2,M3,M4,M5,MK done; class M1,ME,MD,MR wip;
+  class MS,MU,MV,MW,MX,MY,MY0,NA,NE todo;
+  class MT,MZ,NB,NC,ND cut;
 ```
 
 **次の一手:** ME-1…ME-7 と must-fix（ME-3/ME-6）は完了したため、**MD（`docs/plans/20260615-md-phase1a-production-deployment.md`）を再開する**。MK（Assisted Coordinate）は実装・ローカル検証済み（live Rakuten credentials のみ未検証）。履歴の weather / duplication 拡張は将来対応とする。
+
+**Phase 3 の着手順（2026-08-07 改訂・締切 2026-09-30）:** 着手順は `MY-0 → MR → MX → MV+MW → NE → MY →（初回提出）→ MS → NA`、切り捨ては `ND → MZ → NB → NC残り → MT → MU-4` の順に**下から**（req §0.4 / ADL-051）。**MY-0 を先頭に置くのは、それが作業ではなく待ち時間だから** — 開発者プログラム登録とストア側の課金アイテム承認は数日〜数週かかり、後者は MW-6（サンドボックス購入）の隠れた前提でもある。**MR を実装の先頭に置くのは**、差別化仮説が成立するかを最小コストで判定できるためで、**MR-6 の順位変化証明が通らなければ MS / MT / NA-2（感情軸レイアウト）は前提から作り直しになる**。**初回提出に MV + MW を同梱する**のは、消費型 IAP が初回バイナリと同時審査を要するためで、後追いにすると 7.5 週の中に審査が2回直列に入る。ExecPlan があるのは依然 **MR** のみ（`docs/plans/20260806-mr-intent-tag-capture-and-ranking.md`、"one ExecPlan at a time"）。上図の `MD --> MX` は実装依存ではなく、モバイルが本番 API を叩く運用上の前提を示す。
 
 ---
 

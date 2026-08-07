@@ -7,7 +7,9 @@ from app.domain.closet import (
     ClothingItemId,
     ClothingItemStatus,
     ClothingTag,
+    IntentTag,
 )
+from app.domain.shared.affective import INTENT_VOCABULARY_VERSION
 
 
 def test_create_clothing_item():
@@ -95,3 +97,89 @@ def test_ownership_status_transitions_keep_analysis_status():
     item.set_ownership_status(ClosetOwnershipStatus.INTERESTING)
     assert item.ownership_status == ClosetOwnershipStatus.INTERESTING
     assert item.status == ClothingItemStatus.READY
+
+
+def test_clothing_item_defaults_intent_tags_to_empty():
+    item = ClothingItem(
+        id=ClothingItemId(uuid4()),
+        user_id="user-123",
+        image_url="https://example.com/image.jpg",
+        tags=[],
+    )
+
+    assert item.intent_tags == []
+    assert item.intent_vocabulary_version is None
+
+
+def test_set_intent_tags_stores_values_and_version():
+    item = ClothingItem(
+        id=ClothingItemId(uuid4()),
+        user_id="user-123",
+        image_url="https://example.com/image.jpg",
+        tags=[],
+    )
+
+    item.set_intent_tags([IntentTag.CONFIDENT, IntentTag.AT_EASE])
+
+    assert item.intent_tags == [IntentTag.CONFIDENT, IntentTag.AT_EASE]
+    assert item.intent_vocabulary_version == INTENT_VOCABULARY_VERSION
+
+
+def test_set_intent_tags_rejects_more_than_three_values():
+    item = ClothingItem(
+        id=ClothingItemId(uuid4()),
+        user_id="user-123",
+        image_url="https://example.com/image.jpg",
+        tags=[],
+    )
+
+    with pytest.raises(ValueError, match="at most 3"):
+        item.set_intent_tags(
+            [
+                IntentTag.CONFIDENT,
+                IntentTag.PROTECTED,
+                IntentTag.BLEND_IN,
+                IntentTag.AT_EASE,
+            ]
+        )
+
+
+def test_set_intent_tags_rejects_duplicates():
+    item = ClothingItem(
+        id=ClothingItemId(uuid4()),
+        user_id="user-123",
+        image_url="https://example.com/image.jpg",
+        tags=[],
+    )
+
+    with pytest.raises(ValueError, match="duplicates"):
+        item.set_intent_tags([IntentTag.CONFIDENT, IntentTag.CONFIDENT])
+
+
+def test_set_intent_tags_to_empty_list_clears_tags_but_keeps_version():
+    item = ClothingItem(
+        id=ClothingItemId(uuid4()),
+        user_id="user-123",
+        image_url="https://example.com/image.jpg",
+        tags=[],
+    )
+    item.set_intent_tags([IntentTag.CONFIDENT])
+
+    item.set_intent_tags([])
+
+    assert item.intent_tags == []
+    assert item.intent_vocabulary_version == INTENT_VOCABULARY_VERSION
+
+
+def test_set_metadata_updates_intent_tags():
+    item = ClothingItem(
+        id=ClothingItemId(uuid4()),
+        user_id="user-123",
+        image_url="https://example.com/image.jpg",
+        tags=[],
+    )
+
+    item.set_metadata(intent_tags=[IntentTag.PUT_TOGETHER])
+
+    assert item.intent_tags == [IntentTag.PUT_TOGETHER]
+    assert item.intent_vocabulary_version == INTENT_VOCABULARY_VERSION

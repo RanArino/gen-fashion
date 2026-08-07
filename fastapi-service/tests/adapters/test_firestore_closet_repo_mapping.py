@@ -7,6 +7,7 @@ from app.domain.closet import (
     ClothingItemId,
     ClothingItemStatus,
     ClothingTag,
+    IntentTag,
 )
 
 
@@ -103,6 +104,42 @@ def test_firestore_interesting_rakuten_item_round_trips():
     assert restored.affiliate_url == "https://hb.afl.rakuten.co.jp/xyz"
     assert restored.price == 2980.0
     assert restored.brand_or_shop == "Shop Name"
+
+
+def test_firestore_document_without_intent_tags_loads_as_empty():
+    """A3: every pre-existing document lacks intentTags; this is the common
+    case, not an edge case."""
+    item_id = uuid4()
+    data = {
+        "userId": "user-123",
+        "imageUrl": f"user-123/closet/{item_id}.jpg",
+        "status": "READY",
+    }
+
+    restored = FirestoreClosetRepository._from_snapshot(FakeSnapshot(str(item_id), data))
+
+    assert restored.intent_tags == []
+    assert restored.intent_vocabulary_version is None
+
+
+def test_firestore_document_round_trips_intent_tags():
+    item_id = uuid4()
+    item = ClothingItem(
+        id=ClothingItemId(item_id),
+        user_id="user-123",
+        image_url=f"user-123/closet/{item_id}.jpg",
+        tags=[],
+        status=ClothingItemStatus.READY,
+    )
+    item.set_intent_tags([IntentTag.CONFIDENT, IntentTag.AT_EASE])
+
+    document = FirestoreClosetRepository._to_document(item)
+    restored = FirestoreClosetRepository._from_snapshot(FakeSnapshot(str(item_id), document))
+
+    assert document["intentTags"] == ["CONFIDENT", "AT_EASE"]
+    assert document["intentVocabularyVersion"] == 1
+    assert restored.intent_tags == [IntentTag.CONFIDENT, IntentTag.AT_EASE]
+    assert restored.intent_vocabulary_version == 1
 
 
 def test_firestore_processing_document_omits_embedding_id():

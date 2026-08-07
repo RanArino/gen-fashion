@@ -24,6 +24,17 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
     async def ensure_index(self) -> None:
         exists = await self._client.indices.exists(index=self._index)
         if exists:
+            # Additive mapping update: a new keyword property does not
+            # require recreating the index, and applying it to an index that
+            # already has it is a no-op. Without this, intentTags falls to
+            # dynamic `text` mapping on every pre-existing index and the
+            # exact-term boost clause (MR-6) matches nothing — the same
+            # failure mode recorded for closetId in
+            # docs/architecture-overview.md §8 item 4.
+            await self._client.indices.put_mapping(
+                index=self._index,
+                properties={"intentTags": {"type": "keyword"}},
+            )
             return
         await self._client.indices.create(
             index=self._index,
@@ -48,6 +59,8 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
                     "origin": {"type": "keyword"},
                     "externalItemId": {"type": "keyword"},
                     "externalUrl": {"type": "keyword"},
+                    # MR intent vocabulary (see domain/shared/affective.py).
+                    "intentTags": {"type": "keyword"},
                     "embedding": {
                         "type": "dense_vector",
                         "dims": self._dims,
@@ -92,6 +105,7 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
         origin: Optional[str] = None,
         external_item_id: Optional[str] = None,
         external_url: Optional[str] = None,
+        intent_tags: Optional[List[str]] = None,
     ) -> None:
         document = {
             "item_id": item_id,
@@ -102,6 +116,7 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
             "colors": colors,
             "season": season,
             "gender": gender,
+            "intentTags": intent_tags or [],
         }
         if ownership_status is not None:
             document["ownershipStatus"] = ownership_status
@@ -131,6 +146,7 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
         season: Optional[str],
         gender: Optional[str],
         ownership_status: Optional[str] = None,
+        intent_tags: Optional[List[str]] = None,
     ) -> None:
         doc = {
             "tags": tags,
@@ -138,6 +154,7 @@ class ElasticsearchEmbeddingRepository(EmbeddingSearchPort):
             "colors": colors,
             "season": season,
             "gender": gender,
+            "intentTags": intent_tags or [],
         }
         if ownership_status is not None:
             doc["ownershipStatus"] = ownership_status
