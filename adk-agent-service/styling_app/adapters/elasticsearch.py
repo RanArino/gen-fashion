@@ -36,6 +36,7 @@ def hybrid_search(
     colors: list[str] | None = None,
     closet_id: str | None = None,
     gender: str | None = None,
+    intent: str | None = None,
     limit: int = 10,
 ) -> list[dict]:
     """Return raw hits [{item_id, ...doc fields}] for the closet of `user_id`."""
@@ -67,6 +68,14 @@ def hybrid_search(
         bool_query.setdefault("should", []).extend(
             [_ci_term("gender", gender), _ci_term("gender", "common")]
         )
+    if intent and settings.intent_boost_enabled:
+        # MR-6: opt-in preference signal, not a filter — most items carry no
+        # intentTags, so this must only ever raise the score of a match, never
+        # narrow the result set. Lands in `should` and must never touch
+        # `minimum_should_match` (Decision Log; boost, not filter).
+        clause = _ci_term("intentTags", intent)
+        clause["term"]["intentTags"]["boost"] = settings.intent_boost_weight
+        bool_query.setdefault("should", []).append(clause)
     should = [
         _ci_term(field, token)
         for token in re.findall(r"[a-z0-9]+", description.lower())
