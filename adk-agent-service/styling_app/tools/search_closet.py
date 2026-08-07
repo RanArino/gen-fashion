@@ -34,6 +34,7 @@ def search_closet(
     category: str | None = None,
     colors: list[str] | None = None,
     gender: str | None = None,
+    intent: str | None = None,
     limit: int = 10,
 ) -> list[dict]:
     """Search the user's closet or the shared closet for matching items.
@@ -48,6 +49,11 @@ def search_closet(
         category: Optional exact category filter (e.g. "pants").
         colors: Optional color filter.
         gender: Optional wearer gender preference; matching/common items are boosted.
+        intent: Optional preference signal for the state the user wants to feel
+            while wearing the result (e.g. "CONFIDENT", "AT_EASE"). Items
+            carrying this intent tag are ranked higher; it never excludes
+            items without it, so omitting it is fine and should not be a
+            reason to skip searching.
         limit: Maximum number of items to return.
 
     Returns:
@@ -77,6 +83,7 @@ def search_closet(
         colors=colors,
         closet_id=shared_closet_id if source == "SHARED_CLOSET" else None,
         gender=gender,
+        intent=intent,
         limit=limit,
     )
 
