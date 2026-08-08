@@ -397,6 +397,55 @@ class AppLocalizationsEn extends AppLocalizations {
   String get preferenceColorPastel => 'pastel';
 
   @override
+  String get intentSectionTitle => 'Intent (optional)';
+
+  @override
+  String get intentSkip => 'Not now';
+
+  @override
+  String get intentCapReached => 'You can select up to 3.';
+
+  @override
+  String get intentConfident => 'Want to feel bold';
+
+  @override
+  String get intentConfidentCaption =>
+      'For when you want to feel bold and confident.';
+
+  @override
+  String get intentProtected => 'Want to feel safe';
+
+  @override
+  String get intentProtectedCaption =>
+      'For when you want to feel protected and secure.';
+
+  @override
+  String get intentBlendIn => 'Want to blend in';
+
+  @override
+  String get intentBlendInCaption => 'For when you don\'t want to stand out.';
+
+  @override
+  String get intentPutTogether => 'Want to look put together';
+
+  @override
+  String get intentPutTogetherCaption =>
+      'For when you want to look neat and put together.';
+
+  @override
+  String get intentAtEase => 'Want to feel at ease';
+
+  @override
+  String get intentAtEaseCaption => 'For when you want comfort above all else.';
+
+  @override
+  String get intentExpressive => 'Want to feel like myself';
+
+  @override
+  String get intentExpressiveCaption =>
+      'For when you want to express who you are.';
+
+  @override
   String selectedGenerationLanguage(Object language) {
     return 'Generation language: $language';
   }

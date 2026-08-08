@@ -122,7 +122,7 @@ flowchart LR
 | Milestone | 内容 | 依存 | 状態 |
 |---|---|---|---|
 | **MY-0** | 外部アカウント整備（Apple/Play/RevenueCat + 課金アイテム承認） | — | ⬜ Planned（**優先度1・着手日が全て**。コードなし。MW-6 のサンドボックス購入の隠れた前提） |
-| **MR** | 意図タグ語彙・付与 UI・`hybrid_search` 読み口・on/off 検証 | — | 🟨 **WIP（ExecPlan 起票済み）**（`docs/plans/20260806-mr-intent-tag-capture-and-ranking.md`、MR-1…MR-7。**リリースゲート = MR-6**: 同一クローゼット・同一クエリで boost on/off により候補順が変わることを再実行可能な証跡で示せなければ、出荷せず削除する。フィクスチャ条件は「疎なタグ付け／上位N の顔ぶれが変わる／異なる intent で異なる順序」の3点。`ownership_status`（書かれるが誰も読まない）の再発防止。） |
+| **MR** | 意図タグ語彙・付与 UI・`hybrid_search` 読み口・on/off 検証 | — | 🟨 **WIP（MR-1…MR-7 のうち6行 ✅、MR-3 のみ残）**（`docs/plans/20260806-mr-intent-tag-capture-and-ranking.md`、Milestone A/B/C 全完了・2026-08-08。**リリースゲート MR-6 は通過**: 同一クローゼット・同一クエリで boost on/off により候補順（上位N の顔ぶれ含む）が変わることを、ライブ Elasticsearch に対する再実行可能な証跡（べき等な再実行込み）で確認済み。`ownership_status`（書かれるが誰も読まない）の再発は回避できた。**残る唯一の未決事項は MR-3**: API 側（`intentTags` の PATCH・Firestore/ES への反映・不正値の 400 拒否）はライブ round trip で確認済みだが、Flutter 側の付与 UI は `flutter analyze`/`flutter test` でのみ検証されており、本リポジトリにブラウザ自動化ツール（Playwright/Selenium/CDP）が存在しないため、チップ・キャプション・上限到達ヒントの**ピクセル/クリックレベルでの表示確認は未実施**。詳細は `feature-matrix-phase03.md` MR-3 行を参照。） |
 | **MS** | セッション意図セレクタ（クエリ時シグナル） | MR | ⬜ Planned |
 | **MT** | 自己発見ミラーリング（LLM 呼び出しゼロ） | MR | ⬜ Planned（**切り捨て線の下**） |
 | **MU** | アプリ内 事後フィードバック（3択） | — | ⬜ Planned（**MU-1…3 は NA の valence 軸供給源＝硬依存**、ADL-049。MU-4 の加点のみ切り捨て線の下） |

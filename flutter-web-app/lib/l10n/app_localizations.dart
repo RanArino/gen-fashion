@@ -830,6 +830,96 @@ abstract class AppLocalizations {
   /// **'pastel'**
   String get preferenceColorPastel;
 
+  /// No description provided for @intentSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Intent (optional)'**
+  String get intentSectionTitle;
+
+  /// No description provided for @intentSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get intentSkip;
+
+  /// No description provided for @intentCapReached.
+  ///
+  /// In en, this message translates to:
+  /// **'You can select up to 3.'**
+  String get intentCapReached;
+
+  /// No description provided for @intentConfident.
+  ///
+  /// In en, this message translates to:
+  /// **'Want to feel bold'**
+  String get intentConfident;
+
+  /// No description provided for @intentConfidentCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'For when you want to feel bold and confident.'**
+  String get intentConfidentCaption;
+
+  /// No description provided for @intentProtected.
+  ///
+  /// In en, this message translates to:
+  /// **'Want to feel safe'**
+  String get intentProtected;
+
+  /// No description provided for @intentProtectedCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'For when you want to feel protected and secure.'**
+  String get intentProtectedCaption;
+
+  /// No description provided for @intentBlendIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Want to blend in'**
+  String get intentBlendIn;
+
+  /// No description provided for @intentBlendInCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'For when you don\'t want to stand out.'**
+  String get intentBlendInCaption;
+
+  /// No description provided for @intentPutTogether.
+  ///
+  /// In en, this message translates to:
+  /// **'Want to look put together'**
+  String get intentPutTogether;
+
+  /// No description provided for @intentPutTogetherCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'For when you want to look neat and put together.'**
+  String get intentPutTogetherCaption;
+
+  /// No description provided for @intentAtEase.
+  ///
+  /// In en, this message translates to:
+  /// **'Want to feel at ease'**
+  String get intentAtEase;
+
+  /// No description provided for @intentAtEaseCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'For when you want comfort above all else.'**
+  String get intentAtEaseCaption;
+
+  /// No description provided for @intentExpressive.
+  ///
+  /// In en, this message translates to:
+  /// **'Want to feel like myself'**
+  String get intentExpressive;
+
+  /// No description provided for @intentExpressiveCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'For when you want to express who you are.'**
+  String get intentExpressiveCaption;
+
   /// No description provided for @selectedGenerationLanguage.
   ///
   /// In en, this message translates to:

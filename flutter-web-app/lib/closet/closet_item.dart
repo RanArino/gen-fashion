@@ -36,6 +36,7 @@ class ClosetItem {
     this.category,
     this.tags = const [],
     this.colors = const [],
+    this.intentTags = const [],
     this.season,
     this.gender,
     this.createdAt,
@@ -51,6 +52,7 @@ class ClosetItem {
   final String? category;
   final List<String> tags;
   final List<String> colors;
+  final List<String> intentTags;
   final String? season;
   final String? gender;
   final DateTime? createdAt;
@@ -71,6 +73,7 @@ class ClosetItem {
       category: data['category'] as String?,
       tags: (data['tags'] as List?)?.cast<String>() ?? const [],
       colors: (data['colors'] as List?)?.cast<String>() ?? const [],
+      intentTags: (data['intentTags'] as List?)?.cast<String>() ?? const [],
       season: data['season'] as String?,
       gender: data['gender'] as String?,
       createdAt: created is Timestamp ? created.toDate() : null,

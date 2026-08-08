@@ -97,8 +97,8 @@ Tracker: `docs/feature-matrix-phase03.md` rows **MR-1 … MR-7**.
       outcome the plan's Decision Log anticipated as one of two legitimate
       terminal states; the feature is not being deleted.
       Nothing remains open for B. Milestone C not started, per scope.
-- [ ] Milestone C — Capture UI, API surface, and localization (MR-3, MR-7).
-      Not started. Pre-implementation review (2026-08-08): C1 and C2 checked
+- [x] Milestone C — Capture UI, API surface, and localization (MR-3, MR-7). 2026-08-08.
+      Pre-implementation review (2026-08-08): C1 and C2 checked
       against the post-Milestone-B codebase and tightened with exact
       code-level targets (see C1/C2 and their Decision Log entry) —
       `UpdateItemMetadataRequest` field pattern, the existing splat/error-
@@ -108,7 +108,116 @@ Tracker: `docs/feature-matrix-phase03.md` rows **MR-1 … MR-7**.
       two full milestones' worth of tests and the live MR-6 proof without
       being questioned, so it is being treated as confirmed for C3's ARB
       keys, not still "proposed."
-- [ ] Final: feature-matrix rows MR-1…MR-7 set to their end state and `docs/architecture-overview.md` synced.
+
+      Mid-implementation Andon (S3) raised and resolved same day: `ClosetItem`
+      (`flutter-web-app/lib/closet/closet_item.dart`) had no `intentTags`
+      field at all, which blocked pre-populating `_onEdit`'s new selector and
+      made the round-trip acceptance criterion unobservable in the UI. The
+      product owner authorized adding it as a companion change (see the
+      2026-08-08 Decision Log entry immediately following the C1/C2 tightening
+      entry). Implementation resumed after that decision was recorded.
+
+      C1: `UpdateItemMetadataRequest` gained `intent_tags: list[str] | None =
+      Field(default=None, alias="intentTags")`, one line, exactly as
+      specified; confirmed by direct read that no other change to
+      `closet_routes.py` was needed.
+
+      C2: `ClosetItem` gained `intentTags: List<String>` (default `const []`,
+      parsed in `fromFirestore` as `List<String>.from(data['intentTags'] ??
+      const [])`), the authorized companion change. A new `_IntentSelector`
+      widget was built in `closet_screen.dart`, modeled on
+      `_MetadataColorSelector`'s `Wrap`/`FilterChip`/`Set<String>` shape but
+      not reusing it: selection is capped at `kMaxIntentTags` (3) via a new
+      public pure function `toggleIntentSelection` (rejects a 4th selection
+      outright rather than evicting the 1st — mirrors `applyClosetFilters`'s
+      existing "pure function for testability" precedent), and each option
+      renders a visible caption beneath its chip, not just a tooltip, since
+      intent is a less familiar concept than color. Wired into `_onEdit`'s
+      dialog at the established 360px/12px-gap convention, pre-populated from
+      `item.intentTags`; `_onEdit`'s PATCH payload now includes `intentTags`.
+      The session-scoped upload-completion mechanism from the second
+      2026-08-08 Decision Log entry was implemented as specified: a
+      `Set<String> _pendingIntentOfferItemIds` on `_ClosetScreenState`,
+      populated in `_onUploadPressed` when `upload()` returns a non-null id,
+      checked inside the `StreamBuilder`'s builder (`_checkPendingIntentOffers`,
+      called on every snapshot) and firing `_offerIntentTagging` — a
+      dedicated dialog reusing `_IntentSelector` — exactly once per tracked id
+      via `WidgetsBinding.instance.addPostFrameCallback` (deferred since
+      `showDialog` cannot be called synchronously during build), removing the
+      id from the set immediately so it cannot fire twice. No persistence, no
+      new backend field, no new use-case parameter added for this tracking,
+      per the Decision Log's explicit scope limit.
+
+      C3: ARB keys added to both `app_en.arb` and `app_ja.arb` for all six
+      `IntentTag` labels, a caption per label, `intentSectionTitle`, and
+      `intentSkip` (plus `intentCapReached` for the at-cap hint), matching the
+      plan's A1 ja/en text exactly. `flutter gen-l10n` run; the three
+      generated `app_localizations*.dart` files picked up the new getters as
+      a companion/generated-artifact diff, not hand-edited.
+
+      C4 verification, all performed and independently re-checked, not
+      assumed:
+      (1) `flutter analyze` — clean, "No issues found!".
+      (2) `flutter test` — 67 passed (up from 61 pre-existing), including a
+      new `test/intent_selection_test.dart` (6 cases: toggle-adds-below-cap,
+      toggle-removes, 4th-selection-rejected-without-evicting-the-1st,
+      removal-still-allowed-at-cap, skip-path-stays-empty, and
+      `ClosetItem.fromFirestore` parsing `intentTags` including the
+      default-to-empty case). The session-scoped upload-completion dialog
+      firing exactly once was **not** covered by an automated test — see
+      Surprises & Discoveries for why (no `ClosetScreen`/Firestore widget-test
+      harness exists in this repo today; adding one, e.g. via
+      `fake_cloud_firestore`, would be a new test dependency the plan does not
+      authorize). This gap is flagged here explicitly rather than silently
+      skipped.
+      (3) `fastapi-service` pytest — 125 passed (up from 124 passed + 1
+      skipped in the Milestone A baseline; the previously-skipped live-ES
+      integration test ran this time since Elasticsearch was reachable),
+      unaffected by C1's one-line additive change as expected.
+      (4) Manual verification: Docker was reachable (the same stack from the
+      prior Milestone B session, still running and healthy). A live,
+      non-mocked round trip was performed directly against the running
+      `fastapi-service`/Firestore-emulator/Elasticsearch stack (minting a
+      Firebase Auth Emulator token the same way `scripts/m2_closet_smoke.py`
+      does, uploading a real item through to `READY`, then exercising C1's
+      PATCH field): tagged an item with `["CONFIDENT", "PROTECTED"]`, confirmed
+      it round-tripped through **both** Firestore and Elasticsearch; cleared
+      to zero tags, confirmed the item stayed `READY` and behaved normally;
+      confirmed an unknown enum value is rejected with 400 end-to-end through
+      the API (Milestone A's existing validation, now reachable via C1). This
+      is real evidence of the wire-level contract the Flutter widget calls
+      into, but it is **not** a browser-driven click-through of the actual
+      Flutter UI — no Playwright/Selenium is installed in this repo (confirmed
+      by reading `scripts/mp7_tab_persistence_browser_e2e.py`'s own docstring,
+      which documents that a browser E2E here requires a hand-rolled CDP
+      client driving canvas mouse coordinates, since Flutter Web/canvaskit has
+      no clickable DOM nodes), and building that infrastructure was judged out
+      of scope for this milestone's C4 step, which frames browser
+      verification as best-effort. Flagged explicitly as **UNPROVEN at the
+      pixel/click level**: the ja/en chip labels, captions, and cap-reached
+      hint were confirmed by reading the generated ARB output and by
+      `flutter analyze`/`flutter test`, not by visually observing them
+      rendered in a running browser session.
+- [x] Final: feature-matrix rows MR-1…MR-7 set to their end state and
+      `docs/architecture-overview.md` synced. 2026-08-08 (role 5 —
+      documentation sync auditor). MR-1, MR-2, MR-4, MR-5, MR-6, MR-7 → ✅
+      Implemented, on the strength of role 4's independently-reproduced
+      evidence across Milestones A, B, and C (including Milestone B's live
+      run closing Milestone A's previously-open ES-mapping gap). MR-3 stays
+      🟡 In progress as its accurate end state, not an unfinished sync: its
+      API half is fully verified end to end, but its Flutter UI half was
+      verified only by `flutter analyze`/`flutter test`, not by a
+      browser-driven click-through (no such tooling exists in this repo) —
+      recorded precisely, not rounded up. Milestone overview table's MR row,
+      summary counts, and the ExecPlan note in
+      `docs/feature-matrix-phase03.md` all updated to match.
+      `docs/architecture-overview.md`'s Phase 3 milestone-summary row for MR
+      updated to state the MR-6 release gate passed and name MR-3's specific
+      remaining gap; its component/port/adapter diagrams confirmed unchanged,
+      matching this plan's own claim that the milestone adds no component,
+      adapter, data store, or external service. This plan's "Outcomes &
+      Retrospective" section also completed in this pass (MR-6 passed;
+      nothing deleted; the one open item restated there as well).
 
 
 ## Surprises & Discoveries
@@ -222,6 +331,51 @@ Tracker: `docs/feature-matrix-phase03.md` rows **MR-1 … MR-7**.
   chosen to make this proof pass" — the ids were chosen for their rank
   position relative to a fixed, unmodified query, not by trial-and-error
   against the boost itself.
+
+- Observation: `ClosetItem` (`flutter-web-app/lib/closet/closet_item.dart`)
+  carried no `intentTags` field before this milestone, even though
+  `fromFirestore` already parses every other analogous list field (`tags`,
+  `colors`) and Firestore documents have carried `intentTags` since Milestone
+  A's A3. This blocked `_onEdit`'s new selector from pre-populating existing
+  tags and made the plan's own round-trip acceptance criterion literally
+  unobservable in the UI. Raised as an Andon (S3) mid-implementation; resolved
+  same day by the product owner authorizing the field as a companion change
+  (see the corresponding 2026-08-08 Decision Log entry). Evidence: before this
+  change, `ClosetItem`'s constructor and `fromFirestore` had no `intentTags`
+  parameter or parsing branch at all — confirmed by reading the file directly,
+  not inferred.
+
+- Observation: this repository has no widget-test harness capable of
+  exercising `ClosetScreen` itself (only its stateless sub-widgets like
+  `ClosetGrid` and `ClosetFilterBar`, which accept data directly and bypass
+  Firestore) — no `fake_cloud_firestore` or equivalent dev dependency exists
+  in `flutter-web-app/pubspec.yaml`, and no test file pumps `ClosetScreen`
+  today. This meant the session-scoped upload-completion dialog (a genuinely
+  new mechanism added this milestone, authorized by the second 2026-08-08
+  Decision Log entry) could not be covered by an automated widget test without
+  adding new test infrastructure, which was judged out of scope. Its logic was
+  instead kept as thin as possible around a well-tested pure function
+  (`toggleIntentSelection`, covered directly) and the same `_IntentSelector`
+  widget `_onEdit` already uses, minimizing the amount of genuinely untested
+  code to the `StreamBuilder`-observation glue (`_checkPendingIntentOffers`)
+  and the dialog wiring itself (`_offerIntentTagging`). Flagged here rather
+  than silently shipped untested, per role instructions.
+
+- Observation: this repository has no Playwright/Selenium installed for
+  browser-driven E2E of the Flutter Web build — confirmed by reading
+  `scripts/mp7_tab_persistence_browser_e2e.py`'s own docstring, which
+  documents that real browser E2E here requires a hand-rolled Chrome
+  DevTools Protocol client driving canvas mouse coordinates, because
+  Flutter Web's canvaskit renderer produces no clickable DOM nodes for
+  ordinary selectors. Building equivalent infrastructure for this milestone's
+  manual bilingual round-trip check was judged out of scope (C4 frames
+  browser verification as best-effort, not a hard requirement), so C4's
+  browser-driven half was performed instead as a live API-level round trip
+  (minting a Firebase Auth Emulator token the same way
+  `scripts/m2_closet_smoke.py` does, PATCHing `intentTags` through the real
+  running stack, and reading the result back from both Firestore and
+  Elasticsearch) — real evidence of the wire contract the UI calls into, but
+  not visual confirmation of the rendered chips/captions/dialogs themselves.
 
 - (Add findings here as work proceeds.)
 
@@ -342,12 +496,112 @@ Tracker: `docs/feature-matrix-phase03.md` rows **MR-1 … MR-7**.
   Date/Author: 2026-08-08 / Phase 3 planning (pre-implementation review pass
   for Milestone C, run after Milestone B verification).
 
+- Decision: C2's "offer the same selector once at upload completion" requires
+  new session-scoped state tracking in `closet_screen.dart` that the plan text
+  does not name, and this tracking is now explicitly in scope for C2 rather
+  than being dropped.
+  Rationale: Reading `closet_screen.dart` before implementation started
+  (pre-implementation review, 2026-08-08) found no existing "upload completion"
+  moment to hook a one-time dialog onto. `_onUploadPressed` (line 58) shows a
+  "queued" snackbar and returns immediately — image analysis happens
+  server-side, asynchronously, and the item grid observes status transitions
+  only reactively, via a Firestore `StreamBuilder` (line 279/314) that
+  redraws the whole grid on every snapshot. There is no per-item "just became
+  ready" event, no session-scoped record of which items this session
+  uploaded, and no test file for this widget today. Two options existed:
+  drop the upload-completion offer entirely and ship only the `_onEdit`
+  dialog path (which alone satisfies the plan's core acceptance — tag, skip,
+  round-trip all work through `_onEdit`), or add the missing state tracking.
+  The product owner chose to add it: a `Set<String>` of item ids uploaded in
+  the current session (populated in `_onUploadPressed` when `upload()`
+  returns an id), consulted inside the `StreamBuilder`'s item-list handling
+  so that the first time a tracked id is observed with `ItemStatus.ready`,
+  the intent selector dialog is shown once and the id is removed from the
+  set. This is a real, if small, addition of behavior beyond what C2's
+  original text spells out — recorded here rather than built silently,
+  per Andon discipline, since it is a genuine expansion of C2's scope, not a
+  companion change incidental to it.
+  Date/Author: 2026-08-08 / Product owner (pre-implementation review pass for
+  Milestone C, decided after the plan's literal C2 text was found not to map
+  onto any existing mechanism in `closet_screen.dart`).
+
+- Decision: `flutter-web-app/lib/closet/closet_item.dart` is added to
+  Milestone C's file list as an authorized companion change: `ClosetItem`
+  gains `intentTags: List<String>` (default `const []`), read in
+  `ClosetItem.fromFirestore` as `List<String>.from(data['intentTags'] ??
+  const [])`, mirroring exactly how `tags` and `colors` are already handled
+  on this class.
+  Rationale: The Milestone C implementer raised Andon (S3) on discovering
+  that `ClosetItem` carries no `intentTags` field at all — not in the
+  constructor, not parsed in `fromFirestore` — while every other field
+  `_onEdit`'s dialog displays (`category`, `tags`, `colors`, `season`,
+  `gender`, `ownership`) is pre-populated from the item being edited. Without
+  this field there is nothing to seed the new intent selector's initial
+  selection from, and the plan's own round-trip acceptance criterion
+  ("reloads, and sees the same tags") is not observable in the UI at all —
+  not merely inconvenient to implement, but literally unobservable. Two
+  options were considered: add the field (small, single-file, additive,
+  symmetric with existing patterns on the same class), or ship the selector
+  write-only and defer the gap (avoids touching an unnamed file, but ships a
+  milestone that visibly fails its own stated acceptance criterion — a user
+  reopening the dialog on an already-tagged item would see an empty
+  selector). The product owner chose to add the field. This file was not
+  named in the plan's original Milestone C text nor in either of the two
+  prior 2026-08-08 Decision Log entries for this milestone; it is recorded
+  here, before implementation resumes, per Andon discipline.
+  Date/Author: 2026-08-08 / Product owner (Andon raised by the Milestone C
+  implementer mid-implementation, resolved same-day before resuming).
+
 
 ## Outcomes & Retrospective
 
 
 (To be completed at each milestone and at the end. The final entry must state
 explicitly whether the MR-6 proof passed, and if it did not, what was deleted.)
+
+**Final entry (2026-08-08, role 5 — documentation sync auditor, recorded on the
+strength of role 4's independently-reproduced verification evidence for all
+three milestones, above).**
+
+**The MR-6 proof passed.** Nothing was deleted. `scripts/mr6_intent_ranking_proof.py`
+exited 0 against a live, non-mocked Elasticsearch, and all three required
+assertions held, independently re-checked against raw output and cross-checked
+directly against Elasticsearch documents rather than trusted from the script's
+own summary line: run 2 (boost-off) differed from run 1 (boost-on,
+`CONFIDENT`) both in order and in top-5 **set membership**
+(`ca39ca35...` in vs `f7c9bb60...` in), and run 3 (boost-on, `PROTECTED`)
+produced a third, different order from run 1. The re-run was byte-identical to
+the first run, confirming idempotence. The intent signal is not decorative —
+this is the "strong, non-vacuous outcome" branch the Decision Log anticipated,
+not the branch that would have required deleting the feature.
+
+All three milestones (A — vocabulary and persistence; B — ranking read path,
+flag, and the MR-6 proof; C — capture UI, API surface, and localization) are
+complete per the Progress section above. Every release-gate command named in
+this plan's Concrete Steps was independently reproduced by role 4 across the
+three milestones: `fastapi-service` pytest (125 passed, 0 skipped),
+`adk-agent-service` pytest (75 passed), `flutter analyze` (clean), and
+`flutter test` (67 passed). The live ES mapping check that A6 originally left
+UNPROVEN (no reachable Docker daemon in that session) was independently closed
+as a side effect of Milestone B's live run: `intentTags` confirmed `keyword`,
+not dynamically-mapped `text`, on the persistent index.
+
+One item remains open, not silently closed: Milestone C's C4 acceptance bar
+calls for a manual bilingual check "against `make dev`" of the rendered
+capture UI. What was actually verified is the wire-level contract two layers
+below the UI — a live PATCH round trip through Firestore and Elasticsearch,
+including the 400-rejection path — not a browser-driven click-through of the
+Flutter widget itself (chips, captions, cap-reached hint, the upload-completion
+dialog). This repo has no Playwright/Selenium/CDP tooling, confirmed by direct
+search in both the implementation and verification sessions, so this gap is
+structural/environmental rather than a shortcut taken under time pressure.
+It is recorded precisely as such in `docs/feature-matrix-phase03.md` (MR-3
+stays 🟡 In progress; MR-1, MR-2, MR-4, MR-5, MR-6, MR-7 moved to ✅
+Implemented on the strength of the evidence above). Closing it requires either
+a follow-up session with a working Docker daemon and a human or
+browser-automation tool available to click through the UI, or a deliberate
+product decision to accept the wire-level proof as sufficient — that decision
+was out of scope for this pipeline to make unilaterally.
 
 
 ## Context and Orientation
@@ -1116,6 +1370,224 @@ ranking-change proof (exit 0, all three required assertions verified against
 raw output and cross-checked directly in Elasticsearch, not just trusted from
 the script's own summary line), and idempotence (second run byte-identical).
 No criterion in this milestone's own release gate is unproven.
+
+### Milestone C verification evidence (2026-08-08, role 4 — verifier)
+
+**Scope note.** This is C4, the release gate for Milestone C, run per the
+plan's own C4 text (three commands) plus the manual bilingual/API round trip
+required by "Validation and Acceptance." Per role instructions, none of the
+implementer's, scope auditor's, or readability reviewer's reported output
+(recorded in `.claude/scratch/mr-milestone-c-handoff.md`) was trusted;
+everything below was independently re-run in this session.
+
+**Working tree state, confirmed before running anything.**
+
+    $ git branch --show-current
+    feat/phase03-mr-milestone-b
+    $ git status --short
+     M docs/plans/20260806-mr-intent-tag-capture-and-ranking.md
+     M fastapi-service/app/handlers/closet_routes.py
+     M flutter-web-app/lib/closet/closet_item.dart
+     M flutter-web-app/lib/closet/closet_screen.dart
+     M flutter-web-app/lib/l10n/app_en.arb
+     M flutter-web-app/lib/l10n/app_ja.arb
+     M flutter-web-app/lib/l10n/app_localizations.dart
+     M flutter-web-app/lib/l10n/app_localizations_en.dart
+     M flutter-web-app/lib/l10n/app_localizations_ja.dart
+    ?? flutter-web-app/test/intent_selection_test.dart
+
+Matches exactly the file list the implementer reported changing for C1-C3
+plus the new test file. `fastapi-service/app/handlers/closet_routes.py` read
+directly: `UpdateItemMetadataRequest` (line 39) contains
+`intent_tags: list[str] | None = Field(default=None, alias="intentTags")`,
+the exact line C1 and the Decision Log specify, immediately after
+`ownership_status`. Route confirmed at `@router.patch("/items/{item_id}")`
+(line 108).
+
+**C4 check 1 — `flutter analyze`.**
+
+    $ cd /Users/ran/my-app/gen-fashion/flutter-web-app && flutter analyze
+    Analyzing flutter-web-app...
+    No issues found! (ran in 2.1s)
+
+Clean, confirming the implementer's report.
+
+**C4 check 2 — `flutter test`.**
+
+    $ cd /Users/ran/my-app/gen-fashion/flutter-web-app && flutter test
+    ...
+    00:09 +67: All tests passed!
+
+67 passed, 0 failed — confirms the implementer's reported count
+independently (up from 61 pre-existing, per the Milestone C progress entry).
+All 8 test files' output lines were visible in the run, including the new
+`test/intent_selection_test.dart` cases interleaved with
+`closet_grid_test.dart`, `closet_filter_bar_test.dart`, `history_screen_test.dart`,
+`tab_persistence_test.dart`, and `coordination_screen_test.dart`.
+
+**C4 check 3 — `fastapi-service` pytest.** `fastapi-service/.venv` on this
+machine is an empty placeholder (only `.gitignore`/`.lock`, no interpreter or
+installed packages — `python3 -m pytest` and `import fastapi` both fail
+against it). Used `/Users/ran/my-app/gen-fashion/.tmp/fastapi-venv312`
+instead, confirmed first to actually have this service's dependencies
+installed (`python --version` → 3.12.9, `import fastapi` → `0.104.0`, the
+exact pinned version in `fastapi-service/pyproject.toml`):
+
+    $ cd /Users/ran/my-app/gen-fashion/fastapi-service && /Users/ran/my-app/gen-fashion/.tmp/fastapi-venv312/bin/python -m pytest -q
+    125 passed, 202 warnings in 3.13s
+
+Re-run a second time for stability: `125 passed, 202 warnings in 1.44s`,
+same count. Zero skips (checked explicitly with `-rs`; no `SKIPPED` lines),
+confirming the implementer's report that the previously-self-skipping live-ES
+integration test ran this time since Elasticsearch was reachable (Milestone A
+baseline was 124 passed + 1 skipped). Warnings are all pre-existing
+`datetime.utcnow()` `DeprecationWarning`s, unrelated to this milestone.
+Confirmed intent-tag-specific tests exist and are part of this count, e.g.
+`tests/domain/test_clothing_item.py::test_set_intent_tags_rejects_more_than_three_values`,
+`tests/use_cases/test_closet_use_cases.py::test_update_metadata_persists_and_reindexes_intent_tags`,
+`tests/use_cases/test_closet_use_cases.py::test_update_metadata_rejects_unknown_intent_tag`.
+
+**C4 check 4 — live manual round-trip verification against real
+infrastructure.**
+
+    $ docker ps
+    6 containers, all Up ~2h: gen-fashion-adk-agent-service-1,
+    gen-fashion-fastapi-service-1, gen-fashion-elasticsearch-1 (healthy),
+    gen-fashion-firebase-auth-emulator-1 (healthy), gen-fashion-minio-1
+    (healthy), gen-fashion-firestore-emulator-1 (healthy)
+
+Confirmed independently reachable, not trusted from prior sessions:
+
+    $ curl -sf http://localhost:8000/health        -> {"status":"ok"}
+    $ curl -sf http://localhost:9200/_cluster/health -> status:"yellow", number_of_nodes:1
+    $ curl -sf http://localhost:9099/               -> {"authEmulator":{"ready":true,...}}
+
+Port/config confirmed from `docker-compose.yml`: `fastapi-service` maps
+`127.0.0.1:8000:8000`. Read `scripts/m2_closet_smoke.py` in full for the
+token-minting/upload pattern (`auth_token()` at line 111 — POST
+`{auth_emulator}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key`,
+then the upload-url -> PUT -> `/complete` -> poll-Firestore-for-`READY`
+sequence). Wrote a standalone script following that exact pattern (auth
+token mint, real image upload to `READY`), then independently exercised C1's
+new PATCH field, using `/Users/ran/my-app/gen-fashion/.tmp/fastapi-venv312`
+(confirmed to have `boto3`/`PIL` available). The script was deleted after
+this run — it is throwaway verification scaffolding, not a plan artifact.
+
+Full trimmed transcript:
+
+    user_id=awjg7wSBEHRS09L6c7GJIZUzXbj3 item_id=a1dba568-e414-417b-9d6c-f094bcdd7eef
+    registered: {'item_id': 'a1dba568-e414-417b-9d6c-f094bcdd7eef', 'status': 'PROCESSING'}
+    post-upload status: READY
+
+    PATCH intentTags=[CONFIDENT,PROTECTED] -> 200 {'item_id': '...', 'status': 'READY', 'ownershipStatus': 'OWNED'}
+    Firestore intentTags after PATCH: ['CONFIDENT', 'PROTECTED']
+    Elasticsearch intentTags after PATCH: ['CONFIDENT', 'PROTECTED']
+
+    PATCH intentTags=[] -> 200 {'item_id': '...', 'status': 'READY', 'ownershipStatus': 'OWNED'}
+    Firestore intentTags after clear: [] status: READY
+    Elasticsearch intentTags after clear: []
+
+    PATCH intentTags=[NOT_A_REAL_INTENT] -> 400 {'detail': "'NOT_A_REAL_INTENT' is not a valid IntentTag"}
+    Firestore intentTags after invalid PATCH attempt: [] status: READY
+
+    ALL CHECKS PASSED
+
+Every assertion in "Validation and Acceptance"'s "Round trip" and "Boost, not
+filter"/opt-in criteria that is reachable via the API was independently
+confirmed at the wire level:
+  - A real, non-mocked item uploaded through to `READY`.
+  - PATCH with two valid `intentTags` (`["CONFIDENT", "PROTECTED"]`) returns
+    200, and the tags are present in **both** Firestore (`intentTags:
+    ['CONFIDENT', 'PROTECTED']`) and Elasticsearch (`intentTags: ['CONFIDENT',
+    'PROTECTED']`) — the write path and the ES mirror both work end to end
+    through C1's new field.
+  - PATCH down to `intentTags: []` returns 200; the item's Firestore `status`
+    stays `READY` (not reset or broken) and both stores show `[]` — clearing
+    tags does not damage the item, confirming "an item... edit them down to
+    zero and confirm the item still behaves normally."
+  - PATCH with an unknown enum value (`NOT_A_REAL_INTENT`) returns exactly
+    **400** with the expected domain-error detail message
+    (`"'NOT_A_REAL_INTENT' is not a valid IntentTag"`), and confirmed the
+    rejected PATCH did not mutate the stored value (`intentTags` still `[]`,
+    `status` still `READY`) — the 400 path is a true rejection, not a
+    partial write.
+
+**C4 check 5 — browser-driven UI click-through. Confirmed UNPROVEN, genuinely
+(not accepted at face value).** Searched the repo for browser automation
+tooling:
+
+    $ grep -rli "playwright|selenium|puppeteer" --include="*.json" --include="*.toml" \
+      --include="*.txt" --include="*.yaml" --include="*.yml" . | grep -v node_modules
+    (no matches outside node_modules)
+    $ grep -i "playwright|selenium|puppeteer|webdriver" flutter-web-app/pubspec.yaml
+    (no matches; only "integration_test: sdk: flutter" present, which is the
+    Flutter SDK's own on-device test runner, not a browser-DOM driver)
+
+Read `scripts/mp7_tab_persistence_browser_e2e.py`'s docstring directly: it
+documents reusing a hand-rolled Chrome DevTools Protocol client from
+`m5_coordination_browser_e2e.py` "since this repo has no Playwright/Selenium
+installed," driving canvas mouse coordinates because Flutter Web/canvaskit
+produces no clickable DOM nodes. This confirms the implementer's claim is
+accurate, not just asserted.
+
+Checked whether I, the verifier, had any tool in this session capable of
+driving a real browser: no MCP browser/CDP tool, no `claude-in-chrome`-style
+extension, and no screenshot/click capability were available (searched the
+deferred-tool index for browser/screenshot/CDP tooling — none found; `WebFetch`
+is a text-extraction fetcher over HTTP, not an interactive browser driver, and
+would not render a canvaskit canvas in any case). A local `Google Chrome.app`
+exists on the host filesystem but nothing in my toolset can drive it via CDP
+or capture its rendered output. This is a genuine, checked absence of
+capability in this environment, not a decision to skip a feasible check.
+**Marked UNPROVEN**: no pixel-level or click-level confirmation that the
+`_IntentSelector` chips, captions, cap-reached hint, or upload-completion
+dialog actually render correctly in a running browser, in either language.
+The wire-level round trip in check 4 is real evidence of the contract the UI
+calls into, but it is not visual confirmation of the rendered widget.
+
+**C4 check 6 — upload-completion dialog automated test gap. Confirmed
+genuine, not a shortcut.**
+
+    $ grep -A5 "dev_dependencies" flutter-web-app/pubspec.yaml
+    dev_dependencies:
+      flutter_lints: ^4.0.0
+      integration_test:
+        sdk: flutter
+      flutter_test:
+        sdk: flutter
+
+No `fake_cloud_firestore` or equivalent Firestore-faking package is present.
+Searched `flutter-web-app/test/` for any file referencing `ClosetScreen` or a
+fake-Firestore construct — none found; existing closet-area tests
+(`closet_grid_test.dart`, `closet_filter_bar_test.dart`) exercise only
+stateless sub-widgets that accept data directly, bypassing Firestore
+entirely, exactly as the plan's own Surprises & Discoveries entry states.
+This is a structural, pre-existing gap in the repo's test tooling — no
+harness capable of pumping `ClosetScreen` itself and faking its `StreamBuilder`
+exists today. **Marked UNPROVEN, not FAIL**: building `fake_cloud_firestore`
+infrastructure from scratch was correctly out of scope for this milestone;
+the session-scoped upload-completion dialog firing exactly once is untested
+by an automated test, but the logic it depends on
+(`toggleIntentSelection`, the same `_IntentSelector` widget `_onEdit` uses) is
+covered, and the only genuinely untested code is the thin
+`StreamBuilder`-observation glue (`_checkPendingIntentOffers`/
+`_offerIntentTagging`).
+
+**Conclusion.** Every command-level criterion in C4 was independently
+reproduced with real, freshly-captured output: `flutter analyze` clean,
+`flutter test` 67/67 (twice-confirmed pass count), `fastapi-service` pytest
+125/125 with 0 skipped (twice-confirmed), and a live, non-mocked wire-level
+round trip (tag, clear, reject-invalid) against real Firestore and
+Elasticsearch through the real running stack — none of this trusted from the
+handoff record, all of it re-run from scratch in this session. Two criteria
+remain UNPROVEN for reasons that are environmental/structural, not
+behavioral: browser-driven pixel/click confirmation of the rendered UI (no
+browser-automation capability exists in this session or, short of a
+hand-rolled CDP client, in this repository), and an automated test for the
+upload-completion dialog's fire-exactly-once behavior (no `ClosetScreen`
+widget-test harness exists in this repository today). Both gaps were
+independently confirmed to be genuine rather than accepted on the
+implementer's word.
 
 
 ## Interfaces and Dependencies

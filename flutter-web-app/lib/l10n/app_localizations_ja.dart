@@ -391,6 +391,51 @@ class AppLocalizationsJa extends AppLocalizations {
   String get preferenceColorPastel => 'パステル';
 
   @override
+  String get intentSectionTitle => '意図（任意）';
+
+  @override
+  String get intentSkip => '今はしない';
+
+  @override
+  String get intentCapReached => '選択できるのは最大3つです。';
+
+  @override
+  String get intentConfident => '強気でいたい';
+
+  @override
+  String get intentConfidentCaption => '自信を持って堂々といたいときに。';
+
+  @override
+  String get intentProtected => '守られたい';
+
+  @override
+  String get intentProtectedCaption => '安心感に包まれたいときに。';
+
+  @override
+  String get intentBlendIn => '馴染みたい';
+
+  @override
+  String get intentBlendInCaption => '周りから浮きたくないときに。';
+
+  @override
+  String get intentPutTogether => 'ちゃんとして見られたい';
+
+  @override
+  String get intentPutTogetherCaption => 'きちんとした印象を見せたいときに。';
+
+  @override
+  String get intentAtEase => '楽でいたい';
+
+  @override
+  String get intentAtEaseCaption => '何より心地よさを優先したいときに。';
+
+  @override
+  String get intentExpressive => '自分らしくいたい';
+
+  @override
+  String get intentExpressiveCaption => '自分らしさを表現したいときに。';
+
+  @override
   String selectedGenerationLanguage(Object language) {
     return '生成言語: $language';
   }

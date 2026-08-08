@@ -13,6 +13,10 @@ import 'upload_service.dart';
 
 const int _kMaxItems = 20;
 
+/// Maximum number of intent tags a closet item may carry (`app/domain/shared/
+/// affective.py`'s `set_intent_tags` enforces the same 0-3 bound server-side).
+const int kMaxIntentTags = 3;
+
 /// Applies the ownership/category filters to [items]. Pure function so it
 /// can be unit-tested without a widget tree.
 List<ClosetItem> applyClosetFilters(
@@ -25,6 +29,21 @@ List<ClosetItem> applyClosetFilters(
     if (category != null && item.category != category) return false;
     return true;
   }).toList();
+}
+
+/// Toggles [id] in [selected], enforcing [kMaxIntentTags]. Rejects the
+/// selection outright once the cap is reached rather than evicting an
+/// existing entry — attempting to add a 4th id when 3 are already selected
+/// returns [selected] unchanged. Pure function so the cap behavior is
+/// unit-testable without a widget tree, matching [applyClosetFilters].
+Set<String> toggleIntentSelection(Set<String> selected, String id) {
+  if (selected.contains(id)) {
+    return {...selected}..remove(id);
+  }
+  if (selected.length >= kMaxIntentTags) {
+    return selected;
+  }
+  return {...selected, id};
 }
 
 class ClosetScreen extends StatefulWidget {
@@ -46,6 +65,13 @@ class _ClosetScreenState extends State<ClosetScreen> {
   ItemOwnership? _ownershipFilter;
   String? _categoryFilter;
 
+  /// Item ids uploaded during this session, pending a one-time intent-tag
+  /// offer once each reaches [ItemStatus.ready]. Session-scoped, in-memory
+  /// only — no persistence, resets on reload. The durable path to tag intent
+  /// on any ready item is [_onEdit], which is always available regardless of
+  /// this set's contents.
+  final Set<String> _pendingIntentOfferItemIds = {};
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _stream() {
     return FirebaseFirestore.instance
         .collection('users')
@@ -62,6 +88,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
       final id = await _uploads.upload();
       if (!mounted) return;
       if (id == null) return;
+      _pendingIntentOfferItemIds.add(id);
       final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.uploadQueued)),
@@ -123,6 +150,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
     var gender = item.gender ?? 'common';
     var ownership =
         item.ownership == ItemOwnership.interesting ? 'INTERESTING' : 'OWNED';
+    var selectedIntents = item.intentTags.toSet();
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -212,6 +240,12 @@ class _ClosetScreenState extends State<ClosetScreen> {
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                   ),
+                  const SizedBox(height: 12),
+                  _IntentSelector(
+                    selectedIds: selectedIntents,
+                    onChanged: (values) =>
+                        setDialogState(() => selectedIntents = values),
+                  ),
                 ],
               ),
             ),
@@ -241,6 +275,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
         'tags': values(tags.text),
         'gender': gender,
         'ownershipStatus': ownership,
+        'intentTags': selectedIntents.toList(),
       });
     } catch (e) {
       if (!mounted) return;
@@ -250,6 +285,67 @@ class _ClosetScreenState extends State<ClosetScreen> {
     } finally {
       category.dispose();
       tags.dispose();
+    }
+  }
+
+  /// Checks [_pendingIntentOfferItemIds] against the latest snapshot of
+  /// [items] and offers the intent selector once for each tracked id that
+  /// has just become [ItemStatus.ready]. Called from the `StreamBuilder`'s
+  /// builder on every snapshot, so it must not call `showDialog` directly —
+  /// that runs during a build and is deferred to the next frame instead.
+  void _checkPendingIntentOffers(List<ClosetItem> items) {
+    if (_pendingIntentOfferItemIds.isEmpty) return;
+    for (final item in items) {
+      if (item.status == ItemStatus.ready &&
+          _pendingIntentOfferItemIds.remove(item.id)) {
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _offerIntentTagging(item));
+      }
+    }
+  }
+
+  /// Shows the same intent selector [_onEdit] uses, offered once at upload
+  /// completion. Skipping is explicit and costless: dismissing (via "not
+  /// now" or the system back gesture) saves nothing and leaves the item with
+  /// no intent tags, exactly like never opening the dialog at all.
+  Future<void> _offerIntentTagging(ClosetItem item) async {
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    var selectedIntents = item.intentTags.toSet();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(l10n.intentSectionTitle),
+          content: SizedBox(
+            width: 360,
+            child: _IntentSelector(
+              selectedIds: selectedIntents,
+              onChanged: (values) =>
+                  setDialogState(() => selectedIntents = values),
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(l10n.intentSkip)),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(l10n.save)),
+          ],
+        ),
+      ),
+    );
+    if (saved != true) return;
+    try {
+      await _api.updateItemMetadata(item.id, {
+        'intentTags': selectedIntents.toList(),
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.updateFailed('$e'))),
+      );
     }
   }
 
@@ -330,6 +426,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
         }
         final items =
             docs.map((d) => ClosetItem.fromFirestore(d.id, d.data())).toList();
+        _checkPendingIntentOffers(items);
         final ownershipFiltered =
             applyClosetFilters(items, ownership: _ownershipFilter);
         final categories = _distinctCategories(ownershipFiltered);
@@ -375,6 +472,34 @@ class _MetadataOption {
   final String id;
   final String label;
 }
+
+/// An [_MetadataOption] plus a short caption, used by [_IntentSelector] —
+/// intent is a less familiar concept than color or season, so each option
+/// carries an explanatory line the color/season pickers don't need.
+class _CaptionedOption {
+  const _CaptionedOption(this.id, this.label, this.caption);
+
+  final String id;
+  final String label;
+  final String caption;
+}
+
+/// The `IntentTag` enum names (`app/domain/shared/affective.py`), in the
+/// fixed order the plan's A1 vocabulary table lists them. The enum name is
+/// what travels over the wire; the label/caption are display-only.
+List<_CaptionedOption> _intentOptions(AppLocalizations l10n) => [
+      _CaptionedOption(
+          'CONFIDENT', l10n.intentConfident, l10n.intentConfidentCaption),
+      _CaptionedOption(
+          'PROTECTED', l10n.intentProtected, l10n.intentProtectedCaption),
+      _CaptionedOption(
+          'BLEND_IN', l10n.intentBlendIn, l10n.intentBlendInCaption),
+      _CaptionedOption('PUT_TOGETHER', l10n.intentPutTogether,
+          l10n.intentPutTogetherCaption),
+      _CaptionedOption('AT_EASE', l10n.intentAtEase, l10n.intentAtEaseCaption),
+      _CaptionedOption(
+          'EXPRESSIVE', l10n.intentExpressive, l10n.intentExpressiveCaption),
+    ];
 
 List<_MetadataOption> _metadataColorOptions(AppLocalizations l10n) => [
       _MetadataOption('black', l10n.preferenceColorBlack),
@@ -503,6 +628,77 @@ class _MetadataColorSelector extends StatelessWidget {
               selected: selectedIds.contains(option.id),
               onSelected: (_) => _toggle(option.id),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Intent multi-select for the closet edit dialog, offered once at upload
+/// completion, and re-offered any time via [ClosetCard]'s edit action.
+///
+/// Modeled on [_MetadataColorSelector]'s `Wrap` of `FilterChip`s over a
+/// `Set<String>`, but not a reuse of it: unlike color, intent is capped at
+/// [kMaxIntentTags] selections (the 4th attempted selection is rejected, not
+/// silently evicting the 1st) and each option carries a short caption, since
+/// an uncaptioned list of abstract affective states is a harder question
+/// than picking a color. Only the enum name in [_CaptionedOption.id] is ever
+/// reported through [onChanged]; the label/caption are display-only and must
+/// never be sent to the API.
+class _IntentSelector extends StatelessWidget {
+  const _IntentSelector({
+    required this.selectedIds,
+    required this.onChanged,
+  });
+
+  final Set<String> selectedIds;
+  final ValueChanged<Set<String>> onChanged;
+
+  void _toggle(String id) => onChanged(toggleIntentSelection(selectedIds, id));
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final atCap = selectedIds.length >= kMaxIntentTags;
+    final captionStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        );
+    return InputDecorator(
+      decoration: InputDecoration(labelText: l10n.intentSectionTitle),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              for (final option in _intentOptions(l10n))
+                SizedBox(
+                  width: 156,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FilterChip(
+                        key: ValueKey('intent-${option.id}'),
+                        label: Text(option.label),
+                        selected: selectedIds.contains(option.id),
+                        onSelected: (_) => _toggle(option.id),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        option.caption,
+                        style: captionStyle,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          if (atCap) ...[
+            const SizedBox(height: 4),
+            Text(l10n.intentCapReached, style: captionStyle),
+          ],
         ],
       ),
     );
