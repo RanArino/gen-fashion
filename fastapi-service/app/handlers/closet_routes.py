@@ -36,6 +36,7 @@ class UpdateItemMetadataRequest(BaseModel):
     season: str | None = None
     tags: list[str] | None = None
     ownership_status: str | None = Field(default=None, alias="ownershipStatus")
+    intent_tags: list[str] | None = Field(default=None, alias="intentTags")
 
 
 @router.get("/upload-url")
